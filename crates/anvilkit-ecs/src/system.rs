@@ -20,14 +20,15 @@
 //! 
 //! ```rust
 //! use anvilkit_ecs::prelude::*;
-//! 
+//! use anvilkit_ecs::schedule::AnvilKitSchedule;
+//!
 //! // 定义组件
 //! #[derive(Component)]
 //! struct Velocity {
 //!     x: f32,
 //!     y: f32,
 //! }
-//! 
+//!
 //! // 定义系统
 //! fn movement_system(mut query: Query<(&mut Transform, &Velocity)>) {
 //!     for (mut transform, velocity) in &mut query {
@@ -35,16 +36,16 @@
 //!         transform.translation.y += velocity.y;
 //!     }
 //! }
-//! 
+//!
 //! // 添加到应用
 //! let mut app = App::new();
-//! app.add_systems(Update, movement_system);
+//! app.add_systems(AnvilKitSchedule::Update, movement_system);
 //! ```
 
 use bevy_ecs::prelude::*;
 use anvilkit_core::time::Time;
-use crate::component::{Name, Tag, Visibility, Layer};
-use crate::transform::{Transform, GlobalTransform};
+use crate::component::{Name, Visibility, Layer};
+use crate::transform::Transform;
 
 /// 系统工具集合
 /// 
@@ -65,17 +66,18 @@ impl SystemUtils {
     /// 
     /// ```rust
     /// use anvilkit_ecs::prelude::*;
-    /// 
+    /// use anvilkit_ecs::schedule::AnvilKitSchedule;
+    ///
     /// fn debug_condition() -> bool {
     ///     cfg!(debug_assertions)
     /// }
-    /// 
+    ///
     /// fn debug_system() {
     ///     println!("调试模式下执行");
     /// }
-    /// 
+    ///
     /// let mut app = App::new();
-    /// app.add_systems(Update, debug_system.run_if(debug_condition));
+    /// app.add_systems(AnvilKitSchedule::Update, debug_system.run_if(debug_condition));
     /// ```
     pub fn conditional_system<S, C>(
         system: S,
@@ -135,9 +137,10 @@ impl DebugSystems {
     /// 
     /// ```rust
     /// use anvilkit_ecs::prelude::*;
-    /// 
+    /// use anvilkit_ecs::schedule::AnvilKitSchedule;
+    ///
     /// let mut app = App::new();
-    /// app.add_systems(Update, DebugSystems::entity_count_system);
+    /// app.add_systems(AnvilKitSchedule::Update, DebugSystems::entity_count_system);
     /// ```
     pub fn entity_count_system(query: Query<Entity>) {
         let count = query.iter().count();
@@ -154,9 +157,10 @@ impl DebugSystems {
     /// 
     /// ```rust
     /// use anvilkit_ecs::prelude::*;
-    /// 
+    /// use anvilkit_ecs::schedule::AnvilKitSchedule;
+    ///
     /// let mut app = App::new();
-    /// app.add_systems(Update, DebugSystems::named_entities_system);
+    /// app.add_systems(AnvilKitSchedule::Update, DebugSystems::named_entities_system);
     /// ```
     pub fn named_entities_system(query: Query<(Entity, &Name)>) {
         for (entity, name) in &query {
@@ -172,9 +176,10 @@ impl DebugSystems {
     /// 
     /// ```rust
     /// use anvilkit_ecs::prelude::*;
-    /// 
+    /// use anvilkit_ecs::schedule::AnvilKitSchedule;
+    ///
     /// let mut app = App::new();
-    /// app.add_systems(Update, DebugSystems::transform_debug_system);
+    /// app.add_systems(AnvilKitSchedule::Update, DebugSystems::transform_debug_system);
     /// ```
     pub fn transform_debug_system(query: Query<(Entity, &Transform), With<Name>>) {
         for (entity, transform) in &query {
@@ -196,9 +201,10 @@ impl DebugSystems {
     /// 
     /// ```rust
     /// use anvilkit_ecs::prelude::*;
-    /// 
+    /// use anvilkit_ecs::schedule::AnvilKitSchedule;
+    ///
     /// let mut app = App::new();
-    /// app.add_systems(Update, DebugSystems::performance_monitor_system);
+    /// app.add_systems(AnvilKitSchedule::Update, DebugSystems::performance_monitor_system);
     /// ```
     pub fn performance_monitor_system(time: Res<Time>) {
         // 每秒报告一次性能信息
@@ -226,9 +232,10 @@ impl UtilitySystems {
     /// 
     /// ```rust
     /// use anvilkit_ecs::prelude::*;
-    /// 
+    /// use anvilkit_ecs::schedule::AnvilKitSchedule;
+    ///
     /// let mut app = App::new();
-    /// app.add_systems(PreUpdate, UtilitySystems::time_update_system);
+    /// app.add_systems(AnvilKitSchedule::PreUpdate, UtilitySystems::time_update_system);
     /// ```
     pub fn time_update_system(mut time: ResMut<Time>) {
         time.update();
@@ -271,9 +278,10 @@ impl UtilitySystems {
     /// 
     /// ```rust
     /// use anvilkit_ecs::prelude::*;
-    /// 
+    /// use anvilkit_ecs::schedule::AnvilKitSchedule;
+    ///
     /// let mut app = App::new();
-    /// app.add_systems(PostUpdate, UtilitySystems::layer_sorting_system);
+    /// app.add_systems(AnvilKitSchedule::PostUpdate, UtilitySystems::layer_sorting_system);
     /// ```
     pub fn layer_sorting_system(query: Query<(Entity, &Layer), Changed<Layer>>) {
         let mut entities: Vec<_> = query.iter().collect();
@@ -294,12 +302,13 @@ impl UtilitySystems {
     /// 
     /// ```rust
     /// use anvilkit_ecs::prelude::*;
-    /// 
+    /// use anvilkit_ecs::schedule::AnvilKitSchedule;
+    ///
     /// #[derive(Component)]
     /// struct ToDelete;
-    /// 
+    ///
     /// let mut app = App::new();
-    /// app.add_systems(Cleanup, UtilitySystems::cleanup_system::<ToDelete>);
+    /// app.add_systems(AnvilKitSchedule::Cleanup, UtilitySystems::cleanup_system::<ToDelete>);
     /// ```
     pub fn cleanup_system<T: Component>(
         mut commands: Commands,
@@ -325,13 +334,14 @@ impl SystemCombinator {
     /// 
     /// ```rust
     /// use anvilkit_ecs::prelude::*;
-    /// 
+    /// use anvilkit_ecs::schedule::AnvilKitSchedule;
+    ///
     /// fn system_a() { println!("系统 A"); }
     /// fn system_b() { println!("系统 B"); }
     /// fn system_c() { println!("系统 C"); }
-    /// 
+    ///
     /// let mut app = App::new();
-    /// app.add_systems(Update, (
+    /// app.add_systems(AnvilKitSchedule::Update, (
     ///     system_a,
     ///     system_b.after(system_a),
     ///     system_c.after(system_b),
@@ -349,13 +359,14 @@ impl SystemCombinator {
     /// 
     /// ```rust
     /// use anvilkit_ecs::prelude::*;
-    /// 
+    /// use anvilkit_ecs::schedule::AnvilKitSchedule;
+    ///
     /// fn physics_system() { println!("物理系统"); }
     /// fn audio_system() { println!("音频系统"); }
     /// fn input_system() { println!("输入系统"); }
-    /// 
+    ///
     /// let mut app = App::new();
-    /// app.add_systems(Update, (
+    /// app.add_systems(AnvilKitSchedule::Update, (
     ///     physics_system,
     ///     audio_system,
     ///     input_system,

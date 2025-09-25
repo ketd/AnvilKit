@@ -165,17 +165,21 @@ impl From<&str> for Name {
 /// 
 /// ```rust
 /// use anvilkit_ecs::prelude::*;
-/// 
+///
 /// let mut world = World::new();
-/// 
+///
 /// // 创建不同标签的实体
 /// world.spawn((Name::new("玩家"), Tag::new("player")));
 /// world.spawn((Name::new("敌人"), Tag::new("enemy")));
 /// world.spawn((Name::new("道具"), Tag::new("item")));
-/// 
+///
 /// // 查询特定标签的实体
-/// let mut player_query = world.query::<&Name>().with::<Tag>();
-/// // 注意：这里需要更复杂的查询来过滤特定标签值
+/// let mut player_query = world.query::<(&Name, &Tag)>();
+/// for (name, tag) in player_query.iter(&world) {
+///     if tag.matches("player") {
+///         println!("找到玩家: {}", name.as_str());
+///     }
+/// }
 /// ```
 #[derive(Component, Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -262,16 +266,20 @@ impl From<&str> for Tag {
 /// 
 /// ```rust
 /// use anvilkit_ecs::prelude::*;
-/// 
+///
 /// let mut world = World::new();
-/// 
+///
 /// // 创建不同可见性的实体
 /// world.spawn((Name::new("可见实体"), Visibility::Visible));
 /// world.spawn((Name::new("隐藏实体"), Visibility::Hidden));
-/// 
+///
 /// // 查询可见实体
-/// let mut visible_query = world.query::<&Name>()
-///     .with::<Visibility>();
+/// let mut visible_query = world.query::<(&Name, &Visibility)>();
+/// for (name, visibility) in visible_query.iter(&world) {
+///     if visibility.is_visible() {
+///         println!("可见实体: {}", name.as_str());
+///     }
+/// }
 /// ```
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

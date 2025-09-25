@@ -41,7 +41,7 @@
 //! ```
 
 use bevy_ecs::prelude::*;
-use glam::{Vec3, Quat, Mat4};
+use glam::Vec3;
 
 // 重新导出 anvilkit-core 的变换类型
 pub use anvilkit_core::math::{Transform, GlobalTransform};
@@ -259,7 +259,7 @@ pub fn propagate_transforms(
     children_query: Query<&Children, (With<Parent>, Without<GlobalTransform>)>,
 ) {
     // 处理根实体的变换传播
-    for (entity, children, global_transform) in &mut root_query {
+    for (_entity, children, global_transform) in &mut root_query {
         if global_transform.is_changed() {
             propagate_recursive(
                 &global_transform,
@@ -439,7 +439,7 @@ impl TransformHierarchy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prelude::*;
+
 
     #[test]
     fn test_parent_component() {

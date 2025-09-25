@@ -22,21 +22,22 @@
 //! 
 //! ```rust
 //! use anvilkit_ecs::prelude::*;
+//! use anvilkit_ecs::schedule::AnvilKitSchedule;
 //! use anvilkit_core::math::Transform;
-//! 
+//!
 //! // 定义组件
 //! #[derive(Component)]
 //! struct Player {
 //!     name: String,
 //!     health: f32,
 //! }
-//! 
+//!
 //! #[derive(Component)]
 //! struct Velocity {
 //!     x: f32,
 //!     y: f32,
 //! }
-//! 
+//!
 //! // 定义系统
 //! fn movement_system(mut query: Query<(&mut Transform, &Velocity)>) {
 //!     for (mut transform, velocity) in &mut query {
@@ -44,11 +45,11 @@
 //!         transform.translation.y += velocity.y;
 //!     }
 //! }
-//! 
+//!
 //! // 创建应用
 //! let mut app = App::new();
 //! app.add_plugins(AnvilKitEcsPlugin)
-//!    .add_systems(Update, movement_system);
+//!    .add_systems(AnvilKitSchedule::Update, movement_system);
 //! ```
 
 pub mod app;

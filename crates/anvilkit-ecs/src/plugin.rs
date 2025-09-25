@@ -13,25 +13,26 @@
 //! 
 //! ```rust
 //! use anvilkit_ecs::prelude::*;
-//! 
+//! use anvilkit_ecs::schedule::AnvilKitSchedule;
+//!
 //! // 定义自定义插件
 //! struct MyPlugin {
 //!     config: MyConfig,
 //! }
-//! 
+//!
 //! #[derive(Default)]
 //! struct MyConfig {
 //!     enabled: bool,
 //! }
-//! 
+//!
 //! impl Plugin for MyPlugin {
 //!     fn build(&self, app: &mut App) {
 //!         if self.config.enabled {
-//!             app.add_systems(Update, my_system);
+//!             app.add_systems(AnvilKitSchedule::Update, my_system);
 //!         }
 //!     }
 //! }
-//! 
+//!
 //! fn my_system() {
 //!     println!("我的系统正在运行！");
 //! }
@@ -54,20 +55,21 @@ use crate::app::App;
 /// 
 /// ```rust
 /// use anvilkit_ecs::prelude::*;
-/// 
+/// use anvilkit_ecs::schedule::AnvilKitSchedule;
+///
 /// struct LoggingPlugin;
-/// 
+///
 /// impl Plugin for LoggingPlugin {
 ///     fn build(&self, app: &mut App) {
-///         app.add_systems(Startup, setup_logging)
-///            .add_systems(Update, log_frame_count);
+///         app.add_systems(AnvilKitSchedule::Startup, setup_logging)
+///            .add_systems(AnvilKitSchedule::Update, log_frame_count);
 ///     }
 /// }
-/// 
+///
 /// fn setup_logging() {
 ///     println!("日志系统已初始化");
 /// }
-/// 
+///
 /// fn log_frame_count() {
 ///     // 记录帧数逻辑
 /// }
@@ -85,21 +87,22 @@ pub trait Plugin: Send + Sync {
     /// 
     /// ```rust
     /// use anvilkit_ecs::prelude::*;
-    /// 
+    /// use anvilkit_ecs::schedule::AnvilKitSchedule;
+    ///
     /// struct MyPlugin;
-    /// 
+    ///
     /// impl Plugin for MyPlugin {
     ///     fn build(&self, app: &mut App) {
     ///         app.insert_resource(MyResource::default())
-    ///            .add_systems(Update, my_system);
+    ///            .add_systems(AnvilKitSchedule::Update, my_system);
     ///     }
     /// }
-    /// 
+    ///
     /// #[derive(Resource, Default)]
     /// struct MyResource {
     ///     value: i32,
     /// }
-    /// 
+    ///
     /// fn my_system(mut resource: ResMut<MyResource>) {
     ///     resource.value += 1;
     /// }
@@ -148,7 +151,6 @@ pub struct AnvilKitEcsPlugin;
 
 impl Plugin for AnvilKitEcsPlugin {
     fn build(&self, app: &mut App) {
-        use crate::schedule::{AnvilKitSchedule, ScheduleLabel};
         use crate::transform::TransformPlugin;
         use anvilkit_core::time::Time;
         
@@ -286,6 +288,7 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn increment_system(mut resource: ResMut<TestResource>) {
         resource.value += 1;
     }

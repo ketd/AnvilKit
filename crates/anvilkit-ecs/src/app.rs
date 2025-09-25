@@ -10,28 +10,28 @@
 //! 
 //! ## 使用示例
 //! 
-//! ```rust
+//! ```rust,no_run
 //! use anvilkit_ecs::prelude::*;
-//! 
+//! use anvilkit_ecs::schedule::AnvilKitSchedule;
+//!
 //! // 创建应用
 //! let mut app = App::new();
-//! 
+//!
 //! // 添加插件
 //! app.add_plugins(AnvilKitEcsPlugin);
-//! 
+//!
 //! // 添加系统
-//! app.add_systems(Update, my_system);
-//! 
+//! app.add_systems(AnvilKitSchedule::Update, my_system);
+//!
 //! // 运行应用
 //! app.run();
-//! 
+//!
 //! fn my_system() {
 //!     println!("系统正在运行！");
 //! }
 //! ```
 
 use bevy_ecs::prelude::*;
-use anvilkit_core::error::Result;
 use crate::plugin::Plugin;
 use crate::schedule::{AnvilKitSchedule, ScheduleLabel};
 
@@ -48,14 +48,15 @@ use crate::schedule::{AnvilKitSchedule, ScheduleLabel};
 /// 
 /// # 示例
 /// 
-/// ```rust
+/// ```rust,no_run
 /// use anvilkit_ecs::prelude::*;
-/// 
+/// use anvilkit_ecs::schedule::AnvilKitSchedule;
+///
 /// let mut app = App::new();
 /// app.add_plugins(AnvilKitEcsPlugin)
-///    .add_systems(Update, movement_system)
+///    .add_systems(AnvilKitSchedule::Update, movement_system)
 ///    .run();
-/// 
+///
 /// fn movement_system() {
 ///     // 系统逻辑
 /// }
@@ -63,8 +64,6 @@ use crate::schedule::{AnvilKitSchedule, ScheduleLabel};
 pub struct App {
     /// ECS 世界，存储所有实体、组件和资源
     pub world: World,
-    /// 主调度器
-    main_schedule: Box<dyn ScheduleLabel>,
     /// 是否应该退出应用
     should_exit: bool,
 }
@@ -93,7 +92,6 @@ impl App {
         
         Self {
             world,
-            main_schedule: Box::new(AnvilKitSchedule::Main),
             should_exit: false,
         }
     }
@@ -128,10 +126,11 @@ impl App {
     /// 
     /// ```rust
     /// use anvilkit_ecs::prelude::*;
-    /// 
+    /// use anvilkit_ecs::schedule::AnvilKitSchedule;
+    ///
     /// let mut app = App::new();
-    /// app.add_systems(Update, my_system);
-    /// 
+    /// app.add_systems(AnvilKitSchedule::Update, my_system);
+    ///
     /// fn my_system() {
     ///     println!("系统运行中");
     /// }

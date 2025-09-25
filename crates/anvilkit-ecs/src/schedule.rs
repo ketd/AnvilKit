@@ -22,27 +22,27 @@
 //! 
 //! ```rust
 //! use anvilkit_ecs::prelude::*;
-//! 
+//! use anvilkit_ecs::schedule::AnvilKitSchedule;
+//!
 //! fn setup_system() {
 //!     println!("游戏初始化");
 //! }
-//! 
+//!
 //! fn update_system() {
 //!     println!("游戏更新");
 //! }
-//! 
+//!
 //! fn cleanup_system() {
 //!     println!("帧清理");
 //! }
-//! 
+//!
 //! let mut app = App::new();
-//! app.add_systems(Startup, setup_system)
-//!    .add_systems(Update, update_system)
-//!    .add_systems(PostUpdate, cleanup_system);
+//! app.add_systems(AnvilKitSchedule::Startup, setup_system)
+//!    .add_systems(AnvilKitSchedule::Update, update_system)
+//!    .add_systems(AnvilKitSchedule::PostUpdate, cleanup_system);
 //! ```
 
 use bevy_ecs::schedule::*;
-use bevy_ecs::label::DynEq;
 pub use bevy_ecs::schedule::ScheduleLabel;
 
 /// AnvilKit 调度标签
@@ -62,18 +62,19 @@ pub use bevy_ecs::schedule::ScheduleLabel;
 /// 
 /// ```rust
 /// use anvilkit_ecs::prelude::*;
-/// 
+/// use anvilkit_ecs::schedule::AnvilKitSchedule;
+///
 /// fn my_startup_system() {
 ///     println!("应用启动");
 /// }
-/// 
+///
 /// fn my_update_system() {
 ///     println!("每帧更新");
 /// }
-/// 
+///
 /// let mut app = App::new();
-/// app.add_systems(Startup, my_startup_system)
-///    .add_systems(Update, my_update_system);
+/// app.add_systems(AnvilKitSchedule::Startup, my_startup_system)
+///    .add_systems(AnvilKitSchedule::Update, my_update_system);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AnvilKitSchedule {
@@ -133,17 +134,18 @@ impl ScheduleLabel for AnvilKitSchedule {
 /// 
 /// ```rust
 /// use anvilkit_ecs::prelude::*;
-/// 
+/// use anvilkit_ecs::schedule::AnvilKitSchedule;
+///
 /// fn physics_system() {
 ///     // 物理计算
 /// }
-/// 
+///
 /// fn collision_system() {
 ///     // 碰撞检测
 /// }
-/// 
+///
 /// let mut app = App::new();
-/// app.add_systems(Update, (
+/// app.add_systems(AnvilKitSchedule::Update, (
 ///     physics_system.in_set(AnvilKitSystemSet::Physics),
 ///     collision_system.in_set(AnvilKitSystemSet::Physics),
 /// ));
@@ -228,24 +230,16 @@ pub use bevy_ecs::schedule::common_conditions;
 /// 
 /// ```rust
 /// use anvilkit_ecs::prelude::*;
-/// 
+///
 /// let schedule = ScheduleBuilder::new()
-///     .add_systems_to_set(AnvilKitSystemSet::Input, input_systems())
-///     .add_systems_to_set(AnvilKitSystemSet::Physics, physics_systems())
+///     .add_systems_to_set(AnvilKitSystemSet::Input, (handle_keyboard, handle_mouse))
+///     .add_systems_to_set(AnvilKitSystemSet::Physics, (update_physics, check_collisions))
 ///     .configure_sets((
 ///         AnvilKitSystemSet::Input.before(AnvilKitSystemSet::Physics),
 ///         AnvilKitSystemSet::Physics.before(AnvilKitSystemSet::GameLogic),
 ///     ))
 ///     .build();
-/// 
-/// fn input_systems() -> impl IntoSystemConfigs<()> {
-///     (handle_keyboard, handle_mouse)
-/// }
-/// 
-/// fn physics_systems() -> impl IntoSystemConfigs<()> {
-///     (update_physics, check_collisions)
-/// }
-/// 
+///
 /// fn handle_keyboard() {}
 /// fn handle_mouse() {}
 /// fn update_physics() {}
@@ -305,6 +299,7 @@ mod tests {
     }
 
     #[derive(Component)]
+    #[allow(dead_code)]
     struct TestComponent;
 
     fn test_system(mut resource: ResMut<TestResource>) {
