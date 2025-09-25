@@ -1,0 +1,28 @@
+[package]
+name = "anvilkit-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+description = "AnvilKit 游戏引擎的核心类型、数学库和时间系统"
+
+[dependencies]
+glam = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[features]
+default = []
+# 启用序列化支持
+serde = ["dep:serde", "glam/serde"]
+# 启用调试功能
+debug = []
+
+[dev-dependencies]
+approx = "0.5"

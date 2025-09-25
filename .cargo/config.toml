@@ -1,0 +1,27 @@
+# Cargo 配置文件 - 命令别名
+
+[alias]
+# 开发环境启动
+dev = "run --bin api dev"
+
+# 生产环境启动
+prod = "run --bin api --release prod"
+
+# 测试环境启动
+test-env = "run --bin api test"
+
+# 邮件测试
+email = "run --example send_email_demo -p third-party-services"
+
+# 构建所有模块
+build-all = "build --workspace"
+
+# 测试所有模块
+test-all = "test --workspace"
+
+# 检查所有模块
+check-all = "check --workspace"
+
+# 使用 lld 链接器，对大型项目支持更好，避免 PDB 文件限制
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"

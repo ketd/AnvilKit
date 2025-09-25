@@ -1,0 +1,64 @@
+[workspace]
+members = [
+    "crates/anvilkit-core",
+]
+
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["AnvilKit Contributors"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ketd/AnvilKit"
+homepage = "https://github.com/ketd/AnvilKit"
+documentation = "https://docs.rs/anvilkit"
+keywords = ["gamedev", "engine", "ecs", "graphics", "rust"]
+categories = ["game-development", "graphics", "rendering"]
+rust-version = "1.70"
+
+[workspace.dependencies]
+# Core dependencies
+bevy_ecs = "0.12"
+glam = { version = "0.24", features = ["serde"] }
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+
+# Rendering dependencies
+wgpu = "0.18"
+winit = "0.29"
+bytemuck = { version = "1.14", features = ["derive"] }
+image = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
+
+# Physics dependencies
+rapier2d = "0.18"
+rapier3d = "0.18"
+
+# Audio dependencies
+kira = "0.8"
+
+# Asset loading
+gltf = "1.4"
+
+# Development tools
+egui = "0.24"
+egui-wgpu = "0.24"
+egui-winit = "0.24"
+
+# Utility
+anyhow = "1.0"
+futures-lite = "2.0"
+pollster = "0.3"
+
+# Testing
+approx = "0.5"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
