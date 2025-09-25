@@ -51,6 +51,7 @@ use std::time::{Duration, Instant};
 /// }
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::system::Resource))]
 pub struct Time {
     /// 应用启动时的时间点
     startup_time: Instant,

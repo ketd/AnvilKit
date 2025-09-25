@@ -1,0 +1,39 @@
+[package]
+name = "anvilkit-ecs"
+version = "0.1.0"
+edition = "2021"
+authors = ["AnvilKit Contributors"]
+description = "AnvilKit ECS 模块 - 基于 Bevy ECS 的高性能实体组件系统"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ketd/AnvilKit"
+keywords = ["gamedev", "ecs", "bevy", "entity", "component"]
+categories = ["game-development", "data-structures"]
+
+[dependencies]
+# 核心依赖
+anvilkit-core = { path = "../anvilkit-core", features = ["bevy_ecs"] }
+bevy_ecs = "0.14"
+
+# 数学库
+glam = { workspace = true }
+
+# 错误处理
+thiserror = { workspace = true }
+
+# 序列化支持（可选）
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+# 测试依赖
+approx = "0.5"
+
+[features]
+default = []
+# 序列化支持
+serde = ["dep:serde", "anvilkit-core/serde", "bevy_ecs/serialize"]
+# 调试功能
+debug = []
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

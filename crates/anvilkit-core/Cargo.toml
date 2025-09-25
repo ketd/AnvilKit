@@ -16,6 +16,7 @@ description = "AnvilKit 游戏引擎的核心类型、数学库和时间系统"
 glam = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true, optional = true }
+bevy_ecs = { workspace = true, optional = true }
 
 [features]
 default = []
@@ -23,6 +24,8 @@ default = []
 serde = ["dep:serde", "glam/serde"]
 # 启用调试功能
 debug = []
+# Bevy ECS 集成
+bevy_ecs = ["dep:bevy_ecs"]
 
 [dev-dependencies]
 approx = "0.5"

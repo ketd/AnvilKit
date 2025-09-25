@@ -46,6 +46,7 @@ use crate::error::{AnvilKitError, Result};
 /// `Transform` 实现了 `Send` 和 `Sync`，可以安全地在线程间传递。
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::component::Component))]
 pub struct Transform {
     /// 世界空间中的位置
     pub translation: Vec3,
@@ -405,6 +406,7 @@ impl Transform {
 /// 它使用 4x4 矩阵存储，以提供高效的变换操作。
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::component::Component))]
 pub struct GlobalTransform(pub Mat4);
 
 impl Default for GlobalTransform {
