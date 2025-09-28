@@ -41,8 +41,6 @@
 //! ```
 
 use bevy_ecs::prelude::*;
-use glam::Vec3;
-
 // 重新导出 anvilkit-core 的变换类型
 pub use anvilkit_core::math::{Transform, GlobalTransform};
 

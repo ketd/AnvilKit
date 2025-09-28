@@ -1,0 +1,49 @@
+[package]
+name = "anvilkit-render"
+version = "0.1.0"
+edition = "2021"
+authors = ["AnvilKit Contributors"]
+description = "AnvilKit 渲染系统 - 基于 wgpu 和 winit 的跨平台图形渲染模块"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ketd/AnvilKit"
+keywords = ["gamedev", "graphics", "rendering", "wgpu", "winit"]
+categories = ["game-development", "graphics", "rendering"]
+
+[dependencies]
+# AnvilKit 内部依赖
+anvilkit-core = { path = "../anvilkit-core", features = ["bevy_ecs"] }
+anvilkit-ecs = { path = "../anvilkit-ecs" }
+
+# 图形渲染核心
+wgpu = "0.19"
+winit = "0.29"
+
+# 异步运行时
+pollster = "0.3"
+
+# 数学库
+glam = { workspace = true }
+
+# 日志记录
+log = "0.4"
+
+# 序列化支持（可选）
+# serde = { workspace = true, optional = true }
+
+# 调试工具（可选）
+# wgpu-profiler = { version = "0.15", optional = true }
+
+[features]
+default = []
+
+# 序列化支持
+# serde = ["dep:serde", "anvilkit-core/serde", "glam/serde"]
+
+# 调试和性能分析
+debug = []
+
+# 开发模式特性
+dev = ["debug"]
+
+[dev-dependencies]
+env_logger = "0.10"
