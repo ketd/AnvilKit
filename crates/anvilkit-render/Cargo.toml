@@ -13,16 +13,23 @@ categories = ["game-development", "graphics", "rendering"]
 # AnvilKit 内部依赖
 anvilkit-core = { path = "../anvilkit-core", features = ["bevy_ecs"] }
 anvilkit-ecs = { path = "../anvilkit-ecs" }
+anvilkit-assets = { path = "../anvilkit-assets" }
+
+# ECS 框架（derive 宏需要直接引用）
+bevy_ecs = "0.14"
 
 # 图形渲染核心
 wgpu = "0.19"
-winit = "0.29"
+winit = "0.30"
 
 # 异步运行时
 pollster = "0.3"
 
 # 数学库
 glam = { workspace = true }
+
+# 安全的内存布局转换（顶点数据）
+bytemuck = { version = "1", features = ["derive"] }
 
 # 日志记录
 log = "0.4"
@@ -47,3 +54,11 @@ dev = ["debug"]
 
 [dev-dependencies]
 env_logger = "0.10"
+
+[[example]]
+name = "hello_ecs"
+path = "../../examples/hello_ecs.rs"
+
+[[example]]
+name = "hello_pbr_ecs"
+path = "../../examples/hello_pbr_ecs.rs"

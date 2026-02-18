@@ -20,9 +20,10 @@
 //! 
 //! ```rust
 //! use anvilkit_ecs::prelude::*;
-//! 
+//! use glam::Vec3;
+//!
 //! let mut world = World::new();
-//! 
+//!
 //! // 创建父实体
 //! let parent = world.spawn((
 //!     Transform::from_translation(Vec3::new(10.0, 0.0, 0.0)),
@@ -437,7 +438,7 @@ impl TransformHierarchy {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use glam::Vec3;
 
     #[test]
     fn test_parent_component() {
@@ -543,13 +544,127 @@ mod tests {
         let child1 = world.spawn_empty().id();
         let child2 = world.spawn_empty().id();
         let child3 = world.spawn_empty().id();
-        
+
         let children = Children::new(vec![child1, child2, child3]);
         assert_eq!(children.first(), Some(child1));
         assert_eq!(children.last(), Some(child3));
-        
+
         let empty_children = Children::empty();
         assert_eq!(empty_children.first(), None);
         assert_eq!(empty_children.last(), None);
+    }
+
+    #[test]
+    fn test_children_push_duplicate() {
+        let mut world = World::new();
+        let child = world.spawn_empty().id();
+
+        let mut children = Children::empty();
+        children.push(child);
+        children.push(child); // duplicate add
+
+        assert_eq!(children.len(), 1); // should not have duplicates
+    }
+
+    #[test]
+    fn test_children_remove_nonexistent() {
+        let mut world = World::new();
+        let child = world.spawn_empty().id();
+        let other = world.spawn_empty().id();
+
+        let mut children = Children::new(vec![child]);
+        children.remove(other); // remove non-existent entity
+
+        assert_eq!(children.len(), 1); // should not change
+    }
+
+    #[test]
+    fn test_children_default() {
+        let children = Children::default();
+        assert!(children.is_empty());
+        assert_eq!(children.len(), 0);
+        assert_eq!(children.first(), None);
+        assert_eq!(children.last(), None);
+    }
+
+    #[test]
+    fn test_transform_hierarchy_deep_ancestors() {
+        let mut world = World::new();
+
+        let root = world.spawn((
+            Transform::default(),
+            GlobalTransform::default(),
+        )).id();
+
+        let mid = world.spawn((
+            Transform::default(),
+            GlobalTransform::default(),
+            Parent::new(root),
+        )).id();
+
+        let leaf = world.spawn((
+            Transform::default(),
+            GlobalTransform::default(),
+            Parent::new(mid),
+        )).id();
+
+        let ancestors = TransformHierarchy::get_ancestors(&world, leaf);
+        assert_eq!(ancestors.len(), 2);
+        assert_eq!(ancestors[0], mid);
+        assert_eq!(ancestors[1], root);
+    }
+
+    #[test]
+    fn test_transform_hierarchy_descendants() {
+        let mut world = World::new();
+
+        let child1 = world.spawn_empty().id();
+        let child2 = world.spawn_empty().id();
+
+        let _parent = world.spawn((
+            Transform::default(),
+            GlobalTransform::default(),
+            Children::new(vec![child1, child2]),
+        )).id();
+
+        let descendants = TransformHierarchy::get_descendants(&world, _parent);
+        assert_eq!(descendants.len(), 2);
+        assert!(descendants.contains(&child1));
+        assert!(descendants.contains(&child2));
+    }
+
+    #[test]
+    fn test_transform_hierarchy_no_descendants() {
+        let mut world = World::new();
+
+        let entity = world.spawn((
+            Transform::default(),
+            GlobalTransform::default(),
+        )).id();
+
+        let descendants = TransformHierarchy::get_descendants(&world, entity);
+        assert!(descendants.is_empty());
+    }
+
+    #[test]
+    fn test_parent_clone() {
+        let mut world = World::new();
+        let entity = world.spawn_empty().id();
+
+        let parent = Parent::new(entity);
+        let parent_copy = parent;
+        assert_eq!(parent, parent_copy);
+    }
+
+    #[test]
+    fn test_children_iter() {
+        let mut world = World::new();
+        let c1 = world.spawn_empty().id();
+        let c2 = world.spawn_empty().id();
+        let c3 = world.spawn_empty().id();
+
+        let children = Children::new(vec![c1, c2, c3]);
+        let collected: Vec<_> = children.iter().copied().collect();
+        assert_eq!(collected, vec![c1, c2, c3]);
     }
 }

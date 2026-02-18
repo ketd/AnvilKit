@@ -495,18 +495,54 @@ mod tests {
     #[test]
     fn test_layer_sorting_system() {
         let mut app = App::new();
-        
+
         // 创建不同层级的实体
         app.world.spawn(Layer::new(3));
         app.world.spawn(Layer::new(1));
         app.world.spawn(Layer::new(2));
-        
+
         // 添加层级排序系统
         app.add_systems(AnvilKitSchedule::Update, UtilitySystems::layer_sorting_system);
-        
+
         // 执行更新
         app.update();
-        
+
         // 验证系统执行（通过日志输出验证，这里只是确保不崩溃）
+    }
+
+    #[test]
+    fn test_system_with_multiple_components() {
+        use crate::component::Tag;
+
+        let mut world = World::new();
+
+        world.spawn((Name::new("entity1"), Tag::new("player"), Layer::new(1)));
+        world.spawn((Name::new("entity2"), Tag::new("enemy"), Layer::new(2)));
+        world.spawn((Name::new("entity3"), Tag::new("enemy"), Layer::new(3)));
+
+        let mut count = 0;
+        let mut query = world.query::<(&Name, &Tag)>();
+        for (_name, _tag) in query.iter(&world) {
+            count += 1;
+        }
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn test_visibility_filter() {
+        let mut world = World::new();
+
+        world.spawn((Name::new("visible"), Visibility::Visible));
+        world.spawn((Name::new("hidden"), Visibility::Hidden));
+        world.spawn((Name::new("also_visible"), Visibility::Visible));
+
+        let mut visible_count = 0;
+        let mut query = world.query::<(&Name, &Visibility)>();
+        for (_name, vis) in query.iter(&world) {
+            if vis.is_visible() {
+                visible_count += 1;
+            }
+        }
+        assert_eq!(visible_count, 2);
     }
 }

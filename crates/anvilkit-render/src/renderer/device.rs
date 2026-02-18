@@ -4,12 +4,12 @@
 
 use std::sync::Arc;
 use wgpu::{
-    Instance, Adapter, Device, Queue, Surface, SurfaceConfiguration,
+    Instance, Adapter, Device, Queue, Surface,
     DeviceDescriptor, Features, Limits, PowerPreference, RequestAdapterOptions,
     InstanceDescriptor, Backends, TextureFormat,
 };
 use winit::window::Window;
-use log::{info, warn, error, debug};
+use log::{info, debug};
 
 use anvilkit_core::error::{AnvilKitError, Result};
 
@@ -141,12 +141,12 @@ impl RenderDevice {
     /// # 返回
     /// 
     /// 成功时返回 Surface，失败时返回错误
-    fn create_surface(instance: &Instance, window: &Arc<Window>) -> Result<Surface> {
+    fn create_surface<'w>(instance: &Instance, window: &'w Arc<Window>) -> Result<Surface<'w>> {
         debug!("创建窗口表面");
-        
+
         let surface = instance.create_surface(window.clone())
-            .map_err(|e| AnvilKitError::Render(format!("创建表面失败: {}", e)))?;
-        
+            .map_err(|e| AnvilKitError::render(format!("创建表面失败: {}", e)))?;
+
         Ok(surface)
     }
     
@@ -160,7 +160,7 @@ impl RenderDevice {
     /// # 返回
     /// 
     /// 成功时返回 Adapter，失败时返回错误
-    async fn request_adapter(instance: &Instance, surface: &Surface) -> Result<Adapter> {
+    async fn request_adapter(instance: &Instance, surface: &Surface<'_>) -> Result<Adapter> {
         debug!("请求 GPU 适配器");
         
         let adapter = instance.request_adapter(&RequestAdapterOptions {
@@ -168,7 +168,7 @@ impl RenderDevice {
             compatible_surface: Some(surface),
             force_fallback_adapter: false,
         }).await
-        .ok_or_else(|| AnvilKitError::Render("未找到兼容的 GPU 适配器".to_string()))?;
+        .ok_or_else(|| AnvilKitError::render("未找到兼容的 GPU 适配器".to_string()))?;
         
         let info = adapter.get_info();
         info!("选择的 GPU 适配器: {} ({:?})", info.name, info.backend);
@@ -196,7 +196,7 @@ impl RenderDevice {
             },
             None, // 不使用跟踪路径
         ).await
-        .map_err(|e| AnvilKitError::Render(format!("创建设备失败: {}", e)))?;
+        .map_err(|e| AnvilKitError::render(format!("创建设备失败: {}", e)))?;
         
         info!("GPU 设备和队列创建成功");
         
@@ -360,12 +360,12 @@ impl RenderDevice {
     /// ```rust,no_run
     /// # use anvilkit_render::renderer::RenderDevice;
     /// # use wgpu::Surface;
-    /// # async fn example(device: &RenderDevice, surface: &Surface) {
+    /// # async fn example(device: &RenderDevice, surface: &Surface<'_>) {
     /// let format = device.get_preferred_format(surface);
     /// println!("首选格式: {:?}", format);
     /// # }
     /// ```
-    pub fn get_preferred_format(&self, surface: &Surface) -> TextureFormat {
+    pub fn get_preferred_format(&self, surface: &Surface<'_>) -> TextureFormat {
         surface.get_capabilities(&self.adapter).formats[0]
     }
 }
@@ -385,9 +385,26 @@ mod tests {
     fn test_feature_support() {
         // 创建一个模拟的设备用于测试
         let features = Features::empty();
-        
+
         // 测试特性检查逻辑
         assert!(!features.contains(Features::TIMESTAMP_QUERY));
         assert!(features.is_empty());
+    }
+
+    #[test]
+    fn test_instance_backends() {
+        let instance = Instance::new(InstanceDescriptor {
+            backends: Backends::all(),
+            ..Default::default()
+        });
+        // Instance should be created successfully
+        let _ = instance;
+    }
+
+    #[test]
+    fn test_device_limits_defaults() {
+        let limits = Limits::default();
+        assert!(limits.max_texture_dimension_2d > 0);
+        assert!(limits.max_bind_groups > 0);
     }
 }

@@ -479,8 +479,107 @@ mod tests {
     fn test_error_with_source() {
         let source_error = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "权限不足");
         let error = AnvilKitError::render_with_source("渲染初始化失败", source_error);
-        
+
         assert!(std::error::Error::source(&error).is_some());
         assert_eq!(error.category(), ErrorCategory::Render);
+    }
+
+    #[test]
+    fn test_all_error_variants() {
+        // 测试每种错误变体的创建和类别
+        let errors = vec![
+            (AnvilKitError::render("test"), ErrorCategory::Render),
+            (AnvilKitError::physics("test"), ErrorCategory::Physics),
+            (AnvilKitError::asset("test"), ErrorCategory::Asset),
+            (AnvilKitError::audio("test"), ErrorCategory::Audio),
+            (AnvilKitError::input("test"), ErrorCategory::Input),
+            (AnvilKitError::ecs("test"), ErrorCategory::Ecs),
+            (AnvilKitError::window("test"), ErrorCategory::Window),
+            (AnvilKitError::config("test"), ErrorCategory::Config),
+            (AnvilKitError::network("test"), ErrorCategory::Network),
+            (AnvilKitError::serialization("test"), ErrorCategory::Serialization),
+            (AnvilKitError::generic("test"), ErrorCategory::Generic),
+        ];
+
+        for (error, expected_category) in errors {
+            assert_eq!(error.category(), expected_category);
+            assert_eq!(error.message(), "test");
+            assert!(error.is_category(expected_category));
+        }
+    }
+
+    #[test]
+    fn test_error_display_format() {
+        let error = AnvilKitError::render("GPU 初始化失败");
+        let display = format!("{}", error);
+        assert!(display.contains("渲染错误"));
+        assert!(display.contains("GPU 初始化失败"));
+    }
+
+    #[test]
+    fn test_error_debug_format() {
+        let error = AnvilKitError::physics("碰撞检测溢出");
+        let debug = format!("{:?}", error);
+        assert!(debug.contains("Physics"));
+    }
+
+    #[test]
+    fn test_config_error_with_key() {
+        let error = AnvilKitError::config_with_key("无效的分辨率", "window.resolution");
+        if let AnvilKitError::Config { key, message, .. } = &error {
+            assert_eq!(key.as_ref().unwrap(), "window.resolution");
+            assert_eq!(message, "无效的分辨率");
+        } else {
+            panic!("Expected Config error");
+        }
+    }
+
+    #[test]
+    fn test_error_context_chaining() {
+        let original = AnvilKitError::asset("纹理加载失败");
+        let with_ctx = original.with_context("初始化场景时");
+
+        // with_context 在非 Generic 错误上会创建一个新的 Generic 错误包裹源错误
+        assert_eq!(with_ctx.category(), ErrorCategory::Generic);
+        assert!(std::error::Error::source(&with_ctx).is_some());
+    }
+
+    #[test]
+    fn test_error_generic_context_chaining() {
+        // Generic 错误的 with_context 不会嵌套，而是拼接消息
+        let original = AnvilKitError::generic("底层错误");
+        let with_ctx = original.with_context("上层调用");
+
+        assert_eq!(with_ctx.category(), ErrorCategory::Generic);
+        assert!(with_ctx.message().contains("上层调用"));
+        assert!(with_ctx.message().contains("底层错误"));
+    }
+
+    #[test]
+    fn test_all_category_display() {
+        let categories = vec![
+            (ErrorCategory::Render, "渲染"),
+            (ErrorCategory::Physics, "物理"),
+            (ErrorCategory::Asset, "资源"),
+            (ErrorCategory::Audio, "音频"),
+            (ErrorCategory::Input, "输入"),
+            (ErrorCategory::Ecs, "ECS"),
+            (ErrorCategory::Window, "窗口"),
+            (ErrorCategory::Config, "配置"),
+            (ErrorCategory::Network, "网络"),
+            (ErrorCategory::Io, "I/O"),
+            (ErrorCategory::Serialization, "序列化"),
+            (ErrorCategory::Generic, "通用"),
+        ];
+
+        for (category, expected_display) in categories {
+            assert_eq!(category.to_string(), expected_display);
+        }
+    }
+
+    #[test]
+    fn test_error_is_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<AnvilKitError>();
     }
 }

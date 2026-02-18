@@ -492,4 +492,136 @@ mod tests {
         assert_eq!(rect.min, Vec2::ZERO);
         assert_eq!(rect.max, Vec2::new(10.0, 10.0));
     }
+
+    #[test]
+    fn test_rect_zero() {
+        let rect = Rect::ZERO;
+        assert_eq!(rect.width(), 0.0);
+        assert_eq!(rect.height(), 0.0);
+        assert_eq!(rect.area(), 0.0);
+        assert!(rect.contains(Vec2::ZERO));
+    }
+
+    #[test]
+    fn test_rect_from_position_size() {
+        let rect = Rect::from_position_size(Vec2::new(2.0, 3.0), Vec2::new(4.0, 5.0));
+        assert_eq!(rect.min, Vec2::new(2.0, 3.0));
+        assert_eq!(rect.max, Vec2::new(6.0, 8.0));
+        assert_eq!(rect.width(), 4.0);
+        assert_eq!(rect.height(), 5.0);
+    }
+
+    #[test]
+    fn test_rect_perimeter() {
+        let rect = Rect::new(Vec2::ZERO, Vec2::new(3.0, 4.0));
+        assert_eq!(rect.perimeter(), 14.0);
+    }
+
+    #[test]
+    fn test_rect_no_intersection() {
+        let rect1 = Rect::new(Vec2::ZERO, Vec2::new(1.0, 1.0));
+        let rect2 = Rect::new(Vec2::new(5.0, 5.0), Vec2::new(6.0, 6.0));
+        assert!(!rect1.intersects(&rect2));
+        assert!(rect1.intersection(&rect2).is_none());
+    }
+
+    #[test]
+    fn test_rect_expand_to_include() {
+        let mut rect = Rect::new(Vec2::new(1.0, 1.0), Vec2::new(3.0, 3.0));
+        rect.expand_to_include(Vec2::new(5.0, 0.0));
+        assert_eq!(rect.min, Vec2::new(1.0, 0.0));
+        assert_eq!(rect.max, Vec2::new(5.0, 3.0));
+    }
+
+    #[test]
+    fn test_rect_expand_negative() {
+        let rect = Rect::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0));
+        let contracted = rect.expand(-2.0);
+        assert_eq!(contracted.min, Vec2::new(2.0, 2.0));
+        assert_eq!(contracted.max, Vec2::new(8.0, 8.0));
+    }
+
+    #[test]
+    fn test_rect_is_valid() {
+        let valid = Rect::new(Vec2::ZERO, Vec2::ONE);
+        assert!(valid.is_valid());
+
+        let also_valid = Rect::ZERO;
+        assert!(also_valid.is_valid());
+    }
+
+    #[test]
+    fn test_circle_negative_radius() {
+        let circle = Circle::new(Vec2::ZERO, -5.0);
+        assert_eq!(circle.radius, 0.0); // 负半径被钳制为0
+    }
+
+    #[test]
+    fn test_circle_zero_radius() {
+        let circle = Circle::new(Vec2::new(1.0, 1.0), 0.0);
+        assert_eq!(circle.area(), 0.0);
+        assert_eq!(circle.circumference(), 0.0);
+        assert!(circle.contains(Vec2::new(1.0, 1.0))); // 中心点仍被包含
+    }
+
+    #[test]
+    fn test_circle_bounding_rect() {
+        let circle = Circle::new(Vec2::new(5.0, 5.0), 3.0);
+        let bounding = circle.bounding_rect();
+        assert_eq!(bounding.min, Vec2::new(2.0, 2.0));
+        assert_eq!(bounding.max, Vec2::new(8.0, 8.0));
+    }
+
+    #[test]
+    fn test_circle_touching() {
+        // 两个圆恰好相切
+        let c1 = Circle::new(Vec2::ZERO, 3.0);
+        let c2 = Circle::new(Vec2::new(6.0, 0.0), 3.0);
+        assert!(c1.intersects(&c2)); // 相切也算相交
+    }
+
+    #[test]
+    fn test_bounds3d_intersection() {
+        let b1 = Bounds3D::new(Vec3::ZERO, Vec3::splat(5.0));
+        let b2 = Bounds3D::new(Vec3::splat(3.0), Vec3::splat(8.0));
+
+        let intersection = b1.intersection(&b2).unwrap();
+        assert_eq!(intersection.min, Vec3::splat(3.0));
+        assert_eq!(intersection.max, Vec3::splat(5.0));
+    }
+
+    #[test]
+    fn test_bounds3d_no_intersection() {
+        let b1 = Bounds3D::new(Vec3::ZERO, Vec3::ONE);
+        let b2 = Bounds3D::new(Vec3::splat(5.0), Vec3::splat(6.0));
+        assert!(!b1.intersects(&b2));
+        assert!(b1.intersection(&b2).is_none());
+    }
+
+    #[test]
+    fn test_bounds3d_union() {
+        let b1 = Bounds3D::new(Vec3::ZERO, Vec3::splat(2.0));
+        let b2 = Bounds3D::new(Vec3::splat(3.0), Vec3::splat(5.0));
+        let union = b1.union(&b2);
+        assert_eq!(union.min, Vec3::ZERO);
+        assert_eq!(union.max, Vec3::splat(5.0));
+    }
+
+    #[test]
+    fn test_bounds3d_expand_to_include() {
+        let mut bounds = Bounds3D::new(Vec3::ONE, Vec3::splat(3.0));
+        bounds.expand_to_include(Vec3::new(-1.0, 5.0, 2.0));
+        assert_eq!(bounds.min, Vec3::new(-1.0, 1.0, 1.0));
+        assert_eq!(bounds.max, Vec3::new(3.0, 5.0, 3.0));
+    }
+
+    #[test]
+    fn test_bounds3d_contains_boundary() {
+        let bounds = Bounds3D::new(Vec3::ZERO, Vec3::splat(10.0));
+        // 边界上的点
+        assert!(bounds.contains(Vec3::ZERO));
+        assert!(bounds.contains(Vec3::splat(10.0)));
+        // 刚刚超出
+        assert!(!bounds.contains(Vec3::new(10.001, 5.0, 5.0)));
+    }
 }

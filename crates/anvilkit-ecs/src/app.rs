@@ -66,6 +66,8 @@ pub struct App {
     pub world: World,
     /// 是否应该退出应用
     should_exit: bool,
+    /// Startup 是否已经运行
+    has_started: bool,
 }
 
 impl Default for App {
@@ -93,6 +95,7 @@ impl App {
         Self {
             world,
             should_exit: false,
+            has_started: false,
         }
     }
 
@@ -228,8 +231,16 @@ impl App {
     /// }
     /// ```
     pub fn update(&mut self) {
-        // 直接运行主调度器
-        self.world.run_schedule(AnvilKitSchedule::Update);
+        // 首次调用运行 Startup
+        if !self.has_started {
+            self.has_started = true;
+            let _ = self.world.try_run_schedule(AnvilKitSchedule::Startup);
+        }
+
+        // 每帧运行 PreUpdate → Update → PostUpdate
+        let _ = self.world.try_run_schedule(AnvilKitSchedule::PreUpdate);
+        let _ = self.world.try_run_schedule(AnvilKitSchedule::Update);
+        let _ = self.world.try_run_schedule(AnvilKitSchedule::PostUpdate);
     }
 
     /// 标记应用应该退出
@@ -330,8 +341,43 @@ mod tests {
     fn test_app_exit() {
         let mut app = App::new();
         assert!(!app.should_exit());
-        
+
         app.exit();
         assert!(app.should_exit());
+    }
+
+    #[test]
+    fn test_app_multiple_updates() {
+        let mut app = App::new();
+        app.add_plugins(AnvilKitEcsPlugin);
+        for _ in 0..10 {
+            app.update();
+        }
+        // Should not panic after multiple updates
+    }
+
+    #[test]
+    fn test_app_resource_overwrite() {
+        let mut app = App::new();
+        app.insert_resource(TestResource("first".to_string()));
+
+        let resource = app.world.get_resource::<TestResource>().unwrap();
+        assert_eq!(resource.0, "first");
+
+        app.insert_resource(TestResource("second".to_string()));
+        let resource = app.world.get_resource::<TestResource>().unwrap();
+        assert_eq!(resource.0, "second");
+    }
+
+    #[test]
+    fn test_app_init_resource_default() {
+        #[derive(Resource, Default, PartialEq, Debug)]
+        struct DefaultResource(String);
+
+        let mut app = App::new();
+        app.init_resource::<DefaultResource>();
+
+        let resource = app.world.get_resource::<DefaultResource>().unwrap();
+        assert_eq!(*resource, DefaultResource::default());
     }
 }

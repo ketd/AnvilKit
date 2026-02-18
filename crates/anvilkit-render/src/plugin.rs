@@ -1,30 +1,25 @@
 //! # 渲染插件系统
-//! 
+//!
 //! 提供与 AnvilKit ECS 系统的集成，实现渲染功能的插件化。
 
 use anvilkit_ecs::prelude::*;
-use anvilkit_core::error::{AnvilKitError, Result};
-use log::{info, warn, error, debug};
+use log::info;
 
-use crate::window::{RenderApp, WindowConfig};
+use crate::window::WindowConfig;
+use crate::renderer::assets::{MeshHandle, MaterialHandle, RenderAssets};
+use crate::renderer::draw::{ActiveCamera, DrawCommand, DrawCommandList, SceneLights, MaterialParams};
+use crate::renderer::state::RenderState;
 
 /// 渲染插件
-/// 
+///
 /// 将渲染系统集成到 AnvilKit ECS 应用中的插件。
-/// 
-/// # 设计理念
-/// 
-/// - **插件化**: 作为 ECS 插件提供渲染功能
-/// - **资源管理**: 自动管理渲染相关的资源和组件
-/// - **系统集成**: 与 ECS 系统调度器无缝集成
-/// - **配置灵活**: 支持自定义窗口和渲染配置
-/// 
+///
 /// # 示例
-/// 
+///
 /// ```rust,no_run
 /// use anvilkit_render::prelude::*;
 /// use anvilkit_ecs::prelude::*;
-/// 
+///
 /// // 创建应用并添加渲染插件
 /// let mut app = App::new();
 /// app.add_plugins(RenderPlugin::default())
@@ -46,51 +41,43 @@ impl Default for RenderPlugin {
 
 impl RenderPlugin {
     /// 创建新的渲染插件
-    /// 
+    ///
     /// # 示例
-    /// 
+    ///
     /// ```rust
     /// use anvilkit_render::plugin::RenderPlugin;
-    /// 
+    ///
     /// let plugin = RenderPlugin::new();
     /// ```
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// 设置窗口配置
-    /// 
-    /// # 参数
-    /// 
-    /// - `config`: 窗口配置
-    /// 
+    ///
     /// # 示例
-    /// 
+    ///
     /// ```rust
     /// use anvilkit_render::prelude::*;
-    /// 
+    ///
     /// let config = WindowConfig::new()
     ///     .with_title("我的游戏")
     ///     .with_size(1920, 1080);
-    /// 
+    ///
     /// let plugin = RenderPlugin::new().with_window_config(config);
     /// ```
     pub fn with_window_config(mut self, config: WindowConfig) -> Self {
         self.window_config = config;
         self
     }
-    
+
     /// 获取窗口配置
-    /// 
-    /// # 返回
-    /// 
-    /// 返回当前的窗口配置
-    /// 
+    ///
     /// # 示例
-    /// 
+    ///
     /// ```rust
     /// use anvilkit_render::plugin::RenderPlugin;
-    /// 
+    ///
     /// let plugin = RenderPlugin::new();
     /// let config = plugin.window_config();
     /// assert_eq!(config.title, "AnvilKit Application");
@@ -103,48 +90,41 @@ impl RenderPlugin {
 impl Plugin for RenderPlugin {
     fn build(&self, app: &mut App) {
         info!("构建渲染插件");
-        
-        // 添加渲染相关的资源
+
+        // 添加渲染配置资源
         app.insert_resource(RenderConfig {
             window_config: self.window_config.clone(),
         });
-        
-        // 添加渲染相关的组件
-        app.register_component::<RenderComponent>();
-        app.register_component::<CameraComponent>();
-        app.register_component::<MeshComponent>();
-        app.register_component::<MaterialComponent>();
-        
-        // 添加渲染系统
+
+        // 注册 ECS 资源
+        app.init_resource::<ActiveCamera>();
+        app.init_resource::<DrawCommandList>();
+        app.init_resource::<RenderAssets>();
+        app.init_resource::<SceneLights>();
+
+        // 添加真实 ECS 渲染系统到 PostUpdate 阶段
         app.add_systems(
-            AnvilKitSchedule::Update,
+            AnvilKitSchedule::PostUpdate,
             (
-                render_system,
                 camera_system,
-                mesh_system,
-            ).in_set(RenderSystemSet::Render),
+                render_extract_system.after(camera_system),
+            ),
         );
-        
-        // 添加系统集合
-        app.configure_sets(
-            AnvilKitSchedule::Update,
-            RenderSystemSet::Render.after(AnvilKitSystemSet::Update),
-        );
-        
+
         info!("渲染插件构建完成");
     }
 }
 
 /// 渲染配置资源
-/// 
+///
 /// 存储渲染系统的全局配置参数。
-/// 
+///
 /// # 示例
-/// 
+///
 /// ```rust
 /// use anvilkit_render::plugin::RenderConfig;
 /// use anvilkit_render::window::WindowConfig;
-/// 
+///
 /// let config = RenderConfig {
 ///     window_config: WindowConfig::default(),
 /// };
@@ -155,53 +135,23 @@ pub struct RenderConfig {
     pub window_config: WindowConfig,
 }
 
-/// 渲染组件
-/// 
-/// 标记实体需要进行渲染的组件。
-/// 
-/// # 示例
-/// 
-/// ```rust
-/// use anvilkit_render::plugin::RenderComponent;
-/// use anvilkit_ecs::prelude::*;
-/// 
-/// // 创建带有渲染组件的实体
-/// let mut world = World::new();
-/// let entity = world.spawn(RenderComponent::default()).id();
-/// ```
-#[derive(Debug, Clone, Component)]
-pub struct RenderComponent {
-    /// 是否可见
-    pub visible: bool,
-    /// 渲染层级
-    pub layer: u32,
-}
-
-impl Default for RenderComponent {
-    fn default() -> Self {
-        Self {
-            visible: true,
-            layer: 0,
-        }
-    }
-}
-
 /// 相机组件
-/// 
+///
 /// 定义渲染视角和投影参数的组件。
-/// 
+///
 /// # 示例
-/// 
+///
 /// ```rust
 /// use anvilkit_render::plugin::CameraComponent;
 /// use anvilkit_core::math::Transform;
 /// use glam::Vec3;
-/// 
+///
 /// let camera = CameraComponent {
 ///     fov: 60.0,
 ///     near: 0.1,
 ///     far: 1000.0,
 ///     is_active: true,
+///     aspect_ratio: 16.0 / 9.0,
 /// };
 /// ```
 #[derive(Debug, Clone, Component)]
@@ -214,6 +164,8 @@ pub struct CameraComponent {
     pub far: f32,
     /// 是否激活
     pub is_active: bool,
+    /// 宽高比（由 RenderApp 在 resize 时更新，或用户手动设置）
+    pub aspect_ratio: f32,
 }
 
 impl Default for CameraComponent {
@@ -223,183 +175,94 @@ impl Default for CameraComponent {
             near: 0.1,
             far: 1000.0,
             is_active: true,
+            aspect_ratio: 16.0 / 9.0,
         }
     }
 }
 
-/// 网格组件
-/// 
-/// 定义实体的几何网格数据。
-/// 
-/// # 示例
-/// 
-/// ```rust
-/// use anvilkit_render::plugin::MeshComponent;
-/// 
-/// let mesh = MeshComponent {
-///     mesh_id: "cube".to_string(),
-///     vertex_count: 24,
-///     index_count: 36,
-/// };
-/// ```
-#[derive(Debug, Clone, Component)]
-pub struct MeshComponent {
-    /// 网格 ID
-    pub mesh_id: String,
-    /// 顶点数量
-    pub vertex_count: u32,
-    /// 索引数量
-    pub index_count: u32,
-}
+// ---------------------------------------------------------------------------
+//  ECS 系统
+// ---------------------------------------------------------------------------
 
-/// 材质组件
-/// 
-/// 定义实体的材质和着色参数。
-/// 
-/// # 示例
-/// 
-/// ```rust
-/// use anvilkit_render::plugin::MaterialComponent;
-/// use glam::Vec3;
-/// 
-/// let material = MaterialComponent {
-///     material_id: "default".to_string(),
-///     color: Vec3::new(1.0, 1.0, 1.0),
-///     metallic: 0.0,
-///     roughness: 0.5,
-/// };
-/// ```
-#[derive(Debug, Clone, Component)]
-pub struct MaterialComponent {
-    /// 材质 ID
-    pub material_id: String,
-    /// 基础颜色
-    pub color: glam::Vec3,
-    /// 金属度
-    pub metallic: f32,
-    /// 粗糙度
-    pub roughness: f32,
-}
-
-/// 渲染系统集合
-/// 
-/// 定义渲染相关系统的执行顺序。
-/// 
-/// # 示例
-/// 
-/// ```rust
-/// use anvilkit_render::plugin::RenderSystemSet;
-/// use anvilkit_ecs::prelude::*;
-/// 
-/// // 配置系统集合
-/// // app.configure_sets(
-/// //     AnvilKitSchedule::Update,
-/// //     RenderSystemSet::Render.after(AnvilKitSystemSet::Update),
-/// // );
-/// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemSet)]
-pub enum RenderSystemSet {
-    /// 渲染系统
-    Render,
-    /// 相机系统
-    Camera,
-    /// 网格系统
-    Mesh,
-    /// 材质系统
-    Material,
-}
-
-/// 渲染系统
-/// 
-/// 执行主要的渲染逻辑。
-/// 
-/// # 参数
-/// 
-/// - `render_query`: 查询需要渲染的实体
-/// - `camera_query`: 查询相机实体
-fn render_system(
-    render_query: Query<(Entity, &RenderComponent, &Transform)>,
-    camera_query: Query<(Entity, &CameraComponent, &Transform)>,
-) {
-    // 查找激活的相机
-    let active_camera = camera_query
-        .iter()
-        .find(|(_, camera, _)| camera.is_active);
-    
-    if active_camera.is_none() {
-        return; // 没有激活的相机，跳过渲染
-    }
-    
-    // 渲染所有可见的实体
-    for (_entity, render_comp, _transform) in render_query.iter() {
-        if render_comp.visible {
-            // 执行渲染逻辑
-            debug!("渲染实体");
-        }
-    }
-}
-
-/// 相机系统
-/// 
-/// 更新相机相关的逻辑。
-/// 
-/// # 参数
-/// 
-/// - `camera_query`: 查询相机实体
+/// 相机系统 (PostUpdate)
+///
+/// 查询 (CameraComponent, Transform) → 计算 view_proj → 写入 ActiveCamera
 fn camera_system(
-    mut camera_query: Query<(Entity, &mut CameraComponent, &Transform)>,
+    camera_query: Query<(&CameraComponent, &Transform)>,
+    render_state: Option<Res<RenderState>>,
+    mut active_camera: ResMut<ActiveCamera>,
 ) {
-    for (_entity, mut _camera, _transform) in camera_query.iter_mut() {
-        // 更新相机逻辑
-        debug!("更新相机");
-    }
+    let Some((camera, transform)) = camera_query.iter().find(|(c, _)| c.is_active) else {
+        return;
+    };
+
+    // 如果 RenderState 存在，用实际 surface size 计算 aspect ratio
+    let aspect = if let Some(ref rs) = render_state {
+        let (w, h) = rs.surface_size;
+        w as f32 / h.max(1) as f32
+    } else {
+        camera.aspect_ratio
+    };
+
+    let eye = transform.translation;
+    // LH 坐标系中，前方是 +Z
+    let forward = transform.rotation * glam::Vec3::Z;
+    let target = eye + forward;
+
+    let view = glam::Mat4::look_at_lh(eye, target, glam::Vec3::Y);
+    let proj = glam::Mat4::perspective_lh(camera.fov.to_radians(), aspect, camera.near, camera.far);
+
+    active_camera.view_proj = proj * view;
+    active_camera.camera_pos = eye;
 }
 
-/// 网格系统
-/// 
-/// 管理网格资源和渲染数据。
-/// 
-/// # 参数
-/// 
-/// - `mesh_query`: 查询网格实体
-fn mesh_system(
-    mesh_query: Query<(Entity, &MeshComponent)>,
+/// 渲染提取系统 (PostUpdate, after camera_system)
+///
+/// 查询 (MeshHandle, MaterialHandle, Transform, Option<MaterialParams>) → 填充 DrawCommandList
+fn render_extract_system(
+    query: Query<(&MeshHandle, &MaterialHandle, &Transform, Option<&MaterialParams>)>,
+    mut draw_list: ResMut<DrawCommandList>,
 ) {
-    for (_entity, _mesh) in mesh_query.iter() {
-        // 更新网格逻辑
-        debug!("更新网格");
+    draw_list.clear();
+
+    for (mesh, material, transform, mat_params) in query.iter() {
+        let (metallic, roughness, normal_scale) = mat_params
+            .map(|p| (p.metallic, p.roughness, p.normal_scale))
+            .unwrap_or((0.0, 0.5, 1.0));
+
+        draw_list.push(DrawCommand {
+            mesh: *mesh,
+            material: *material,
+            model_matrix: transform.compute_matrix(),
+            metallic,
+            roughness,
+            normal_scale,
+        });
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_render_plugin_creation() {
         let plugin = RenderPlugin::new();
         assert_eq!(plugin.window_config().title, "AnvilKit Application");
     }
-    
+
     #[test]
     fn test_render_plugin_with_config() {
         let config = WindowConfig::new()
             .with_title("Test Game")
             .with_size(800, 600);
-        
+
         let plugin = RenderPlugin::new().with_window_config(config);
         assert_eq!(plugin.window_config().title, "Test Game");
         assert_eq!(plugin.window_config().width, 800);
         assert_eq!(plugin.window_config().height, 600);
     }
-    
-    #[test]
-    fn test_render_component_default() {
-        let component = RenderComponent::default();
-        assert!(component.visible);
-        assert_eq!(component.layer, 0);
-    }
-    
+
     #[test]
     fn test_camera_component_default() {
         let camera = CameraComponent::default();
@@ -407,5 +270,40 @@ mod tests {
         assert_eq!(camera.near, 0.1);
         assert_eq!(camera.far, 1000.0);
         assert!(camera.is_active);
+    }
+
+    #[test]
+    fn test_render_plugin_default_config() {
+        let plugin = RenderPlugin::new();
+        assert_eq!(plugin.window_config().title, "AnvilKit Application");
+        assert_eq!(plugin.window_config().width, 1280);
+    }
+
+    #[test]
+    fn test_render_plugin_custom_window() {
+        let config = WindowConfig::new()
+            .with_title("Custom Window")
+            .with_size(800, 600);
+        let plugin = RenderPlugin::new().with_window_config(config);
+
+        assert_eq!(plugin.window_config().title, "Custom Window");
+        assert_eq!(plugin.window_config().width, 800);
+        assert_eq!(plugin.window_config().height, 600);
+    }
+
+    #[test]
+    fn test_render_config_default() {
+        let config = RenderConfig {
+            window_config: WindowConfig::default(),
+        };
+        assert!(config.window_config.vsync);
+    }
+
+    #[test]
+    fn test_camera_component_fields() {
+        let camera = CameraComponent::default();
+        assert!(camera.fov > 0.0);
+        assert!(camera.near > 0.0);
+        assert!(camera.far > camera.near);
     }
 }

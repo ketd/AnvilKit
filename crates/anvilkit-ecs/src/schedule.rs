@@ -352,13 +352,41 @@ mod tests {
         let mut schedule = ScheduleBuilder::new()
             .add_systems_to_set(AnvilKitSystemSet::GameLogic, test_system)
             .build();
-        
+
         let mut world = World::new();
         world.init_resource::<TestResource>();
-        
+
         schedule.run(&mut world);
-        
+
         let resource = world.get_resource::<TestResource>().unwrap();
         assert_eq!(resource.value, 1);
+    }
+
+    #[test]
+    fn test_schedule_labels_distinct() {
+        use std::collections::HashSet;
+        let labels = vec![
+            format!("{:?}", AnvilKitSchedule::Startup),
+            format!("{:?}", AnvilKitSchedule::PreUpdate),
+            format!("{:?}", AnvilKitSchedule::Update),
+            format!("{:?}", AnvilKitSchedule::PostUpdate),
+            format!("{:?}", AnvilKitSchedule::Cleanup),
+        ];
+        let unique: HashSet<_> = labels.iter().collect();
+        assert_eq!(unique.len(), labels.len());
+    }
+
+    #[test]
+    fn test_system_sets_distinct() {
+        let sets = vec![
+            format!("{:?}", AnvilKitSystemSet::Input),
+            format!("{:?}", AnvilKitSystemSet::Transform),
+            format!("{:?}", AnvilKitSystemSet::Render),
+            format!("{:?}", AnvilKitSystemSet::Physics),
+            format!("{:?}", AnvilKitSystemSet::Audio),
+            format!("{:?}", AnvilKitSystemSet::UI),
+        ];
+        let unique: std::collections::HashSet<_> = sets.iter().collect();
+        assert_eq!(unique.len(), sets.len());
     }
 }

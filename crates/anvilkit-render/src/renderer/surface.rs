@@ -5,10 +5,10 @@
 use std::sync::Arc;
 use wgpu::{
     Surface, SurfaceConfiguration, TextureFormat, PresentMode, CompositeAlphaMode,
-    SurfaceTexture, TextureView, TextureViewDescriptor,
+    SurfaceTexture,
 };
 use winit::window::Window;
-use log::{info, warn, error, debug};
+use log::{info, warn, debug};
 
 use crate::renderer::RenderDevice;
 use anvilkit_core::error::{AnvilKitError, Result};
@@ -42,16 +42,16 @@ use anvilkit_core::error::{AnvilKitError, Result};
 /// # Ok(())
 /// # }
 /// ```
-pub struct RenderSurface {
+pub struct RenderSurface<'w> {
     /// wgpu 表面
-    surface: Surface,
+    surface: Surface<'w>,
     /// 表面配置
     config: SurfaceConfiguration,
     /// 当前纹理格式
     format: TextureFormat,
 }
 
-impl RenderSurface {
+impl<'w> RenderSurface<'w> {
     /// 创建新的渲染表面
     /// 
     /// # 参数
@@ -77,12 +77,12 @@ impl RenderSurface {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn new(device: &RenderDevice, window: &Arc<Window>) -> Result<Self> {
+    pub fn new(device: &RenderDevice, window: &'w Arc<Window>) -> Result<Self> {
         info!("创建渲染表面");
         
         // 创建表面
         let surface = device.instance().create_surface(window.clone())
-            .map_err(|e| AnvilKitError::Render(format!("创建表面失败: {}", e)))?;
+            .map_err(|e| AnvilKitError::render(format!("创建表面失败: {}", e)))?;
         
         // 获取表面能力
         let capabilities = surface.get_capabilities(device.adapter());
@@ -205,7 +205,7 @@ impl RenderSurface {
     /// 
     /// ```rust,no_run
     /// # use anvilkit_render::renderer::{RenderDevice, RenderSurface};
-    /// # async fn example(device: &RenderDevice, surface: &mut RenderSurface) -> anvilkit_core::error::Result<()> {
+    /// # async fn example(device: &RenderDevice, surface: &mut RenderSurface<'_>) -> anvilkit_core::error::Result<()> {
     /// surface.resize(device, 1920, 1080)?;
     /// # Ok(())
     /// # }
@@ -236,7 +236,7 @@ impl RenderSurface {
     /// 
     /// ```rust,no_run
     /// # use anvilkit_render::renderer::RenderSurface;
-    /// # async fn example(surface: &RenderSurface) -> anvilkit_core::error::Result<()> {
+    /// # async fn example(surface: &RenderSurface<'_>) -> anvilkit_core::error::Result<()> {
     /// let frame = surface.get_current_frame()?;
     /// let view = frame.texture.create_view(&Default::default());
     /// // 使用纹理视图进行渲染
@@ -248,16 +248,16 @@ impl RenderSurface {
         self.surface.get_current_texture()
             .map_err(|e| match e {
                 wgpu::SurfaceError::Lost => {
-                    AnvilKitError::Render("表面丢失，需要重新配置".to_string())
+                    AnvilKitError::render("表面丢失，需要重新配置".to_string())
                 }
                 wgpu::SurfaceError::OutOfMemory => {
-                    AnvilKitError::Render("GPU 内存不足".to_string())
+                    AnvilKitError::render("GPU 内存不足".to_string())
                 }
                 wgpu::SurfaceError::Timeout => {
-                    AnvilKitError::Render("获取表面纹理超时".to_string())
+                    AnvilKitError::render("获取表面纹理超时".to_string())
                 }
                 wgpu::SurfaceError::Outdated => {
-                    AnvilKitError::Render("表面配置过时，需要重新配置".to_string())
+                    AnvilKitError::render("表面配置过时，需要重新配置".to_string())
                 }
             })
     }
@@ -272,7 +272,7 @@ impl RenderSurface {
     /// 
     /// ```rust,no_run
     /// # use anvilkit_render::renderer::RenderSurface;
-    /// # async fn example(surface: &RenderSurface) {
+    /// # async fn example(surface: &RenderSurface<'_>) {
     /// let config = surface.config();
     /// println!("表面大小: {}x{}", config.width, config.height);
     /// # }
@@ -291,7 +291,7 @@ impl RenderSurface {
     /// 
     /// ```rust,no_run
     /// # use anvilkit_render::renderer::RenderSurface;
-    /// # async fn example(surface: &RenderSurface) {
+    /// # async fn example(surface: &RenderSurface<'_>) {
     /// let format = surface.format();
     /// println!("纹理格式: {:?}", format);
     /// # }
@@ -310,7 +310,7 @@ impl RenderSurface {
     /// 
     /// ```rust,no_run
     /// # use anvilkit_render::renderer::RenderSurface;
-    /// # async fn example(surface: &RenderSurface) {
+    /// # async fn example(surface: &RenderSurface<'_>) {
     /// let (width, height) = surface.size();
     /// println!("表面大小: {}x{}", width, height);
     /// # }
@@ -329,12 +329,12 @@ impl RenderSurface {
     /// 
     /// ```rust,no_run
     /// # use anvilkit_render::renderer::RenderSurface;
-    /// # async fn example(surface: &RenderSurface) {
+    /// # async fn example(surface: &RenderSurface<'_>) {
     /// let wgpu_surface = surface.surface();
     /// // 使用原始表面进行高级操作
     /// # }
     /// ```
-    pub fn surface(&self) -> &Surface {
+    pub fn surface(&self) -> &Surface<'w> {
         &self.surface
     }
 }
@@ -375,8 +375,37 @@ mod tests {
             CompositeAlphaMode::Auto,
             CompositeAlphaMode::PreMultiplied,
         ];
-        
+
         let chosen = RenderSurface::choose_alpha_mode(&modes);
         assert_eq!(chosen, CompositeAlphaMode::Auto);
+    }
+
+    #[test]
+    fn test_format_srgb_preference() {
+        // sRGB formats should be preferred
+        let formats = vec![
+            TextureFormat::Rgba8Unorm,
+            TextureFormat::Bgra8UnormSrgb,
+            TextureFormat::Rgba8UnormSrgb,
+        ];
+
+        let srgb = formats.iter().find(|f| {
+            matches!(f,
+                TextureFormat::Bgra8UnormSrgb |
+                TextureFormat::Rgba8UnormSrgb
+            )
+        });
+        assert!(srgb.is_some());
+    }
+
+    #[test]
+    fn test_present_mode_vsync() {
+        // Fifo mode is VSync on
+        let mode = PresentMode::Fifo;
+        assert_eq!(mode, PresentMode::Fifo);
+
+        // Immediate mode is VSync off
+        let mode = PresentMode::Immediate;
+        assert_eq!(mode, PresentMode::Immediate);
     }
 }

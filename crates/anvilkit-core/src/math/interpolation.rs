@@ -426,8 +426,104 @@ mod tests {
         // 测试超出 [0, 1] 范围的插值（外推）
         let start = 0.0;
         let end = 10.0;
-        
+
         assert_eq!(start.lerp(end, -0.5), -5.0); // 向后外推
         assert_eq!(start.lerp(end, 1.5), 15.0);  // 向前外推
+    }
+
+    #[test]
+    fn test_lerp_same_values() {
+        assert_eq!(5.0_f32.lerp(5.0, 0.5), 5.0);
+        let v = Vec3::ONE;
+        assert!(vec3_approx_eq(v.lerp(v, 0.7), Vec3::ONE, 1e-6));
+    }
+
+    #[test]
+    fn test_f64_lerp() {
+        assert_eq!(0.0_f64.lerp(100.0, 0.25), 25.0);
+        assert_eq!(0.0_f64.lerp(100.0, 0.0), 0.0);
+        assert_eq!(0.0_f64.lerp(100.0, 1.0), 100.0);
+    }
+
+    #[test]
+    fn test_vec2_lerp() {
+        let start = Vec2::ZERO;
+        let end = Vec2::new(10.0, 20.0);
+        let mid = start.lerp(end, 0.5);
+        assert!((mid.x - 5.0).abs() < 1e-6);
+        assert!((mid.y - 10.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_vec4_lerp() {
+        let start = Vec4::ZERO;
+        let end = Vec4::new(4.0, 8.0, 12.0, 16.0);
+        let mid = start.lerp(end, 0.25);
+        assert!((mid.x - 1.0).abs() < 1e-6);
+        assert!((mid.y - 2.0).abs() < 1e-6);
+        assert!((mid.z - 3.0).abs() < 1e-6);
+        assert!((mid.w - 4.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_quat_lerp() {
+        let start = Quat::IDENTITY;
+        let end = Quat::from_rotation_y(std::f32::consts::PI);
+        let mid = Lerp::lerp(&start, end, 0.0);
+        assert!(quat_approx_eq(mid, start, 1e-5));
+    }
+
+    #[test]
+    fn test_smootherstep() {
+        assert_eq!(smootherstep(0.0), 0.0);
+        assert_eq!(smootherstep(1.0), 1.0);
+        assert!((smootherstep(0.5) - 0.5).abs() < 1e-6);
+        // 比 smoothstep 在边界处更平滑
+        assert!(smootherstep(0.1) < smoothstep(0.1));
+    }
+
+    #[test]
+    fn test_smoothstep_clamping() {
+        // 超出范围应被钳制
+        assert_eq!(smoothstep(-0.5), 0.0);
+        assert_eq!(smoothstep(1.5), 1.0);
+    }
+
+    #[test]
+    fn test_remap_inverse_range() {
+        // 反向映射
+        let result = remap(0.5, 0.0, 1.0, 10.0, 0.0);
+        assert!((result - 5.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_ease_quart_boundary() {
+        assert_eq!(ease_in_quart(0.0), 0.0);
+        assert_eq!(ease_in_quart(1.0), 1.0);
+        assert_eq!(ease_out_quart(0.0), 0.0);
+        assert!((ease_out_quart(1.0) - 1.0).abs() < 1e-6);
+        assert_eq!(ease_in_out_quart(0.0), 0.0);
+        assert!((ease_in_out_quart(1.0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_ease_monotonicity() {
+        // 缓动函数在 [0,1] 范围内应单调递增（对标准缓动而言）
+        let points = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+        for window in points.windows(2) {
+            assert!(ease_in_quad(window[1]) >= ease_in_quad(window[0]));
+            assert!(ease_out_quad(window[1]) >= ease_out_quad(window[0]));
+            assert!(ease_in_out_quad(window[1]) >= ease_in_out_quad(window[0]));
+            assert!(ease_in_cubic(window[1]) >= ease_in_cubic(window[0]));
+            assert!(ease_out_cubic(window[1]) >= ease_out_cubic(window[0]));
+        }
+    }
+
+    #[test]
+    fn test_interpolate_smooth_at_boundaries() {
+        let start = 0.0_f32;
+        let end = 10.0_f32;
+        assert!((start.interpolate_smooth(end, 0.0) - 0.0).abs() < 1e-6);
+        assert!((start.interpolate_smooth(end, 1.0) - 10.0).abs() < 1e-6);
     }
 }

@@ -491,4 +491,63 @@ mod tests {
         assert_eq!(colors::BLACK, Vec4::new(0.0, 0.0, 0.0, 1.0));
         assert_eq!(colors::TRANSPARENT, Vec4::new(0.0, 0.0, 0.0, 0.0));
     }
+
+    #[test]
+    fn test_smoothstep_function() {
+        use crate::math::interpolation::smoothstep;
+
+        let result = smoothstep(0.5);
+        assert_relative_eq!(result, 0.5, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_normalize_degrees_edge_cases() {
+        assert_relative_eq!(normalize_degrees(720.0), 0.0, epsilon = 1e-6);
+        assert_relative_eq!(normalize_degrees(-360.0), 0.0, epsilon = 1e-6);
+        assert_relative_eq!(normalize_degrees(180.0), 180.0, epsilon = 1e-6);
+        assert_relative_eq!(normalize_degrees(-180.0), 180.0, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_normalize_radians_edge_cases() {
+        assert_relative_eq!(normalize_radians(0.0), 0.0, epsilon = 1e-6);
+        assert_relative_eq!(
+            normalize_radians(-std::f32::consts::PI),
+            std::f32::consts::PI,
+            epsilon = 1e-5
+        );
+    }
+
+    #[test]
+    fn test_approximately_equal_custom_epsilon() {
+        assert!(approximately_equal(1.0, 1.001, Some(0.01)));
+        assert!(!approximately_equal(1.0, 1.001, Some(0.0001)));
+    }
+
+    #[test]
+    fn test_distance_squared_performance() {
+        // 距离平方应始终等于距离的平方
+        let a = Vec2::new(1.0, 2.0);
+        let b = Vec2::new(4.0, 6.0);
+        let dist = distance_2d(a, b);
+        let dist_sq = distance_squared_2d(a, b);
+        assert_relative_eq!(dist * dist, dist_sq, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_distance_same_point() {
+        assert_eq!(distance_2d(Vec2::ONE, Vec2::ONE), 0.0);
+        assert_eq!(distance_3d(Vec3::ONE, Vec3::ONE), 0.0);
+        assert_eq!(distance_squared_2d(Vec2::ONE, Vec2::ONE), 0.0);
+        assert_eq!(distance_squared_3d(Vec3::ONE, Vec3::ONE), 0.0);
+    }
+
+    #[test]
+    fn test_precision_constants() {
+        assert!(F32_EPSILON > 0.0);
+        assert!(SMALL_NUMBER > 0.0);
+        assert!(TINY_NUMBER > 0.0);
+        assert!(SMALL_NUMBER > TINY_NUMBER);
+        assert!(F32_EPSILON < SMALL_NUMBER);
+    }
 }

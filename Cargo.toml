@@ -3,6 +3,7 @@ members = [
     "crates/anvilkit-core",
     "crates/anvilkit-ecs",
     "crates/anvilkit-render",
+    "crates/anvilkit-assets",
 ]
 
 resolver = "2"

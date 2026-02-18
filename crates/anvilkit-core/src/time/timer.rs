@@ -686,15 +686,115 @@ mod tests {
     fn test_timer_set_repeating() {
         let mut timer = Timer::from_seconds(1.0);
         timer.tick(Duration::from_secs(1));
-        
+
         assert!(timer.finished());
-        
+
         // 改为重复计时器
         timer.set_repeating(true);
         timer.tick(Duration::from_millis(1));
-        
+
         // 应该重置并继续运行
         assert!(!timer.finished());
         assert!(timer.elapsed_seconds() < 0.1);
+    }
+
+    #[test]
+    fn test_timer_from_millis() {
+        let timer = Timer::from_millis(500);
+        assert_eq!(timer.duration(), Duration::from_millis(500));
+        assert!(!timer.is_repeating());
+    }
+
+    #[test]
+    fn test_timer_repeating_from_millis() {
+        let timer = Timer::repeating_from_millis(250);
+        assert_eq!(timer.duration(), Duration::from_millis(250));
+        assert!(timer.is_repeating());
+    }
+
+    #[test]
+    fn test_timer_pause_prevents_finish() {
+        let mut timer = Timer::from_seconds(1.0);
+        timer.tick(Duration::from_millis(500));
+        timer.pause();
+        timer.tick(Duration::from_secs(10));
+
+        // 暂停期间不应完成
+        assert!(!timer.finished());
+        assert_relative_eq!(timer.percent(), 0.5, epsilon = 1e-3);
+    }
+
+    #[test]
+    fn test_timer_resume_finished_timer() {
+        let mut timer = Timer::from_seconds(1.0);
+        timer.tick(Duration::from_secs(1));
+        assert!(timer.finished());
+
+        // 对已完成的计时器调用 resume 不应有效果
+        timer.resume();
+        assert!(timer.finished());
+    }
+
+    #[test]
+    fn test_timer_pause_already_paused() {
+        let mut timer = Timer::from_seconds(1.0);
+        timer.pause();
+        timer.pause(); // 重复暂停应该是幂等的
+        assert!(timer.is_paused());
+    }
+
+    #[test]
+    fn test_timer_resume_when_running() {
+        let mut timer = Timer::from_seconds(1.0);
+        timer.resume(); // 运行时调用 resume 应该是幂等的
+        assert!(timer.is_running());
+    }
+
+    #[test]
+    fn test_timer_elapsed_seconds() {
+        let mut timer = Timer::from_seconds(2.0);
+        timer.tick(Duration::from_millis(750));
+        assert_relative_eq!(timer.elapsed_seconds(), 0.75, epsilon = 1e-3);
+    }
+
+    #[test]
+    fn test_timer_remaining_after_finish() {
+        let mut timer = Timer::from_seconds(1.0);
+        timer.tick(Duration::from_secs(2));
+        assert_eq!(timer.remaining(), Duration::ZERO);
+    }
+
+    #[test]
+    fn test_repeating_timer_rapid_ticks() {
+        let mut timer = Timer::repeating(Duration::from_millis(100));
+
+        // 多次小 tick
+        for _ in 0..20 {
+            timer.tick(Duration::from_millis(10));
+        }
+
+        // After 200ms with 100ms period, timer should have wrapped around
+        assert!(timer.elapsed_seconds() < 0.1);
+    }
+
+    #[test]
+    fn test_timer_set_duration_while_running() {
+        let mut timer = Timer::from_seconds(5.0);
+        timer.tick(Duration::from_secs(2));
+
+        // 延长 duration
+        timer.set_duration(Duration::from_secs(10));
+        assert!(!timer.finished());
+        assert_relative_eq!(timer.percent(), 0.2, epsilon = 1e-3);
+    }
+
+    #[test]
+    fn test_timer_finish_repeating() {
+        let mut timer = Timer::repeating_from_seconds(1.0);
+        timer.finish();
+
+        assert!(timer.just_finished());
+        // 重复计时器 finish 后不应进入 Finished 状态
+        assert_eq!(timer.state(), TimerState::Running);
     }
 }

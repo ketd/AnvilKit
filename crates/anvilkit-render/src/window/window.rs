@@ -4,7 +4,6 @@
 
 use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::window::{Window, WindowAttributes, Fullscreen};
-use anvilkit_core::error::{AnvilKitError, Result};
 
 /// 窗口配置
 /// 
@@ -458,7 +457,17 @@ impl WindowState {
     pub fn set_minimized(&mut self, minimized: bool) {
         self.minimized = minimized;
     }
-    
+
+    /// 检查窗口是否最大化
+    pub fn is_maximized(&self) -> bool {
+        self.maximized
+    }
+
+    /// 设置窗口最大化状态
+    pub fn set_maximized(&mut self, maximized: bool) {
+        self.maximized = maximized;
+    }
+
     /// 检查窗口是否全屏
     /// 
     /// # 返回
@@ -546,10 +555,90 @@ mod tests {
         let config = WindowConfig::new()
             .with_title("Test Window")
             .with_size(1024, 768);
-        
-        let attributes = config.to_window_attributes();
+
+        let _attributes = config.to_window_attributes();
         // 注意：无法直接测试 WindowAttributes 的内容，
         // 因为它们没有实现 PartialEq
         // 这里只是确保转换不会 panic
+    }
+
+    #[test]
+    fn test_window_config_all_builders() {
+        let config = WindowConfig::new()
+            .with_title("Test Window")
+            .with_size(1920, 1080)
+            .with_resizable(false)
+            .with_fullscreen(true)
+            .with_vsync(false)
+            .with_min_size(Some((320, 240)))
+            .with_max_size(Some((3840, 2160)));
+
+        assert_eq!(config.title, "Test Window");
+        assert_eq!(config.width, 1920);
+        assert_eq!(config.height, 1080);
+        assert!(!config.resizable);
+        assert!(config.fullscreen);
+        assert!(!config.vsync);
+        assert_eq!(config.min_size, Some((320, 240)));
+        assert_eq!(config.max_size, Some((3840, 2160)));
+    }
+
+    #[test]
+    fn test_window_config_default_values() {
+        let config = WindowConfig::new();
+        assert_eq!(config.title, "AnvilKit Application");
+        assert_eq!(config.width, 1280);
+        assert_eq!(config.height, 720);
+        assert!(config.resizable);
+        assert!(!config.fullscreen);
+        assert!(config.vsync);
+    }
+
+    #[test]
+    fn test_window_state_set_size() {
+        let mut state = WindowState::new();
+        assert_eq!(state.size(), (1280, 720));
+
+        state.set_size(1024, 768);
+        assert_eq!(state.size(), (1024, 768));
+    }
+
+    #[test]
+    fn test_window_state_scale_factor() {
+        let mut state = WindowState::new();
+        assert_eq!(state.scale_factor(), 1.0);
+
+        state.set_scale_factor(2.0);
+        assert_eq!(state.scale_factor(), 2.0);
+    }
+
+    #[test]
+    fn test_window_state_focus() {
+        let mut state = WindowState::new();
+        assert!(state.is_focused());
+
+        state.set_focused(false);
+        assert!(!state.is_focused());
+
+        state.set_focused(true);
+        assert!(state.is_focused());
+    }
+
+    #[test]
+    fn test_window_state_minimized() {
+        let mut state = WindowState::new();
+        assert!(!state.is_minimized());
+
+        state.set_minimized(true);
+        assert!(state.is_minimized());
+    }
+
+    #[test]
+    fn test_window_state_fullscreen() {
+        let mut state = WindowState::new();
+        assert!(!state.is_fullscreen());
+
+        state.set_fullscreen(true);
+        assert!(state.is_fullscreen());
     }
 }

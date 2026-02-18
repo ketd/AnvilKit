@@ -646,8 +646,148 @@ mod tests {
     fn test_finite_checks() {
         let valid_transform = Transform::from_xyz(1.0, 2.0, 3.0);
         assert!(valid_transform.is_finite());
-        
+
         let invalid_transform = Transform::from_xyz(f32::NAN, 2.0, 3.0);
         assert!(!invalid_transform.is_finite());
+    }
+
+    #[test]
+    fn test_transform_nan_input() {
+        let transform = Transform::from_xyz(f32::NAN, 0.0, 0.0);
+        assert!(!transform.is_finite());
+
+        let transform = Transform::from_xyz(f32::INFINITY, 0.0, 0.0);
+        assert!(!transform.is_finite());
+    }
+
+    #[test]
+    fn test_transform_deep_chain_precision() {
+        // 多层链式组合后的精度测试
+        let mut composed = Transform::IDENTITY;
+        let step = Transform::from_xyz(0.1, 0.0, 0.0)
+            .with_rotation(Quat::from_rotation_z(0.01));
+
+        for _ in 0..100 {
+            composed = composed.mul_transform(&step);
+        }
+
+        // 验证结果仍然是有限的
+        assert!(composed.is_finite());
+        assert!(composed.translation.is_finite());
+    }
+
+    #[test]
+    fn test_transform_inverse_roundtrip_with_rotation_and_scale() {
+        // Use uniform scale to avoid matrix decomposition errors with non-uniform scale + rotation
+        let transform = Transform::new(
+            Vec3::new(3.0, -7.0, 11.0),
+            Quat::from_euler(glam::EulerRot::YXZ, 0.5, 0.3, 0.7),
+            Vec3::splat(2.0),
+        );
+
+        let inverse = transform.inverse().unwrap();
+        let identity = transform.mul_transform(&inverse);
+
+        assert!(vec3_approx_eq(identity.translation, Vec3::ZERO, 1e-4));
+        assert!(quat_approx_eq(identity.rotation, Quat::IDENTITY, 1e-4));
+        assert!(vec3_approx_eq(identity.scale, Vec3::ONE, 1e-4));
+    }
+
+    #[test]
+    fn test_transform_from_matrix_identity() {
+        let transform = Transform::from_matrix(Mat4::IDENTITY);
+        assert!(vec3_approx_eq(transform.translation, Vec3::ZERO, 1e-6));
+        assert!(quat_approx_eq(transform.rotation, Quat::IDENTITY, 1e-6));
+        assert!(vec3_approx_eq(transform.scale, Vec3::ONE, 1e-6));
+    }
+
+    #[test]
+    fn test_transform_all_axes_inverse() {
+        // 测试每个轴为零时的逆变换错误
+        assert!(Transform::from_scale(Vec3::new(0.0, 1.0, 1.0)).inverse().is_err());
+        assert!(Transform::from_scale(Vec3::new(1.0, 0.0, 1.0)).inverse().is_err());
+        assert!(Transform::from_scale(Vec3::new(1.0, 1.0, 0.0)).inverse().is_err());
+        assert!(Transform::from_scale(Vec3::new(0.0, 0.0, 0.0)).inverse().is_err());
+    }
+
+    #[test]
+    fn test_global_transform_from_transform_conversion() {
+        let transform = Transform::from_xyz(5.0, 10.0, 15.0)
+            .with_scale(Vec3::splat(2.0));
+        let global: GlobalTransform = transform.into();
+
+        assert!(vec3_approx_eq(global.translation(), Vec3::new(5.0, 10.0, 15.0), 1e-6));
+        assert!(vec3_approx_eq(global.scale(), Vec3::splat(2.0), 1e-6));
+    }
+
+    #[test]
+    fn test_global_transform_inverse() {
+        let global = GlobalTransform::from_matrix(Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0)));
+        let inverse = global.inverse().unwrap();
+        let identity = global.mul_transform(&inverse);
+
+        assert!(vec3_approx_eq(identity.translation(), Vec3::ZERO, 1e-5));
+    }
+
+    #[test]
+    fn test_global_transform_inverse_singular() {
+        // 零矩阵不可逆
+        let global = GlobalTransform::from_matrix(Mat4::ZERO);
+        // Mat4::ZERO.inverse() 可能产生非有限值
+        let result = global.inverse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_transform_default() {
+        let transform = Transform::default();
+        assert_eq!(transform, Transform::IDENTITY);
+    }
+
+    #[test]
+    fn test_global_transform_default() {
+        let global = GlobalTransform::default();
+        assert_eq!(global, GlobalTransform::IDENTITY);
+    }
+
+    #[test]
+    fn test_transform_point_with_scale_and_rotation() {
+        let transform = Transform::from_scale(Vec3::splat(2.0))
+            .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2));
+
+        let point = Vec3::new(1.0, 0.0, 0.0);
+        let transformed = transform.transform_point(point);
+
+        // 先缩放到 (2,0,0) 再绕Z旋转90度得到 (0,2,0)
+        assert!(vec3_approx_eq(transformed, Vec3::new(0.0, 2.0, 0.0), 1e-5));
+    }
+
+    #[test]
+    fn test_transform_vector_ignores_translation() {
+        let transform = Transform::from_xyz(100.0, 200.0, 300.0);
+        let vector = Vec3::new(1.0, 0.0, 0.0);
+        let transformed = transform.transform_vector(vector);
+
+        // 向量变换应该忽略平移
+        assert!(vec3_approx_eq(transformed, Vec3::new(1.0, 0.0, 0.0), 1e-6));
+    }
+
+    #[test]
+    fn test_global_transform_transform_point() {
+        let global = GlobalTransform::from_matrix(
+            Mat4::from_translation(Vec3::new(10.0, 20.0, 30.0))
+        );
+        let point = Vec3::ZERO;
+        let result = global.transform_point(point);
+        assert!(vec3_approx_eq(result, Vec3::new(10.0, 20.0, 30.0), 1e-6));
+    }
+
+    #[test]
+    fn test_global_transform_rotation_extraction() {
+        let rotation = Quat::from_rotation_y(std::f32::consts::FRAC_PI_4);
+        let transform = Transform::from_rotation(rotation);
+        let global = GlobalTransform::from_transform(&transform);
+
+        assert!(quat_approx_eq(global.rotation(), rotation, 1e-5));
     }
 }

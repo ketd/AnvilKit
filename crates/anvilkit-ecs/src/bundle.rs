@@ -520,4 +520,41 @@ mod tests {
         let render_tag3 = world.get::<Tag>(entity3).unwrap();
         assert_eq!(render_tag3.as_str(), "mesh");
     }
+
+    #[test]
+    fn test_entity_bundle_with_tag() {
+        let bundle = EntityBundle::new("test", "default")
+            .with_tag("enemy");
+        assert_eq!(bundle.name.as_str(), "test");
+        assert!(bundle.tag.matches("enemy"));
+    }
+
+    #[test]
+    fn test_spatial_bundle_default_values() {
+        let bundle = SpatialBundle::new("default_spatial");
+        assert_eq!(bundle.name.as_str(), "default_spatial");
+        assert!(bundle.visibility.is_visible());
+        assert_eq!(bundle.layer.value(), 0);
+    }
+
+    #[test]
+    fn test_spatial_bundle_chaining() {
+        let bundle = SpatialBundle::new("chained")
+            .with_position(Vec3::new(1.0, 2.0, 3.0))
+            .with_scale(Vec3::splat(2.0))
+            .with_layer(5)
+            .with_visibility(Visibility::Hidden);
+
+        assert_eq!(bundle.transform.translation, Vec3::new(1.0, 2.0, 3.0));
+        assert_eq!(bundle.transform.scale, Vec3::splat(2.0));
+        assert_eq!(bundle.layer.value(), 5);
+        assert!(!bundle.visibility.is_visible());
+    }
+
+    #[test]
+    fn test_render_bundle_with_render_tag() {
+        let bundle = RenderBundle::new("mesh")
+            .with_render_tag("transparent");
+        assert!(bundle.render_tag.matches("transparent"));
+    }
 }

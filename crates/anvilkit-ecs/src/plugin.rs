@@ -338,8 +338,50 @@ mod tests {
     fn test_plugin_uniqueness() {
         let plugin = TestPlugin { initial_value: 0 };
         assert!(plugin.is_unique());
-        
+
         let plugin_group = PluginGroup::<TestPlugin>::new();
         assert!(!plugin_group.is_unique());
+    }
+
+    #[test]
+    fn test_plugin_build_adds_resource() {
+        struct ResourcePlugin;
+        impl Plugin for ResourcePlugin {
+            fn build(&self, app: &mut App) {
+                app.insert_resource(TestResource { value: 42 });
+            }
+            fn name(&self) -> &str {
+                "ResourcePlugin"
+            }
+        }
+
+        let mut app = App::new();
+        app.add_plugins(ResourcePlugin);
+
+        let resource = app.world.get_resource::<TestResource>().unwrap();
+        assert_eq!(resource.value, 42);
+    }
+
+    #[test]
+    fn test_plugin_default_name() {
+        struct SimplePlugin;
+        impl Plugin for SimplePlugin {
+            fn build(&self, _app: &mut App) {}
+        }
+
+        let plugin = SimplePlugin;
+        // Default name() returns the type name
+        assert!(plugin.name().contains("SimplePlugin"));
+    }
+
+    #[test]
+    fn test_plugin_default_is_unique() {
+        struct SimplePlugin;
+        impl Plugin for SimplePlugin {
+            fn build(&self, _app: &mut App) {}
+        }
+
+        let plugin = SimplePlugin;
+        assert!(plugin.is_unique()); // Default is true
     }
 }

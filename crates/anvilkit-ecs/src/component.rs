@@ -527,4 +527,73 @@ mod tests {
         let tag = Tag::new("test_tag");
         assert_eq!(format!("{}", tag), "test_tag");
     }
+
+    #[test]
+    fn test_name_empty() {
+        let name = Name::new("");
+        assert_eq!(name.as_str(), "");
+        assert_eq!(format!("{}", name), "");
+    }
+
+    #[test]
+    fn test_name_from_string() {
+        let name: Name = "test".into();
+        assert_eq!(name.as_str(), "test");
+    }
+
+    #[test]
+    fn test_tag_empty() {
+        let tag = Tag::new("");
+        assert_eq!(tag.as_str(), "");
+        assert!(!tag.matches("something"));
+    }
+
+    #[test]
+    fn test_tag_from_string() {
+        let tag: Tag = "enemy".into();
+        assert_eq!(tag.as_str(), "enemy");
+        assert!(tag.matches("enemy"));
+    }
+
+    #[test]
+    fn test_visibility_default() {
+        let vis = Visibility::default();
+        assert!(vis.is_visible());
+    }
+
+    #[test]
+    fn test_visibility_toggle_twice() {
+        let mut vis = Visibility::Visible;
+        vis.toggle();
+        vis.toggle();
+        assert!(vis.is_visible());
+    }
+
+    #[test]
+    fn test_layer_default() {
+        let layer = Layer::default();
+        assert_eq!(layer.value(), 0);
+    }
+
+    #[test]
+    fn test_layer_decrease() {
+        let mut layer = Layer::new(5);
+        layer.decrease(1);
+        assert_eq!(layer.value(), 4);
+    }
+
+    #[test]
+    fn test_layer_negative() {
+        let layer = Layer::new(-10);
+        assert_eq!(layer.value(), -10);
+    }
+
+    #[test]
+    fn test_layer_comparison() {
+        let a = Layer::new(1);
+        let b = Layer::new(2);
+        assert!(a < b);
+        assert!(b > a);
+        assert_eq!(a, Layer::new(1));
+    }
 }

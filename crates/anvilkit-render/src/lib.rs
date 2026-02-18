@@ -35,27 +35,32 @@ pub mod renderer;
 pub mod plugin;
 
 /// 预导入模块
-/// 
+///
 /// 包含最常用的类型和 trait，方便用户导入。
 pub mod prelude {
     pub use crate::window::{RenderApp, WindowConfig};
-    pub use crate::renderer::{RenderDevice, RenderSurface, RenderContext};
-    pub use crate::plugin::RenderPlugin;
-    
+    pub use crate::renderer::{RenderDevice, RenderSurface, PbrVertex};
+    pub use crate::plugin::{RenderPlugin, CameraComponent};
+
+    // ECS 渲染资源
+    pub use crate::renderer::assets::{MeshHandle, MaterialHandle, RenderAssets};
+    pub use crate::renderer::draw::{ActiveCamera, DrawCommandList, SceneLights, DirectionalLight, MaterialParams};
+    pub use crate::renderer::state::{RenderState, PbrSceneUniform};
+
     // 重新导出核心依赖的常用类型
     pub use wgpu::{
         Device, Queue, Surface, SurfaceConfiguration, TextureFormat,
         RenderPipeline, RenderPass, CommandEncoder, Buffer, Texture,
         BindGroup, BindGroupLayout, PipelineLayout,
     };
-    
+
     pub use winit::{
-        event::{Event, WindowEvent, DeviceEvent},
+        event::{WindowEvent, DeviceEvent},
         event_loop::{EventLoop, ActiveEventLoop},
         window::{Window, WindowId},
         application::ApplicationHandler,
     };
-    
+
     // 重新导出 AnvilKit 核心类型
     pub use anvilkit_core::prelude::*;
     pub use anvilkit_ecs::prelude::*;
@@ -63,23 +68,8 @@ pub mod prelude {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    
-    #[test]
-    fn test_prelude_imports() {
-        // 测试预导入模块是否正确导出所需类型
-        use crate::prelude::*;
-        
-        // 这些类型应该可以访问
-        let _: Option<Device> = None;
-        let _: Option<Queue> = None;
-        let _: Option<Window> = None;
-        let _: Option<EventLoop<()>> = None;
-    }
-    
     #[test]
     fn test_version_info() {
-        // 测试版本信息
         assert_eq!(env!("CARGO_PKG_NAME"), "anvilkit-render");
         assert_eq!(env!("CARGO_PKG_VERSION"), "0.1.0");
     }

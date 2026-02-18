@@ -6,11 +6,11 @@ use wgpu::{
     RenderPipeline, RenderPipelineDescriptor, VertexState, FragmentState,
     PrimitiveState, MultisampleState, PipelineLayoutDescriptor,
     ShaderModule, ShaderModuleDescriptor, ShaderSource,
-    VertexBufferLayout, ColorTargetState, BlendState, ColorWrites,
+    ColorTargetState, BlendState, ColorWrites,
     PrimitiveTopology, FrontFace, Face, PolygonMode,
     TextureFormat, Device,
 };
-use log::{info, warn, error, debug};
+use log::{info, debug};
 
 use crate::renderer::RenderDevice;
 use anvilkit_core::error::{AnvilKitError, Result};
@@ -54,6 +54,12 @@ pub struct RenderPipelineBuilder {
     multisample_count: u32,
     /// 标签
     label: Option<String>,
+    /// 顶点缓冲区布局
+    vertex_layouts: Vec<wgpu::VertexBufferLayout<'static>>,
+    /// 深度纹理格式（None = 不启用深度测试）
+    depth_format: Option<TextureFormat>,
+    /// Bind group 布局
+    bind_group_layouts: Vec<wgpu::BindGroupLayout>,
 }
 
 impl Default for RenderPipelineBuilder {
@@ -80,6 +86,9 @@ impl RenderPipelineBuilder {
             topology: PrimitiveTopology::TriangleList,
             multisample_count: 1,
             label: None,
+            vertex_layouts: Vec::new(),
+            depth_format: None,
+            bind_group_layouts: Vec::new(),
         }
     }
     
@@ -198,7 +207,46 @@ impl RenderPipelineBuilder {
         self.label = Some(label.into());
         self
     }
-    
+
+    /// 设置顶点缓冲区布局
+    ///
+    /// # 参数
+    ///
+    /// - `layouts`: 顶点缓冲区布局列表
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use anvilkit_render::renderer::{RenderPipelineBuilder, buffer::ColorVertex, Vertex};
+    ///
+    /// let builder = RenderPipelineBuilder::new()
+    ///     .with_vertex_layouts(vec![ColorVertex::layout()]);
+    /// ```
+    pub fn with_vertex_layouts(mut self, layouts: Vec<wgpu::VertexBufferLayout<'static>>) -> Self {
+        self.vertex_layouts = layouts;
+        self
+    }
+
+    /// 设置深度纹理格式，启用深度测试
+    ///
+    /// # 参数
+    ///
+    /// - `format`: 深度纹理格式（如 `TextureFormat::Depth32Float`）
+    pub fn with_depth_format(mut self, format: TextureFormat) -> Self {
+        self.depth_format = Some(format);
+        self
+    }
+
+    /// 设置 Bind Group 布局
+    ///
+    /// # 参数
+    ///
+    /// - `layouts`: Bind Group 布局列表（用于 Uniform Buffer、纹理等）
+    pub fn with_bind_group_layouts(mut self, layouts: Vec<wgpu::BindGroupLayout>) -> Self {
+        self.bind_group_layouts = layouts;
+        self
+    }
+
     /// 构建渲染管线
     /// 
     /// # 参数
@@ -226,14 +274,17 @@ impl RenderPipelineBuilder {
     /// ```
     pub fn build(self, device: &RenderDevice) -> Result<BasicRenderPipeline> {
         let vertex_shader = self.vertex_shader
-            .ok_or_else(|| AnvilKitError::Render("缺少顶点着色器".to_string()))?;
+            .ok_or_else(|| AnvilKitError::render("缺少顶点着色器".to_string()))?;
         
         let fragment_shader = self.fragment_shader
-            .ok_or_else(|| AnvilKitError::Render("缺少片段着色器".to_string()))?;
+            .ok_or_else(|| AnvilKitError::render("缺少片段着色器".to_string()))?;
         
         let format = self.format
-            .ok_or_else(|| AnvilKitError::Render("缺少渲染目标格式".to_string()))?;
+            .ok_or_else(|| AnvilKitError::render("缺少渲染目标格式".to_string()))?;
         
+        let bind_group_layout_refs: Vec<&wgpu::BindGroupLayout> =
+            self.bind_group_layouts.iter().collect();
+
         BasicRenderPipeline::new(
             device,
             &vertex_shader,
@@ -242,6 +293,9 @@ impl RenderPipelineBuilder {
             self.topology,
             self.multisample_count,
             self.label.as_deref(),
+            &self.vertex_layouts,
+            self.depth_format,
+            &bind_group_layout_refs,
         )
     }
 }
@@ -255,7 +309,7 @@ impl RenderPipelineBuilder {
 /// ```rust,no_run
 /// use anvilkit_render::renderer::{RenderDevice, BasicRenderPipeline};
 /// use wgpu::{TextureFormat, PrimitiveTopology};
-/// 
+///
 /// # async fn example(device: &RenderDevice) -> anvilkit_core::error::Result<()> {
 /// let pipeline = BasicRenderPipeline::new(
 ///     device,
@@ -265,6 +319,9 @@ impl RenderPipelineBuilder {
 ///     PrimitiveTopology::TriangleList,
 ///     1,
 ///     Some("Basic Pipeline"),
+///     &[],
+///     None,
+///     &[],
 /// )?;
 /// # Ok(())
 /// # }
@@ -302,6 +359,9 @@ impl BasicRenderPipeline {
         topology: PrimitiveTopology,
         multisample_count: u32,
         label: Option<&str>,
+        vertex_layouts: &[wgpu::VertexBufferLayout<'_>],
+        depth_format: Option<TextureFormat>,
+        bind_group_layouts: &[&wgpu::BindGroupLayout],
     ) -> Result<Self> {
         info!("创建基础渲染管线: {:?}", label);
         
@@ -323,7 +383,7 @@ impl BasicRenderPipeline {
         // 创建管线布局
         let layout = wgpu_device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Basic Pipeline Layout"),
-            bind_group_layouts: &[],
+            bind_group_layouts,
             push_constant_ranges: &[],
         });
         
@@ -334,7 +394,7 @@ impl BasicRenderPipeline {
             vertex: VertexState {
                 module: &vertex_shader,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers: vertex_layouts,
             },
             primitive: PrimitiveState {
                 topology,
@@ -345,7 +405,13 @@ impl BasicRenderPipeline {
                 polygon_mode: PolygonMode::Fill,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: depth_format.map(|format| wgpu::DepthStencilState {
+                format,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: MultisampleState {
                 count: multisample_count,
                 mask: !0,
@@ -416,6 +482,11 @@ impl BasicRenderPipeline {
     pub fn pipeline(&self) -> &RenderPipeline {
         &self.pipeline
     }
+
+    /// 消费 BasicRenderPipeline 并返回内部的 wgpu RenderPipeline
+    pub fn into_pipeline(self) -> RenderPipeline {
+        self.pipeline
+    }
     
     /// 获取顶点着色器
     /// 
@@ -480,12 +551,54 @@ mod tests {
     #[test]
     fn test_pipeline_builder_defaults() {
         let builder = RenderPipelineBuilder::new();
-        
+
         assert!(builder.vertex_shader.is_none());
         assert!(builder.fragment_shader.is_none());
         assert!(builder.format.is_none());
         assert_eq!(builder.topology, PrimitiveTopology::TriangleList);
         assert_eq!(builder.multisample_count, 1);
         assert!(builder.label.is_none());
+    }
+
+    #[test]
+    fn test_pipeline_builder_with_label() {
+        let builder = RenderPipelineBuilder::new()
+            .with_label("Test Pipeline");
+        assert_eq!(builder.label.as_deref(), Some("Test Pipeline"));
+    }
+
+    #[test]
+    fn test_pipeline_builder_with_format() {
+        let builder = RenderPipelineBuilder::new()
+            .with_format(TextureFormat::Bgra8UnormSrgb);
+        assert_eq!(builder.format, Some(TextureFormat::Bgra8UnormSrgb));
+    }
+
+    #[test]
+    fn test_pipeline_builder_with_topology() {
+        let builder = RenderPipelineBuilder::new()
+            .with_topology(PrimitiveTopology::LineList);
+        assert_eq!(builder.topology, PrimitiveTopology::LineList);
+    }
+
+    #[test]
+    fn test_pipeline_builder_with_multisample() {
+        let builder = RenderPipelineBuilder::new()
+            .with_multisample_count(4);
+        assert_eq!(builder.multisample_count, 4);
+    }
+
+    #[test]
+    fn test_pipeline_builder_chaining() {
+        let builder = RenderPipelineBuilder::new()
+            .with_label("Chained")
+            .with_format(TextureFormat::Rgba8Unorm)
+            .with_topology(PrimitiveTopology::TriangleStrip)
+            .with_multisample_count(2);
+
+        assert_eq!(builder.label.as_deref(), Some("Chained"));
+        assert_eq!(builder.format, Some(TextureFormat::Rgba8Unorm));
+        assert_eq!(builder.topology, PrimitiveTopology::TriangleStrip);
+        assert_eq!(builder.multisample_count, 2);
     }
 }
