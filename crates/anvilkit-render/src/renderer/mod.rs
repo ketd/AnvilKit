@@ -30,7 +30,8 @@ pub use pipeline::{RenderPipelineBuilder, BasicRenderPipeline};
 pub use buffer::{
     Vertex, ColorVertex, MeshVertex, PbrVertex,
     create_vertex_buffer, create_index_buffer, create_index_buffer_u32,
-    create_uniform_buffer, create_depth_texture, DEPTH_FORMAT,
+    create_uniform_buffer, create_depth_texture, create_hdr_render_target,
+    DEPTH_FORMAT, HDR_FORMAT,
     create_texture, create_texture_linear, create_sampler,
 };
 pub use state::PbrSceneUniform;

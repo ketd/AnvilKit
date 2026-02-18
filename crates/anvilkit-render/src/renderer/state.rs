@@ -47,6 +47,11 @@ pub struct RenderState {
     pub scene_bind_group: wgpu::BindGroup,
     pub scene_bind_group_layout: wgpu::BindGroupLayout,
     pub depth_texture_view: wgpu::TextureView,
+    // HDR multi-pass rendering
+    pub hdr_texture_view: wgpu::TextureView,
+    pub tonemap_pipeline: wgpu::RenderPipeline,
+    pub tonemap_bind_group: wgpu::BindGroup,
+    pub tonemap_bind_group_layout: wgpu::BindGroupLayout,
 }
 
 #[cfg(test)]

@@ -321,6 +321,9 @@ pub fn create_index_buffer_u32(
 /// AnvilKit 标准深度纹理格式
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+/// AnvilKit HDR 渲染目标格式
+pub const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+
 /// 创建 Uniform 缓冲区
 ///
 /// 使用 `UNIFORM | COPY_DST` 用法创建，支持每帧通过 `queue.write_buffer()` 更新。
@@ -399,6 +402,56 @@ pub fn create_depth_texture(
         dimension: wgpu::TextureDimension::D2,
         format: DEPTH_FORMAT,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view)
+}
+
+/// 创建 HDR 渲染目标纹理和视图
+///
+/// 使用 `Rgba16Float` 格式的离屏渲染目标，用于 HDR 渲染管线。
+/// 场景先渲染到 HDR RT，再通过后处理 pass 进行 tone mapping 输出到 swapchain。
+///
+/// # 参数
+///
+/// - `device`: 渲染设备
+/// - `width`: 纹理宽度
+/// - `height`: 纹理高度
+/// - `label`: 纹理标签
+///
+/// # 返回
+///
+/// 返回 (Texture, TextureView) 元组
+///
+/// # 示例
+///
+/// ```rust,no_run
+/// use anvilkit_render::renderer::buffer::create_hdr_render_target;
+/// use anvilkit_render::renderer::RenderDevice;
+///
+/// # async fn example(device: &RenderDevice) {
+/// let (hdr_texture, hdr_view) = create_hdr_render_target(device, 800, 600, "HDR RT");
+/// # }
+/// ```
+pub fn create_hdr_render_target(
+    device: &RenderDevice,
+    width: u32,
+    height: u32,
+    label: &str,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let texture = device.device().create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: HDR_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());

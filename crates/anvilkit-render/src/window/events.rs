@@ -18,8 +18,49 @@ use crate::renderer::{RenderDevice, RenderSurface};
 use crate::renderer::assets::RenderAssets;
 use crate::renderer::draw::{ActiveCamera, DrawCommandList, SceneLights};
 use crate::renderer::state::{RenderState, PbrSceneUniform};
-use crate::renderer::buffer::{create_uniform_buffer, create_depth_texture};
+use crate::renderer::buffer::{create_uniform_buffer, create_depth_texture, create_hdr_render_target, create_sampler};
+use crate::renderer::RenderPipelineBuilder;
 use anvilkit_core::error::{AnvilKitError, Result};
+
+/// ACES Filmic tone mapping post-process shader (fullscreen triangle)
+const TONEMAP_SHADER: &str = r#"
+@group(0) @binding(0)
+var hdr_texture: texture_2d<f32>;
+@group(0) @binding(1)
+var hdr_sampler: sampler;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) texcoord: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+    var out: VertexOutput;
+    let x = f32(i32(vertex_index & 1u) * 4 - 1);
+    let y = f32(i32(vertex_index & 2u) * 2 - 1);
+    out.position = vec4<f32>(x, y, 0.0, 1.0);
+    out.texcoord = vec2<f32>((x + 1.0) * 0.5, (1.0 - y) * 0.5);
+    return out;
+}
+
+fn aces_filmic(x: vec3<f32>) -> vec3<f32> {
+    let a = 2.51;
+    let b = 0.03;
+    let c = 2.43;
+    let d = 0.59;
+    let e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    var color = textureSample(hdr_texture, hdr_sampler, in.texcoord).rgb;
+    color = aces_filmic(color);
+    color = pow(color, vec3<f32>(1.0 / 2.2));
+    return vec4<f32>(color, 1.0);
+}
+"#;
 
 /// 渲染应用
 ///
@@ -56,8 +97,6 @@ pub struct RenderApp {
     /// 渲染表面（延迟初始化，持有对 window 的引用）
     render_surface: Option<RenderSurface<'static>>,
 
-    /// 清除颜色
-    clear_color: wgpu::Color,
     /// 是否请求退出
     exit_requested: bool,
 
@@ -92,12 +131,6 @@ impl RenderApp {
             window_state: WindowState::new(),
             render_device: None,
             render_surface: None,
-            clear_color: wgpu::Color {
-                r: 0.1,
-                g: 0.2,
-                b: 0.3,
-                a: 1.0,
-            },
             exit_requested: false,
             app: None,
             gpu_initialized: false,
@@ -266,6 +299,74 @@ impl RenderApp {
 
         let (_, depth_texture_view) = create_depth_texture(device, w, h, "ECS Depth");
 
+        // HDR render target
+        let (_, hdr_texture_view) = create_hdr_render_target(device, w, h, "ECS HDR RT");
+        let sampler = create_sampler(device, "ECS Tonemap Sampler");
+
+        // Tonemap bind group layout + bind group
+        let tonemap_bind_group_layout = device.device().create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                label: Some("ECS Tonemap BGL"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0, visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        }, count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            },
+        );
+
+        let tonemap_bind_group = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("ECS Tonemap BG"),
+            layout: &tonemap_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&hdr_texture_view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+            ],
+        });
+
+        // Tonemap pipeline needs its own bind group layout (consumed by builder)
+        let tonemap_pipeline_bgl = device.device().create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                label: Some("ECS Tonemap Pipeline BGL"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0, visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        }, count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            },
+        );
+
+        let tonemap_pipeline = RenderPipelineBuilder::new()
+            .with_vertex_shader(TONEMAP_SHADER)
+            .with_fragment_shader(TONEMAP_SHADER)
+            .with_format(format)
+            .with_vertex_layouts(vec![])
+            .with_bind_group_layouts(vec![tonemap_pipeline_bgl])
+            .with_label("ECS Tonemap Pipeline")
+            .build(device)
+            .expect("创建 Tonemap 管线失败")
+            .into_pipeline();
+
         app.insert_resource(RenderState {
             surface_format: format,
             surface_size: (w, h),
@@ -273,10 +374,14 @@ impl RenderApp {
             scene_bind_group,
             scene_bind_group_layout,
             depth_texture_view,
+            hdr_texture_view,
+            tonemap_pipeline,
+            tonemap_bind_group,
+            tonemap_bind_group_layout,
         });
 
         self.gpu_initialized = true;
-        info!("RenderState 已注入 ECS World");
+        info!("RenderState (HDR) 已注入 ECS World");
     }
 
     /// 处理窗口大小变化
@@ -291,18 +396,27 @@ impl RenderApp {
             }
         }
 
-        // 更新 ECS RenderState 中的深度纹理和 surface_size
+        // 更新 ECS RenderState 中的深度纹理、HDR RT 和 surface_size
         if self.gpu_initialized && new_size.width > 0 && new_size.height > 0 {
             if let (Some(app), Some(device)) = (&mut self.app, &self.render_device) {
                 if let Some(mut rs) = app.world.get_resource_mut::<RenderState>() {
                     rs.surface_size = (new_size.width, new_size.height);
-                    let (_, view) = create_depth_texture(
-                        device,
-                        new_size.width,
-                        new_size.height,
-                        "ECS Depth",
-                    );
-                    rs.depth_texture_view = view;
+                    let (_, depth_view) = create_depth_texture(device, new_size.width, new_size.height, "ECS Depth");
+                    rs.depth_texture_view = depth_view;
+
+                    // Recreate HDR RT and tonemap bind group
+                    let (_, hdr_view) = create_hdr_render_target(device, new_size.width, new_size.height, "ECS HDR RT");
+                    let sampler = create_sampler(device, "ECS Sampler");
+                    let new_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("ECS Tonemap BG"),
+                        layout: &rs.tonemap_bind_group_layout,
+                        entries: &[
+                            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&hdr_view) },
+                            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+                        ],
+                    });
+                    rs.hdr_texture_view = hdr_view;
+                    rs.tonemap_bind_group = new_bg;
                 }
             }
         }
@@ -314,10 +428,10 @@ impl RenderApp {
         self.window_state.set_scale_factor(scale_factor);
     }
 
-    /// 执行 ECS 多物体 PBR 渲染
+    /// 执行 ECS 多物体 HDR PBR 渲染
     ///
-    /// 每个物体独立 write_buffer + encoder + render_pass + submit，
-    /// 确保 per-object uniform 正确生效。
+    /// Pass 1: 场景渲染到 HDR RT (Rgba16Float)
+    /// Pass 2: Tone mapping HDR → Swapchain (ACES Filmic)
     fn render_ecs(&mut self) {
         let (Some(device), Some(surface)) = (&self.render_device, &self.render_surface) else {
             return;
@@ -342,7 +456,7 @@ impl RenderApp {
             }
         };
 
-        let view = frame.texture.create_view(&Default::default());
+        let swapchain_view = frame.texture.create_view(&Default::default());
         let view_proj = active_camera.view_proj;
         let camera_pos = active_camera.camera_pos;
 
@@ -352,6 +466,7 @@ impl RenderApp {
             .unwrap_or(&default_lights);
         let light = &scene_lights.directional;
 
+        // === Pass 1: Scene → HDR render target ===
         for (i, cmd) in draw_list.commands.iter().enumerate() {
             let Some(gpu_mesh) = render_assets.get_mesh(&cmd.mesh) else { continue };
             let Some(gpu_material) = render_assets.get_material(&cmd.material) else { continue };
@@ -375,12 +490,12 @@ impl RenderApp {
             );
 
             let mut encoder = device.device().create_command_encoder(
-                &wgpu::CommandEncoderDescriptor { label: Some("ECS Render Encoder") },
+                &wgpu::CommandEncoderDescriptor { label: Some("ECS HDR Scene Encoder") },
             );
 
             {
                 let color_load = if i == 0 {
-                    wgpu::LoadOp::Clear(self.clear_color)
+                    wgpu::LoadOp::Clear(wgpu::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 })
                 } else {
                     wgpu::LoadOp::Load
                 };
@@ -391,9 +506,9 @@ impl RenderApp {
                 };
 
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("ECS Render Pass"),
+                    label: Some("ECS HDR Scene Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
+                        view: &render_state.hdr_texture_view,
                         resolve_target: None,
                         ops: wgpu::Operations { load: color_load, store: wgpu::StoreOp::Store },
                     })],
@@ -412,6 +527,36 @@ impl RenderApp {
                 render_pass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
                 render_pass.set_index_buffer(gpu_mesh.index_buffer.slice(..), gpu_mesh.index_format);
                 render_pass.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);
+            }
+
+            device.queue().submit(std::iter::once(encoder.finish()));
+        }
+
+        // === Pass 2: Tone mapping HDR → Swapchain ===
+        {
+            let mut encoder = device.device().create_command_encoder(
+                &wgpu::CommandEncoderDescriptor { label: Some("ECS Tonemap Encoder") },
+            );
+
+            {
+                let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("ECS Tonemap Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &swapchain_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+
+                rp.set_pipeline(&render_state.tonemap_pipeline);
+                rp.set_bind_group(0, &render_state.tonemap_bind_group, &[]);
+                rp.draw(0..3, 0..1); // Fullscreen triangle
             }
 
             device.queue().submit(std::iter::once(encoder.finish()));
