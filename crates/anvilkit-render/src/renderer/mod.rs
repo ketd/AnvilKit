@@ -35,7 +35,7 @@ pub use buffer::{
     DEPTH_FORMAT, HDR_FORMAT,
     create_texture, create_texture_linear, create_sampler,
 };
-pub use state::PbrSceneUniform;
+pub use state::{PbrSceneUniform, GpuLight, MAX_LIGHTS};
 
 #[cfg(test)]
 mod tests {

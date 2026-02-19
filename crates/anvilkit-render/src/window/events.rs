@@ -17,11 +17,55 @@ use crate::window::{WindowConfig, WindowState};
 use crate::renderer::{RenderDevice, RenderSurface};
 use crate::renderer::assets::RenderAssets;
 use crate::renderer::draw::{ActiveCamera, DrawCommandList, SceneLights};
-use crate::renderer::state::{RenderState, PbrSceneUniform};
+use crate::renderer::state::{RenderState, PbrSceneUniform, GpuLight, MAX_LIGHTS};
 use crate::renderer::buffer::{create_uniform_buffer, create_depth_texture, create_hdr_render_target, create_sampler, create_texture_linear};
 use crate::renderer::RenderPipelineBuilder;
 use crate::renderer::ibl::generate_brdf_lut;
 use anvilkit_core::error::{AnvilKitError, Result};
+
+/// 将 SceneLights 打包为 GPU 光源数组
+///
+/// 返回 (lights_array, light_count)。方向光占 slot 0，其余填充点光和聚光。
+fn pack_lights(scene_lights: &SceneLights) -> ([GpuLight; MAX_LIGHTS], u32) {
+    let mut lights = [GpuLight::default(); MAX_LIGHTS];
+    let mut count = 0u32;
+
+    // Slot 0: directional light (type=0)
+    let dir = &scene_lights.directional;
+    lights[0] = GpuLight {
+        position_type: [0.0, 0.0, 0.0, 0.0], // type=0 directional
+        direction_range: [dir.direction.x, dir.direction.y, dir.direction.z, 0.0],
+        color_intensity: [dir.color.x, dir.color.y, dir.color.z, dir.intensity],
+        params: [0.0; 4],
+    };
+    count += 1;
+
+    // Point lights (type=1)
+    for pl in &scene_lights.point_lights {
+        if count as usize >= MAX_LIGHTS { break; }
+        lights[count as usize] = GpuLight {
+            position_type: [pl.position.x, pl.position.y, pl.position.z, 1.0],
+            direction_range: [0.0, 0.0, 0.0, pl.range],
+            color_intensity: [pl.color.x, pl.color.y, pl.color.z, pl.intensity],
+            params: [0.0; 4],
+        };
+        count += 1;
+    }
+
+    // Spot lights (type=2)
+    for sl in &scene_lights.spot_lights {
+        if count as usize >= MAX_LIGHTS { break; }
+        lights[count as usize] = GpuLight {
+            position_type: [sl.position.x, sl.position.y, sl.position.z, 2.0],
+            direction_range: [sl.direction.x, sl.direction.y, sl.direction.z, sl.range],
+            color_intensity: [sl.color.x, sl.color.y, sl.color.z, sl.intensity],
+            params: [sl.inner_cone_angle.cos(), sl.outer_cone_angle.cos(), 0.0, 0.0],
+        };
+        count += 1;
+    }
+
+    (lights, count)
+}
 
 /// ACES Filmic tone mapping post-process shader (fullscreen triangle)
 const TONEMAP_SHADER: &str = r#"
@@ -495,10 +539,11 @@ impl RenderApp {
         let view_proj = active_camera.view_proj;
         let camera_pos = active_camera.camera_pos;
 
-        // 获取场景灯光（如果有）
+        // 获取场景灯光并打包为 GPU 数组
         let default_lights = SceneLights::default();
         let scene_lights = app.world.get_resource::<SceneLights>()
             .unwrap_or(&default_lights);
+        let (gpu_lights, light_count) = pack_lights(scene_lights);
         let light = &scene_lights.directional;
 
         // === Pass 1: Scene → HDR render target ===
@@ -516,7 +561,8 @@ impl RenderApp {
                 camera_pos: [camera_pos.x, camera_pos.y, camera_pos.z, 0.0],
                 light_dir: [light.direction.x, light.direction.y, light.direction.z, 0.0],
                 light_color: [light.color.x, light.color.y, light.color.z, light.intensity],
-                material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, 0.0],
+                material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, light_count as f32],
+                lights: gpu_lights,
             };
             device.queue().write_buffer(
                 &render_state.scene_uniform_buffer,

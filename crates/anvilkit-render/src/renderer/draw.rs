@@ -46,18 +46,79 @@ impl Default for DirectionalLight {
     }
 }
 
+/// 点光源
+#[derive(Debug, Clone)]
+pub struct PointLight {
+    /// 世界空间位置
+    pub position: Vec3,
+    /// 光照颜色 (linear RGB)
+    pub color: Vec3,
+    /// 光照强度
+    pub intensity: f32,
+    /// 衰减距离（超出此距离光照为零）
+    pub range: f32,
+}
+
+impl Default for PointLight {
+    fn default() -> Self {
+        Self {
+            position: Vec3::new(0.0, 3.0, 0.0),
+            color: Vec3::ONE,
+            intensity: 5.0,
+            range: 10.0,
+        }
+    }
+}
+
+/// 聚光灯
+#[derive(Debug, Clone)]
+pub struct SpotLight {
+    /// 世界空间位置
+    pub position: Vec3,
+    /// 光照方向（从光源指向场景）
+    pub direction: Vec3,
+    /// 光照颜色 (linear RGB)
+    pub color: Vec3,
+    /// 光照强度
+    pub intensity: f32,
+    /// 衰减距离
+    pub range: f32,
+    /// 内锥角（弧度），全亮区域
+    pub inner_cone_angle: f32,
+    /// 外锥角（弧度），衰减到零
+    pub outer_cone_angle: f32,
+}
+
+impl Default for SpotLight {
+    fn default() -> Self {
+        Self {
+            position: Vec3::new(0.0, 3.0, 0.0),
+            direction: Vec3::new(0.0, -1.0, 0.0),
+            color: Vec3::ONE,
+            intensity: 10.0,
+            range: 15.0,
+            inner_cone_angle: 0.35,  // ~20 degrees
+            outer_cone_angle: 0.52,  // ~30 degrees
+        }
+    }
+}
+
 /// 场景灯光资源
 ///
-/// 持有场景中的灯光信息，由 RenderPlugin 注册默认值。
+/// 持有场景中所有灯光信息，最多 8 盏（1 方向光 + 点光/聚光组合）。
 #[derive(Resource)]
 pub struct SceneLights {
     pub directional: DirectionalLight,
+    pub point_lights: Vec<PointLight>,
+    pub spot_lights: Vec<SpotLight>,
 }
 
 impl Default for SceneLights {
     fn default() -> Self {
         Self {
             directional: DirectionalLight::default(),
+            point_lights: Vec::new(),
+            spot_lights: Vec::new(),
         }
     }
 }

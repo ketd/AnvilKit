@@ -252,6 +252,7 @@ impl EcsApp {
                 light_dir: [0.0, -1.0, 0.0, 0.0],
                 light_color: [1.0, 1.0, 1.0, 3.0],
                 material_params: [cmd.metallic, cmd.roughness, 0.0, 0.0],
+                ..Default::default()
             };
             device.queue().write_buffer(ub, 0, bytemuck::bytes_of(&uniform));
 

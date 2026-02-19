@@ -44,8 +44,8 @@ pub mod prelude {
 
     // ECS 渲染资源
     pub use crate::renderer::assets::{MeshHandle, MaterialHandle, RenderAssets};
-    pub use crate::renderer::draw::{ActiveCamera, DrawCommandList, SceneLights, DirectionalLight, MaterialParams};
-    pub use crate::renderer::state::{RenderState, PbrSceneUniform};
+    pub use crate::renderer::draw::{ActiveCamera, DrawCommandList, SceneLights, DirectionalLight, PointLight, SpotLight, MaterialParams};
+    pub use crate::renderer::state::{RenderState, PbrSceneUniform, GpuLight, MAX_LIGHTS};
 
     // 重新导出核心依赖的常用类型
     pub use wgpu::{

@@ -11,7 +11,8 @@ use anvilkit_render::renderer::{
     buffer::{PbrVertex, Vertex, create_uniform_buffer, create_depth_texture,
              create_hdr_render_target, create_texture, create_texture_linear, create_sampler},
     assets::RenderAssets,
-    draw::{ActiveCamera, DrawCommandList, SceneLights, DirectionalLight, MaterialParams},
+    draw::{ActiveCamera, DrawCommandList, SceneLights, DirectionalLight, PointLight, MaterialParams},
+    state::GpuLight,
     ibl::generate_brdf_lut,
 };
 use anvilkit_render::plugin::CameraComponent;
@@ -21,14 +22,22 @@ use anvilkit_assets::gltf_loader::load_gltf_scene;
 const SHADER_SOURCE: &str = r#"
 const PI: f32 = 3.14159265359;
 
+struct GpuLight {
+    position_type: vec4<f32>,      // xyz=pos, w=type (0=dir, 1=point, 2=spot)
+    direction_range: vec4<f32>,    // xyz=dir, w=range
+    color_intensity: vec4<f32>,    // rgb=color, w=intensity
+    params: vec4<f32>,             // x=inner_cone_cos, y=outer_cone_cos
+};
+
 struct SceneUniform {
     model: mat4x4<f32>,
     view_proj: mat4x4<f32>,
     normal_matrix: mat4x4<f32>,
     camera_pos: vec4<f32>,
-    light_dir: vec4<f32>,
-    light_color: vec4<f32>,
-    material_params: vec4<f32>,  // (metallic, roughness, normal_scale, 0)
+    light_dir: vec4<f32>,          // legacy
+    light_color: vec4<f32>,        // legacy
+    material_params: vec4<f32>,    // (metallic, roughness, normal_scale, light_count)
+    lights: array<GpuLight, 8>,
 };
 
 @group(0) @binding(0)
@@ -165,19 +174,61 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // F0: non-metal 0.04, metal uses albedo
     let F0 = mix(vec3<f32>(0.04), albedo, metallic);
 
-    // === Direct lighting (Cook-Torrance) ===
-    let D = distribution_ggx(N, H, roughness);
-    let G = geometry_smith(N, V, L, roughness);
-    let F = fresnel_schlick(max(dot(H, V), 0.0), F0);
+    // === Direct lighting (multi-light loop) ===
+    let light_count = u32(scene.material_params.w);
+    var Lo = vec3<f32>(0.0);
 
-    let numerator = D * G * F;
-    let denominator = 4.0 * NdotV * max(dot(N, L), 0.0) + 0.0001;
-    let specular = numerator / denominator;
+    for (var li = 0u; li < light_count; li = li + 1u) {
+        let light = scene.lights[li];
+        let light_type = u32(light.position_type.w);
+        let light_color_raw = light.color_intensity.xyz;
+        let light_intensity = light.color_intensity.w;
 
-    let kD_direct = (vec3<f32>(1.0) - F) * (1.0 - metallic);
-    let NdotL = max(dot(N, L), 0.0);
-    let light_radiance = scene.light_color.xyz * scene.light_color.w;
-    let Lo = (kD_direct * albedo / PI + specular) * light_radiance * NdotL;
+        var L: vec3<f32>;
+        var attenuation: f32 = 1.0;
+
+        if (light_type == 0u) {
+            // Directional light
+            L = normalize(-light.direction_range.xyz);
+        } else {
+            // Point or spot light
+            let light_pos = light.position_type.xyz;
+            let to_light = light_pos - in.world_position;
+            let dist = length(to_light);
+            L = to_light / max(dist, 0.0001);
+            let light_range = light.direction_range.w;
+            // Smooth distance attenuation
+            let dist_ratio = clamp(dist / light_range, 0.0, 1.0);
+            attenuation = max(1.0 - dist_ratio * dist_ratio, 0.0);
+            attenuation = attenuation * attenuation;
+
+            if (light_type == 2u) {
+                // Spot light cone attenuation
+                let spot_dir = normalize(light.direction_range.xyz);
+                let cos_angle = dot(spot_dir, -L);
+                let inner_cos = light.params.x;
+                let outer_cos = light.params.y;
+                let cone = clamp((cos_angle - outer_cos) / max(inner_cos - outer_cos, 0.0001), 0.0, 1.0);
+                attenuation = attenuation * cone;
+            }
+        }
+
+        let H = normalize(V + L);
+        let radiance = light_color_raw * light_intensity * attenuation;
+
+        let D = distribution_ggx(N, H, roughness);
+        let G = geometry_smith(N, V, L, roughness);
+        let F = fresnel_schlick(max(dot(H, V), 0.0), F0);
+
+        let numerator = D * G * F;
+        let denominator = 4.0 * NdotV * max(dot(N, L), 0.0) + 0.0001;
+        let specular = numerator / denominator;
+
+        let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
+        let NdotL = max(dot(N, L), 0.0);
+
+        Lo = Lo + (kD * albedo / PI + specular) * radiance * NdotL;
+    }
 
     // === Indirect lighting (IBL) ===
     let F_ibl = fresnel_schlick_roughness(NdotV, F0, roughness);
@@ -251,6 +302,45 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 "#;
 
+/// Pack SceneLights into GpuLight array for the uniform buffer
+fn pack_scene_lights(scene_lights: &SceneLights) -> ([GpuLight; 8], u32) {
+    let mut lights = [GpuLight::default(); 8];
+    let mut count = 0u32;
+
+    let dir = &scene_lights.directional;
+    lights[0] = GpuLight {
+        position_type: [0.0, 0.0, 0.0, 0.0],
+        direction_range: [dir.direction.x, dir.direction.y, dir.direction.z, 0.0],
+        color_intensity: [dir.color.x, dir.color.y, dir.color.z, dir.intensity],
+        params: [0.0; 4],
+    };
+    count += 1;
+
+    for pl in &scene_lights.point_lights {
+        if count >= 8 { break; }
+        lights[count as usize] = GpuLight {
+            position_type: [pl.position.x, pl.position.y, pl.position.z, 1.0],
+            direction_range: [0.0, 0.0, 0.0, pl.range],
+            color_intensity: [pl.color.x, pl.color.y, pl.color.z, pl.intensity],
+            params: [0.0; 4],
+        };
+        count += 1;
+    }
+
+    for sl in &scene_lights.spot_lights {
+        if count >= 8 { break; }
+        lights[count as usize] = GpuLight {
+            position_type: [sl.position.x, sl.position.y, sl.position.z, 2.0],
+            direction_range: [sl.direction.x, sl.direction.y, sl.direction.z, sl.range],
+            color_intensity: [sl.color.x, sl.color.y, sl.color.z, sl.intensity],
+            params: [sl.inner_cone_angle.cos(), sl.outer_cone_angle.cos(), 0.0, 0.0],
+        };
+        count += 1;
+    }
+
+    (lights, count)
+}
+
 #[derive(Resource)]
 struct FrameTime(std::time::Instant);
 
@@ -283,13 +373,28 @@ fn main() {
     ));
     app.insert_resource(FrameTime(std::time::Instant::now()));
 
-    // Configure scene lights
+    // Configure scene lights (directional + 2 point lights)
     app.insert_resource(SceneLights {
         directional: DirectionalLight {
             direction: glam::Vec3::new(-0.5, -0.8, 0.3).normalize(),
             color: glam::Vec3::new(1.0, 0.95, 0.9),
-            intensity: 5.0,
+            intensity: 3.0,
         },
+        point_lights: vec![
+            PointLight {
+                position: glam::Vec3::new(2.0, 1.5, -1.0),
+                color: glam::Vec3::new(1.0, 0.3, 0.1),  // warm orange
+                intensity: 8.0,
+                range: 8.0,
+            },
+            PointLight {
+                position: glam::Vec3::new(-2.0, 1.0, -1.5),
+                color: glam::Vec3::new(0.1, 0.4, 1.0),  // cool blue
+                intensity: 6.0,
+                range: 8.0,
+            },
+        ],
+        spot_lights: vec![],
     });
 
     let event_loop = EventLoop::new().unwrap();
@@ -580,6 +685,9 @@ impl PbrEcsApp {
             .unwrap_or(&default_lights);
         let light = &scene_lights.directional;
 
+        // Pack all lights into GPU array
+        let (gpu_lights, light_count) = pack_scene_lights(scene_lights);
+
         // === Pass 1: Scene → HDR render target ===
         for (i, cmd) in draw_list.commands.iter().enumerate() {
             let Some(gpu_mesh) = render_assets.get_mesh(&cmd.mesh) else { continue };
@@ -595,7 +703,8 @@ impl PbrEcsApp {
                 camera_pos: [camera_pos.x, camera_pos.y, camera_pos.z, 0.0],
                 light_dir: [light.direction.x, light.direction.y, light.direction.z, 0.0],
                 light_color: [light.color.x, light.color.y, light.color.z, light.intensity],
-                material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, 0.0],
+                material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, light_count as f32],
+                lights: gpu_lights,
             };
             device.queue().write_buffer(ub, 0, bytemuck::bytes_of(&uniform));
 

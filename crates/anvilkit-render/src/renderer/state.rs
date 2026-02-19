@@ -5,10 +5,41 @@
 
 use bevy_ecs::prelude::*;
 
-/// PBR 场景 Uniform (256 字节)
+/// GPU 端单个光源数据 (64 字节)
 ///
-/// 包含所有 PBR 直接光照所需的 per-object 数据：
-/// model/view_proj/normal_matrix 变换 + 相机位置 + 方向光 + 材质参数。
+/// | 字段 | 含义 |
+/// |------|------|
+/// | position_type | xyz=位置(点光/聚光), w=类型 (0=方向光, 1=点光, 2=聚光) |
+/// | direction_range | xyz=方向, w=衰减距离 |
+/// | color_intensity | rgb=颜色(linear), w=强度 |
+/// | params | x=inner_cone_cos, y=outer_cone_cos, z=0, w=0 |
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct GpuLight {
+    pub position_type: [f32; 4],
+    pub direction_range: [f32; 4],
+    pub color_intensity: [f32; 4],
+    pub params: [f32; 4],
+}
+
+impl Default for GpuLight {
+    fn default() -> Self {
+        Self {
+            position_type: [0.0; 4],
+            direction_range: [0.0, -1.0, 0.0, 0.0],
+            color_intensity: [0.0; 4],
+            params: [0.0; 4],
+        }
+    }
+}
+
+/// 最大光源数量
+pub const MAX_LIGHTS: usize = 8;
+
+/// PBR 场景 Uniform (768 字节)
+///
+/// 包含 per-object 变换、材质参数和多光源数据。
+/// 前 256 字节与旧布局兼容（light_dir/light_color 保留但多光源路径不使用）。
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PbrSceneUniform {
@@ -16,9 +47,11 @@ pub struct PbrSceneUniform {
     pub view_proj: [[f32; 4]; 4],       // 64 bytes
     pub normal_matrix: [[f32; 4]; 4],   // 64 bytes
     pub camera_pos: [f32; 4],           // 16 bytes
-    pub light_dir: [f32; 4],            // 16 bytes
-    pub light_color: [f32; 4],          // 16 bytes (rgb + intensity)
-    pub material_params: [f32; 4],      // 16 bytes (metallic, roughness, normal_scale, 0)
+    pub light_dir: [f32; 4],            // 16 bytes (legacy / lights[0] shortcut)
+    pub light_color: [f32; 4],          // 16 bytes (legacy / lights[0] shortcut)
+    pub material_params: [f32; 4],      // 16 bytes (metallic, roughness, normal_scale, light_count)
+    // Multi-light array
+    pub lights: [GpuLight; MAX_LIGHTS], // 512 bytes (8 * 64)
 }
 
 impl Default for PbrSceneUniform {
@@ -31,6 +64,7 @@ impl Default for PbrSceneUniform {
             light_dir: [0.0, -1.0, 0.0, 0.0],
             light_color: [1.0, 1.0, 1.0, 3.0],
             material_params: [0.0, 0.5, 1.0, 0.0],
+            lights: [GpuLight::default(); MAX_LIGHTS],
         }
     }
 }
@@ -62,7 +96,12 @@ mod tests {
 
     #[test]
     fn test_pbr_scene_uniform_size() {
-        assert_eq!(std::mem::size_of::<PbrSceneUniform>(), 256);
+        assert_eq!(std::mem::size_of::<PbrSceneUniform>(), 768);
+    }
+
+    #[test]
+    fn test_gpu_light_size() {
+        assert_eq!(std::mem::size_of::<GpuLight>(), 64);
     }
 
     #[test]
