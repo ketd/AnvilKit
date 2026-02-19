@@ -710,7 +710,7 @@ impl RenderApp {
 
             {
                 let color_load = if i == 0 {
-                    wgpu::LoadOp::Clear(wgpu::Color { r: 0.05, g: 0.08, b: 0.18, a: 1.0 })
+                    wgpu::LoadOp::Clear(wgpu::Color { r: 0.15, g: 0.3, b: 0.6, a: 1.0 })
                 } else {
                     wgpu::LoadOp::Load
                 };
