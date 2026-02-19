@@ -1,0 +1,13 @@
+[package]
+name = "anvilkit-input"
+version = "0.1.0"
+edition = "2021"
+authors = ["AnvilKit Contributors"]
+description = "AnvilKit 输入系统 - 键盘/鼠标/手柄抽象和 action mapping"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ketd/AnvilKit"
+
+[dependencies]
+bevy_ecs = "0.14"
+glam = { workspace = true }
+log = "0.4"
