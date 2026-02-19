@@ -132,6 +132,7 @@ pub struct MaterialParams {
     pub metallic: f32,
     pub roughness: f32,
     pub normal_scale: f32,
+    pub emissive_factor: [f32; 3],
 }
 
 impl Default for MaterialParams {
@@ -140,6 +141,7 @@ impl Default for MaterialParams {
             metallic: 0.0,
             roughness: 0.5,
             normal_scale: 1.0,
+            emissive_factor: [0.0; 3],
         }
     }
 }
@@ -152,6 +154,7 @@ pub struct DrawCommand {
     pub metallic: f32,
     pub roughness: f32,
     pub normal_scale: f32,
+    pub emissive_factor: [f32; 3],
 }
 
 /// 每帧的绘制命令列表

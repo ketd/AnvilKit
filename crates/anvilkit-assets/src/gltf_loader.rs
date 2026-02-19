@@ -255,8 +255,23 @@ fn extract_material(
         })
         .unwrap_or((None, 1.0));
 
-    info!("材质参数: metallic={}, roughness={}, normal_map={}, normal_scale={}",
-        metallic_factor, roughness_factor, normal_texture.is_some(), normal_scale);
+    // 提取金属度/粗糙度纹理
+    let metallic_roughness_texture = pbr.metallic_roughness_texture()
+        .and_then(|tex_info| extract_texture_by_source(&tex_info.texture(), images, "金属度/粗糙度"));
+
+    // 提取环境光遮蔽纹理
+    let occlusion_texture = gltf_material.occlusion_texture()
+        .and_then(|tex_info| extract_texture_by_source(&tex_info.texture(), images, "AO"));
+
+    // 提取自发光纹理和因子
+    let emissive_texture = gltf_material.emissive_texture()
+        .and_then(|tex_info| extract_texture_by_source(&tex_info.texture(), images, "自发光"));
+    let emissive_factor = gltf_material.emissive_factor();
+
+    info!("材质: metallic={}, roughness={}, normal={}, mr_tex={}, ao={}, emissive={}",
+        metallic_factor, roughness_factor, normal_texture.is_some(),
+        metallic_roughness_texture.is_some(), occlusion_texture.is_some(),
+        emissive_texture.is_some());
 
     MaterialData {
         base_color_texture,
@@ -265,6 +280,32 @@ fn extract_material(
         roughness_factor,
         normal_texture,
         normal_scale,
+        metallic_roughness_texture,
+        occlusion_texture,
+        emissive_texture,
+        emissive_factor,
+    }
+}
+
+/// 从 glTF texture source 提取纹理数据
+fn extract_texture_by_source(
+    texture: &gltf::Texture<'_>,
+    images: &[gltf::image::Data],
+    label: &str,
+) -> Option<TextureData> {
+    let image_index = texture.source().index();
+    if image_index < images.len() {
+        let image = &images[image_index];
+        convert_to_rgba8(image).map(|data| {
+            info!("加载{}纹理: {}x{}", label, image.width, image.height);
+            TextureData {
+                width: image.width,
+                height: image.height,
+                data,
+            }
+        })
+    } else {
+        None
     }
 }
 

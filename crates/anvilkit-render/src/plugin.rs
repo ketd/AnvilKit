@@ -226,17 +226,17 @@ fn render_extract_system(
     draw_list.clear();
 
     for (mesh, material, transform, mat_params) in query.iter() {
-        let (metallic, roughness, normal_scale) = mat_params
-            .map(|p| (p.metallic, p.roughness, p.normal_scale))
-            .unwrap_or((0.0, 0.5, 1.0));
+        let default_params = MaterialParams::default();
+        let p = mat_params.unwrap_or(&default_params);
 
         draw_list.push(DrawCommand {
             mesh: *mesh,
             material: *material,
             model_matrix: transform.compute_matrix(),
-            metallic,
-            roughness,
-            normal_scale,
+            metallic: p.metallic,
+            roughness: p.roughness,
+            normal_scale: p.normal_scale,
+            emissive_factor: p.emissive_factor,
         });
     }
 }

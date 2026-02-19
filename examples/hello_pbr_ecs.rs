@@ -40,6 +40,7 @@ struct SceneUniform {
     material_params: vec4<f32>,    // (metallic, roughness, normal_scale, light_count)
     lights: array<GpuLight, 8>,
     shadow_view_proj: mat4x4<f32>,
+    emissive_factor: vec4<f32>,      // rgb + 0
 };
 
 @group(0) @binding(0)
@@ -48,11 +49,15 @@ var<uniform> scene: SceneUniform;
 @group(1) @binding(0)
 var base_color_texture: texture_2d<f32>;
 @group(1) @binding(1)
-var base_color_sampler: sampler;
-@group(1) @binding(2)
 var normal_map_texture: texture_2d<f32>;
+@group(1) @binding(2)
+var metallic_roughness_texture: texture_2d<f32>;
 @group(1) @binding(3)
-var normal_map_sampler: sampler;
+var ao_texture: texture_2d<f32>;
+@group(1) @binding(4)
+var emissive_texture: texture_2d<f32>;
+@group(1) @binding(5)
+var material_sampler: sampler;
 
 // IBL + Shadow resources (group 2)
 @group(2) @binding(0)
@@ -180,13 +185,19 @@ fn fresnel_schlick_roughness(cos_theta: f32, F0: vec3<f32>, roughness: f32) -> v
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let albedo = textureSample(base_color_texture, base_color_sampler, in.texcoord).rgb;
-    let metallic = scene.material_params.x;
-    let roughness = scene.material_params.y;
+    let albedo = textureSample(base_color_texture, material_sampler, in.texcoord).rgb;
     let normal_scale = scene.material_params.z;
 
+    // Sample metallic-roughness texture (glTF: G=roughness, B=metallic)
+    let mr_sample = textureSample(metallic_roughness_texture, material_sampler, in.texcoord);
+    let metallic = mr_sample.b * scene.material_params.x;
+    let roughness = mr_sample.g * scene.material_params.y;
+
+    // Sample AO texture (R channel)
+    let ao = textureSample(ao_texture, material_sampler, in.texcoord).r;
+
     // Sample normal map and transform from tangent space to world space
-    let normal_map = textureSample(normal_map_texture, normal_map_sampler, in.texcoord).rgb;
+    let normal_map = textureSample(normal_map_texture, material_sampler, in.texcoord).rgb;
     var tangent_normal = normal_map * 2.0 - vec3<f32>(1.0);
     tangent_normal.x = tangent_normal.x * normal_scale;
     tangent_normal.y = tangent_normal.y * normal_scale;
@@ -284,9 +295,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let brdf = textureSample(brdf_lut, brdf_lut_sampler, vec2<f32>(NdotV, roughness)).rg;
     let specular_ibl = prefiltered_color * (F0 * brdf.x + brdf.y);
 
-    let ambient = diffuse_ibl + specular_ibl;
+    let ambient = (diffuse_ibl + specular_ibl) * ao;
 
-    let color = ambient + Lo;
+    // Emissive
+    let emissive_tex = textureSample(emissive_texture, material_sampler, in.texcoord).rgb;
+    let emissive = emissive_tex * scene.emissive_factor.xyz;
+
+    let color = ambient + Lo + emissive;
 
     // Output linear HDR — tone mapping in post-process pass
     return vec4<f32>(color, 1.0);
@@ -507,54 +522,50 @@ impl PbrEcsApp {
         });
         let (_, depth_view) = create_depth_texture(device, w, h, "Depth");
 
-        // Material bind group (group 1: base_color + normal_map, 4 bindings)
-        let base_color_view = if let Some(ref tex) = self.material.base_color_texture {
-            let (_, v) = create_texture(device, tex.width, tex.height, &tex.data, "BaseColor");
-            v
-        } else {
-            let (_, v) = create_texture(device, 1, 1, &[255, 255, 255, 255], "Fallback BaseColor");
-            v
+        // Material bind group (group 1: 5 textures + 1 shared sampler)
+        let tex_entry = |t: &Option<anvilkit_assets::material::TextureData>, label, fallback: &[u8; 4], srgb: bool| {
+            if let Some(ref tex) = t {
+                if srgb { create_texture(device, tex.width, tex.height, &tex.data, label).1 }
+                else { create_texture_linear(device, tex.width, tex.height, &tex.data, label).1 }
+            } else {
+                if srgb { create_texture(device, 1, 1, fallback, label).1 }
+                else { create_texture_linear(device, 1, 1, fallback, label).1 }
+            }
         };
 
-        // Normal map: use linear texture format (Rgba8Unorm, not sRGB)
-        let normal_map_view = if let Some(ref tex) = self.material.normal_texture {
-            let (_, v) = create_texture_linear(device, tex.width, tex.height, &tex.data, "NormalMap");
-            v
-        } else {
-            // Flat normal fallback: RGB=(0.5, 0.5, 1.0) = (128, 128, 255) in [0,255]
-            let (_, v) = create_texture_linear(device, 1, 1, &[128, 128, 255, 255], "Flat Normal");
-            v
-        };
+        let base_color_view = tex_entry(&self.material.base_color_texture, "BaseColor", &[255,255,255,255], true);
+        let normal_map_view = tex_entry(&self.material.normal_texture, "NormalMap", &[128,128,255,255], false);
+        // MR fallback: white = use uniform metallic/roughness factors as-is (multiply by 1.0)
+        let mr_view = tex_entry(&self.material.metallic_roughness_texture, "MR Tex", &[255,255,255,255], false);
+        // AO fallback: white = no occlusion
+        let ao_view = tex_entry(&self.material.occlusion_texture, "AO Tex", &[255,255,255,255], false);
+        // Emissive fallback: black = no emission (factor * 0 = 0)
+        let emissive_view = tex_entry(&self.material.emissive_texture, "Emissive Tex", &[255,255,255,255], true);
 
         let sampler = create_sampler(device, "Sampler");
+
+        let tex_layout_entry = |binding: u32| -> wgpu::BindGroupLayoutEntry {
+            wgpu::BindGroupLayoutEntry {
+                binding, visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                }, count: None,
+            }
+        };
 
         let mat_bgl = device.device().create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
                 label: Some("Material BGL"),
                 entries: &[
+                    tex_layout_entry(0), // base_color
+                    tex_layout_entry(1), // normal_map
+                    tex_layout_entry(2), // metallic_roughness
+                    tex_layout_entry(3), // ao
+                    tex_layout_entry(4), // emissive
                     wgpu::BindGroupLayoutEntry {
-                        binding: 0, visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        }, count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2, visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        }, count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3, visibility: wgpu::ShaderStages::FRAGMENT,
+                        binding: 5, visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
@@ -566,9 +577,11 @@ impl PbrEcsApp {
             layout: &mat_bgl,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&base_color_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&normal_map_view) },
-                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&sampler) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&normal_map_view) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&mr_view) },
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&ao_view) },
+                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&emissive_view) },
+                wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::Sampler(&sampler) },
             ],
         });
 
@@ -691,6 +704,7 @@ impl PbrEcsApp {
                 metallic: self.material.metallic_factor,
                 roughness: self.material.roughness_factor,
                 normal_scale: self.material.normal_scale,
+                emissive_factor: self.material.emissive_factor,
             },
             Transform::default(),
         ));
@@ -770,6 +784,7 @@ impl PbrEcsApp {
                 material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, light_count as f32],
                 lights: gpu_lights,
                 shadow_view_proj: shadow_view_proj.to_cols_array_2d(),
+                emissive_factor: [cmd.emissive_factor[0], cmd.emissive_factor[1], cmd.emissive_factor[2], 0.0],
             };
             device.queue().write_buffer(ub, 0, bytemuck::bytes_of(&uniform));
 

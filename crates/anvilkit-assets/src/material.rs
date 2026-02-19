@@ -30,7 +30,7 @@ pub struct TextureData {
 
 /// CPU 侧材质数据
 ///
-/// 包含 PBR 材质的基础属性和法线贴图。
+/// 包含完整 PBR 材质属性：基础色、法线、金属度/粗糙度、AO、自发光。
 ///
 /// # 示例
 ///
@@ -42,7 +42,7 @@ pub struct TextureData {
 /// assert_eq!(mat.metallic_factor, 1.0);
 /// assert_eq!(mat.roughness_factor, 1.0);
 /// assert_eq!(mat.normal_scale, 1.0);
-/// assert!(mat.normal_texture.is_none());
+/// assert_eq!(mat.emissive_factor, [0.0, 0.0, 0.0]);
 /// ```
 #[derive(Debug, Clone)]
 pub struct MaterialData {
@@ -58,6 +58,14 @@ pub struct MaterialData {
     pub normal_texture: Option<TextureData>,
     /// 法线贴图强度缩放 [default=1.0]
     pub normal_scale: f32,
+    /// 金属度/粗糙度纹理（可选，glTF: G=roughness, B=metallic）
+    pub metallic_roughness_texture: Option<TextureData>,
+    /// 环境光遮蔽纹理（可选，R 通道）
+    pub occlusion_texture: Option<TextureData>,
+    /// 自发光纹理（可选）
+    pub emissive_texture: Option<TextureData>,
+    /// 自发光因子 [R, G, B]
+    pub emissive_factor: [f32; 3],
 }
 
 impl Default for MaterialData {
@@ -69,6 +77,10 @@ impl Default for MaterialData {
             roughness_factor: 1.0,
             normal_texture: None,
             normal_scale: 1.0,
+            metallic_roughness_texture: None,
+            occlusion_texture: None,
+            emissive_texture: None,
+            emissive_factor: [0.0, 0.0, 0.0],
         }
     }
 }
@@ -94,5 +106,9 @@ mod tests {
         assert!(mat.base_color_texture.is_none());
         assert!(mat.normal_texture.is_none());
         assert_eq!(mat.normal_scale, 1.0);
+        assert!(mat.metallic_roughness_texture.is_none());
+        assert!(mat.occlusion_texture.is_none());
+        assert!(mat.emissive_texture.is_none());
+        assert_eq!(mat.emissive_factor, [0.0, 0.0, 0.0]);
     }
 }

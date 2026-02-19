@@ -54,6 +54,8 @@ pub struct PbrSceneUniform {
     pub lights: [GpuLight; MAX_LIGHTS], // 512 bytes (8 * 64)
     // Shadow mapping
     pub shadow_view_proj: [[f32; 4]; 4], // 64 bytes
+    // Emissive
+    pub emissive_factor: [f32; 4],       // 16 bytes (rgb + 0)
 }
 
 impl Default for PbrSceneUniform {
@@ -68,6 +70,7 @@ impl Default for PbrSceneUniform {
             material_params: [0.0, 0.5, 1.0, 0.0],
             lights: [GpuLight::default(); MAX_LIGHTS],
             shadow_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+            emissive_factor: [0.0; 4],
         }
     }
 }
@@ -103,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_pbr_scene_uniform_size() {
-        assert_eq!(std::mem::size_of::<PbrSceneUniform>(), 832);
+        assert_eq!(std::mem::size_of::<PbrSceneUniform>(), 848);
     }
 
     #[test]

@@ -691,6 +691,7 @@ impl RenderApp {
                 material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, light_count as f32],
                 lights: gpu_lights,
                 shadow_view_proj: shadow_view_proj.to_cols_array_2d(),
+                emissive_factor: [cmd.emissive_factor[0], cmd.emissive_factor[1], cmd.emissive_factor[2], 0.0],
             };
             device.queue().write_buffer(
                 &render_state.scene_uniform_buffer,
