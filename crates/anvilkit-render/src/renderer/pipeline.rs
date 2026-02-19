@@ -306,7 +306,7 @@ impl RenderPipelineBuilder {
             primitive: PrimitiveState {
                 topology: self.topology,
                 strip_index_format: None,
-                front_face: FrontFace::Ccw,
+                front_face: FrontFace::Cw, // LH coordinate system (look_at_lh)
                 cull_mode: Some(Face::Back),
                 unclipped_depth: false,
                 polygon_mode: PolygonMode::Fill,
@@ -470,7 +470,7 @@ impl BasicRenderPipeline {
             primitive: PrimitiveState {
                 topology,
                 strip_index_format: None,
-                front_face: FrontFace::Ccw,
+                front_face: FrontFace::Cw, // LH coordinate system (look_at_lh)
                 cull_mode: Some(Face::Back),
                 unclipped_depth: false,
                 polygon_mode: PolygonMode::Fill,
