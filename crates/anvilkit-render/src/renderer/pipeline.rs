@@ -7,7 +7,7 @@ use wgpu::{
     PrimitiveState, MultisampleState, PipelineLayoutDescriptor,
     ShaderModule, ShaderModuleDescriptor, ShaderSource,
     ColorTargetState, BlendState, ColorWrites,
-    PrimitiveTopology, FrontFace, Face, PolygonMode,
+    PrimitiveTopology, FrontFace, PolygonMode,
     TextureFormat, Device,
 };
 use log::{info, debug};
@@ -306,8 +306,8 @@ impl RenderPipelineBuilder {
             primitive: PrimitiveState {
                 topology: self.topology,
                 strip_index_format: None,
-                front_face: FrontFace::Cw, // LH coordinate system (look_at_lh)
-                cull_mode: Some(Face::Back),
+                front_face: FrontFace::Ccw,
+                cull_mode: None, // disabled for glTF compatibility
                 unclipped_depth: false,
                 polygon_mode: PolygonMode::Fill,
                 conservative: false,
@@ -470,8 +470,8 @@ impl BasicRenderPipeline {
             primitive: PrimitiveState {
                 topology,
                 strip_index_format: None,
-                front_face: FrontFace::Cw, // LH coordinate system (look_at_lh)
-                cull_mode: Some(Face::Back),
+                front_face: FrontFace::Ccw,
+                cull_mode: None, // disabled for glTF compatibility
                 unclipped_depth: false,
                 polygon_mode: PolygonMode::Fill,
                 conservative: false,
