@@ -54,6 +54,7 @@ dev = ["debug"]
 
 [dev-dependencies]
 env_logger = "0.10"
+anvilkit-input = { path = "../anvilkit-input" }
 
 [[example]]
 name = "hello_ecs"
@@ -66,3 +67,7 @@ path = "../../examples/hello_pbr_ecs.rs"
 [[example]]
 name = "showcase"
 path = "../../examples/showcase.rs"
+
+[[example]]
+name = "demo"
+path = "../../examples/demo.rs"
