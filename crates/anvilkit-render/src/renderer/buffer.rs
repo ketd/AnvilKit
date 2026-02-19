@@ -324,6 +324,72 @@ pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 /// AnvilKit HDR 渲染目标格式
 pub const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
+/// 默认阴影贴图分辨率
+pub const SHADOW_MAP_SIZE: u32 = 2048;
+
+/// 创建阴影深度贴图
+///
+/// 使用 Depth32Float 格式，可作为渲染附件（shadow pass）和纹理采样（main pass）。
+///
+/// # 示例
+///
+/// ```rust,no_run
+/// use anvilkit_render::renderer::buffer::create_shadow_map;
+/// use anvilkit_render::renderer::RenderDevice;
+///
+/// # async fn example(device: &RenderDevice) {
+/// let (shadow_tex, shadow_view) = create_shadow_map(device, 2048, "Shadow Map");
+/// # }
+/// ```
+pub fn create_shadow_map(
+    device: &RenderDevice,
+    size: u32,
+    label: &str,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let texture = device.device().create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view)
+}
+
+/// 创建阴影比较采样器
+///
+/// 使用 `LessEqual` 比较函数，用于 `textureSampleCompare()` 调用。
+///
+/// # 示例
+///
+/// ```rust,no_run
+/// use anvilkit_render::renderer::buffer::create_shadow_sampler;
+/// use anvilkit_render::renderer::RenderDevice;
+///
+/// # async fn example(device: &RenderDevice) {
+/// let sampler = create_shadow_sampler(device, "Shadow Sampler");
+/// # }
+/// ```
+pub fn create_shadow_sampler(device: &RenderDevice, label: &str) -> wgpu::Sampler {
+    device.device().create_sampler(&wgpu::SamplerDescriptor {
+        label: Some(label),
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        compare: Some(wgpu::CompareFunction::LessEqual),
+        ..Default::default()
+    })
+}
+
 /// 创建 Uniform 缓冲区
 ///
 /// 使用 `UNIFORM | COPY_DST` 用法创建，支持每帧通过 `queue.write_buffer()` 更新。

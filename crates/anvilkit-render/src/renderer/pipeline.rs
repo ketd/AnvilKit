@@ -272,6 +272,77 @@ impl RenderPipelineBuilder {
     /// # Ok(())
     /// # }
     /// ```
+    /// 构建深度-only 渲染管线（无片段着色器，用于 shadow pass）
+    pub fn build_depth_only(self, device: &RenderDevice) -> Result<BasicRenderPipeline> {
+        let vertex_shader = self.vertex_shader
+            .ok_or_else(|| AnvilKitError::render("缺少顶点着色器".to_string()))?;
+
+        let depth_format = self.depth_format
+            .ok_or_else(|| AnvilKitError::render("深度-only 管线需要深度格式".to_string()))?;
+
+        let bind_group_layout_refs: Vec<&wgpu::BindGroupLayout> =
+            self.bind_group_layouts.iter().collect();
+
+        let wgpu_device = device.device();
+
+        let vs_module = BasicRenderPipeline::create_shader_module(
+            wgpu_device, &vertex_shader, Some("Shadow VS"),
+        )?;
+
+        let layout = wgpu_device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("Shadow Pipeline Layout"),
+            bind_group_layouts: &bind_group_layout_refs,
+            push_constant_ranges: &[],
+        });
+
+        let pipeline = wgpu_device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: self.label.as_deref(),
+            layout: Some(&layout),
+            vertex: VertexState {
+                module: &vs_module,
+                entry_point: "vs_main",
+                buffers: &self.vertex_layouts,
+            },
+            primitive: PrimitiveState {
+                topology: self.topology,
+                strip_index_format: None,
+                front_face: FrontFace::Ccw,
+                cull_mode: Some(Face::Back),
+                unclipped_depth: false,
+                polygon_mode: PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: depth_format,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            fragment: None, // depth-only, no fragment stage
+            multiview: None,
+        });
+
+        // Create a dummy fragment shader module for the struct (required field)
+        let dummy_fs = BasicRenderPipeline::create_shader_module(
+            wgpu_device,
+            "// dummy\n@fragment fn fs_main() -> @location(0) vec4<f32> { return vec4<f32>(0.0); }",
+            Some("Dummy FS"),
+        )?;
+
+        Ok(BasicRenderPipeline {
+            pipeline,
+            vertex_shader: vs_module,
+            fragment_shader: dummy_fs,
+        })
+    }
+
+    /// 构建带颜色输出的完整渲染管线
     pub fn build(self, device: &RenderDevice) -> Result<BasicRenderPipeline> {
         let vertex_shader = self.vertex_shader
             .ok_or_else(|| AnvilKitError::render("缺少顶点着色器".to_string()))?;

@@ -18,8 +18,12 @@ use crate::renderer::{RenderDevice, RenderSurface};
 use crate::renderer::assets::RenderAssets;
 use crate::renderer::draw::{ActiveCamera, DrawCommandList, SceneLights};
 use crate::renderer::state::{RenderState, PbrSceneUniform, GpuLight, MAX_LIGHTS};
-use crate::renderer::buffer::{create_uniform_buffer, create_depth_texture, create_hdr_render_target, create_sampler, create_texture_linear};
-use crate::renderer::RenderPipelineBuilder;
+use crate::renderer::buffer::{
+    create_uniform_buffer, create_depth_texture, create_hdr_render_target,
+    create_sampler, create_texture_linear, create_shadow_map, create_shadow_sampler,
+    Vertex, PbrVertex, SHADOW_MAP_SIZE,
+};
+use crate::renderer::{RenderPipelineBuilder, DEPTH_FORMAT};
 use crate::renderer::ibl::generate_brdf_lut;
 use anvilkit_core::error::{AnvilKitError, Result};
 
@@ -66,6 +70,36 @@ fn pack_lights(scene_lights: &SceneLights) -> ([GpuLight; MAX_LIGHTS], u32) {
 
     (lights, count)
 }
+
+/// 计算方向光的光空间矩阵（正交投影）
+///
+/// 生成一个从光源方向看向原点的 view-projection 矩阵，
+/// 用于 shadow pass 的深度渲染。
+fn compute_light_space_matrix(light_direction: &glam::Vec3) -> glam::Mat4 {
+    let light_dir = light_direction.normalize();
+    // 光源位置设在场景中心的反方向
+    let light_pos = -light_dir * 15.0;
+    let light_view = glam::Mat4::look_at_lh(light_pos, glam::Vec3::ZERO, glam::Vec3::Y);
+    // 正交投影覆盖场景范围
+    let light_proj = glam::Mat4::orthographic_lh(-10.0, 10.0, -10.0, 10.0, 0.1, 30.0);
+    light_proj * light_view
+}
+
+/// Shadow pass shader (depth-only, reads model + view_proj from scene uniform)
+const SHADOW_SHADER: &str = r#"
+struct SceneUniform {
+    model: mat4x4<f32>,
+    view_proj: mat4x4<f32>,
+};
+
+@group(0) @binding(0)
+var<uniform> scene: SceneUniform;
+
+@vertex
+fn vs_main(@location(0) position: vec3<f32>) -> @builtin(position) vec4<f32> {
+    return scene.view_proj * scene.model * vec4<f32>(position, 1.0);
+}
+"#;
 
 /// ACES Filmic tone mapping post-process shader (fullscreen triangle)
 const TONEMAP_SHADER: &str = r#"
@@ -412,13 +446,15 @@ impl RenderApp {
             .expect("创建 Tonemap 管线失败")
             .into_pipeline();
 
-        // IBL: BRDF LUT
+        // IBL + Shadow: bind group 2 (BRDF LUT + shadow map)
         let brdf_lut_data = generate_brdf_lut(256);
         let (_, brdf_lut_view) = create_texture_linear(device, 256, 256, &brdf_lut_data, "ECS BRDF LUT");
+        let (_, shadow_map_view) = create_shadow_map(device, SHADOW_MAP_SIZE, "ECS Shadow Map");
+        let shadow_sampler = create_shadow_sampler(device, "ECS Shadow Sampler");
 
-        let ibl_bgl = device.device().create_bind_group_layout(
+        let ibl_shadow_bind_group_layout = device.device().create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
-                label: Some("ECS IBL BGL"),
+                label: Some("ECS IBL+Shadow BGL"),
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0, visibility: wgpu::ShaderStages::FRAGMENT,
@@ -433,17 +469,61 @@ impl RenderApp {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2, visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Depth,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        }, count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3, visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                        count: None,
+                    },
                 ],
             },
         );
-        let ibl_bind_group = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("ECS IBL BG"),
-            layout: &ibl_bgl,
+
+        let ibl_shadow_bind_group = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("ECS IBL+Shadow BG"),
+            layout: &ibl_shadow_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&brdf_lut_view) },
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&shadow_map_view) },
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&shadow_sampler) },
             ],
         });
+
+        // Shadow pass pipeline (depth-only, uses PbrVertex layout for position)
+        let shadow_scene_bgl = device.device().create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                label: Some("Shadow Scene BGL"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            },
+        );
+
+        let shadow_pipeline = RenderPipelineBuilder::new()
+            .with_vertex_shader(SHADOW_SHADER)
+            .with_format(wgpu::TextureFormat::Rgba8Unorm) // dummy, no color output
+            .with_vertex_layouts(vec![PbrVertex::layout()])
+            .with_depth_format(DEPTH_FORMAT)
+            .with_bind_group_layouts(vec![shadow_scene_bgl])
+            .with_label("ECS Shadow Pipeline")
+            .build_depth_only(device)
+            .expect("创建 Shadow 管线失败")
+            .into_pipeline();
 
         app.insert_resource(RenderState {
             surface_format: format,
@@ -456,11 +536,14 @@ impl RenderApp {
             tonemap_pipeline,
             tonemap_bind_group,
             tonemap_bind_group_layout,
-            ibl_bind_group,
+            ibl_shadow_bind_group,
+            ibl_shadow_bind_group_layout,
+            shadow_pipeline,
+            shadow_map_view,
         });
 
         self.gpu_initialized = true;
-        info!("RenderState (HDR + IBL) 已注入 ECS World");
+        info!("RenderState (HDR + IBL + Shadow) 已注入 ECS World");
     }
 
     /// 处理窗口大小变化
@@ -546,6 +629,50 @@ impl RenderApp {
         let (gpu_lights, light_count) = pack_lights(scene_lights);
         let light = &scene_lights.directional;
 
+        // Compute light-space matrix for shadow mapping (directional light)
+        let shadow_view_proj = compute_light_space_matrix(&light.direction);
+
+        // === Pass 0: Shadow pass → shadow depth map ===
+        for cmd in draw_list.commands.iter() {
+            let Some(gpu_mesh) = render_assets.get_mesh(&cmd.mesh) else { continue };
+
+            let model = cmd.model_matrix;
+            let shadow_uniform = PbrSceneUniform {
+                model: model.to_cols_array_2d(),
+                view_proj: shadow_view_proj.to_cols_array_2d(),
+                ..Default::default()
+            };
+            device.queue().write_buffer(
+                &render_state.scene_uniform_buffer, 0, bytemuck::bytes_of(&shadow_uniform),
+            );
+
+            let mut encoder = device.device().create_command_encoder(
+                &wgpu::CommandEncoderDescriptor { label: Some("Shadow Encoder") },
+            );
+            {
+                let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Shadow Pass"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &render_state.shadow_map_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                rp.set_pipeline(&render_state.shadow_pipeline);
+                rp.set_bind_group(0, &render_state.scene_bind_group, &[]);
+                rp.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
+                rp.set_index_buffer(gpu_mesh.index_buffer.slice(..), gpu_mesh.index_format);
+                rp.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);
+            }
+            device.queue().submit(std::iter::once(encoder.finish()));
+        }
+
         // === Pass 1: Scene → HDR render target ===
         for (i, cmd) in draw_list.commands.iter().enumerate() {
             let Some(gpu_mesh) = render_assets.get_mesh(&cmd.mesh) else { continue };
@@ -563,6 +690,7 @@ impl RenderApp {
                 light_color: [light.color.x, light.color.y, light.color.z, light.intensity],
                 material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, light_count as f32],
                 lights: gpu_lights,
+                shadow_view_proj: shadow_view_proj.to_cols_array_2d(),
             };
             device.queue().write_buffer(
                 &render_state.scene_uniform_buffer,
@@ -605,7 +733,7 @@ impl RenderApp {
                 render_pass.set_pipeline(&gpu_material.pipeline);
                 render_pass.set_bind_group(0, &render_state.scene_bind_group, &[]);
                 render_pass.set_bind_group(1, &gpu_material.bind_group, &[]);
-                render_pass.set_bind_group(2, &render_state.ibl_bind_group, &[]);
+                render_pass.set_bind_group(2, &render_state.ibl_shadow_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
                 render_pass.set_index_buffer(gpu_mesh.index_buffer.slice(..), gpu_mesh.index_format);
                 render_pass.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);

@@ -52,6 +52,8 @@ pub struct PbrSceneUniform {
     pub material_params: [f32; 4],      // 16 bytes (metallic, roughness, normal_scale, light_count)
     // Multi-light array
     pub lights: [GpuLight; MAX_LIGHTS], // 512 bytes (8 * 64)
+    // Shadow mapping
+    pub shadow_view_proj: [[f32; 4]; 4], // 64 bytes
 }
 
 impl Default for PbrSceneUniform {
@@ -65,6 +67,7 @@ impl Default for PbrSceneUniform {
             light_color: [1.0, 1.0, 1.0, 3.0],
             material_params: [0.0, 0.5, 1.0, 0.0],
             lights: [GpuLight::default(); MAX_LIGHTS],
+            shadow_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
         }
     }
 }
@@ -86,8 +89,12 @@ pub struct RenderState {
     pub tonemap_pipeline: wgpu::RenderPipeline,
     pub tonemap_bind_group: wgpu::BindGroup,
     pub tonemap_bind_group_layout: wgpu::BindGroupLayout,
-    // IBL
-    pub ibl_bind_group: wgpu::BindGroup,
+    // IBL + Shadow (group 2)
+    pub ibl_shadow_bind_group: wgpu::BindGroup,
+    pub ibl_shadow_bind_group_layout: wgpu::BindGroupLayout,
+    // Shadow pass
+    pub shadow_pipeline: wgpu::RenderPipeline,
+    pub shadow_map_view: wgpu::TextureView,
 }
 
 #[cfg(test)]
@@ -96,7 +103,7 @@ mod tests {
 
     #[test]
     fn test_pbr_scene_uniform_size() {
-        assert_eq!(std::mem::size_of::<PbrSceneUniform>(), 768);
+        assert_eq!(std::mem::size_of::<PbrSceneUniform>(), 832);
     }
 
     #[test]

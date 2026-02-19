@@ -13,6 +13,7 @@ use anvilkit_render::renderer::{
     assets::RenderAssets,
     draw::{ActiveCamera, DrawCommandList, SceneLights, DirectionalLight, PointLight, MaterialParams},
     state::GpuLight,
+    buffer::{create_shadow_map, create_shadow_sampler, SHADOW_MAP_SIZE},
     ibl::generate_brdf_lut,
 };
 use anvilkit_render::plugin::CameraComponent;
@@ -38,6 +39,7 @@ struct SceneUniform {
     light_color: vec4<f32>,        // legacy
     material_params: vec4<f32>,    // (metallic, roughness, normal_scale, light_count)
     lights: array<GpuLight, 8>,
+    shadow_view_proj: mat4x4<f32>,
 };
 
 @group(0) @binding(0)
@@ -52,11 +54,15 @@ var normal_map_texture: texture_2d<f32>;
 @group(1) @binding(3)
 var normal_map_sampler: sampler;
 
-// IBL resources (group 2)
+// IBL + Shadow resources (group 2)
 @group(2) @binding(0)
 var brdf_lut: texture_2d<f32>;
 @group(2) @binding(1)
 var brdf_lut_sampler: sampler;
+@group(2) @binding(2)
+var shadow_map: texture_depth_2d;
+@group(2) @binding(3)
+var shadow_sampler: sampler_comparison;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -141,6 +147,31 @@ fn hemisphere_specular(R: vec3<f32>, roughness: f32) -> vec3<f32> {
     return mix(avg, sharp, blur);
 }
 
+// Shadow mapping: PCF 3x3
+fn calculate_shadow(world_pos: vec3<f32>, shadow_vp: mat4x4<f32>) -> f32 {
+    let light_clip = shadow_vp * vec4<f32>(world_pos, 1.0);
+    let light_ndc = light_clip.xyz / light_clip.w;
+    // NDC → shadow UV: x [-1,1]→[0,1], y [-1,1]→[0,1] (flip Y)
+    let shadow_uv = vec2<f32>(light_ndc.x * 0.5 + 0.5, -light_ndc.y * 0.5 + 0.5);
+    let current_depth = light_ndc.z;
+
+    // Out of shadow frustum → fully lit
+    if (shadow_uv.x < 0.0 || shadow_uv.x > 1.0 || shadow_uv.y < 0.0 || shadow_uv.y > 1.0 || current_depth > 1.0) {
+        return 1.0;
+    }
+
+    // PCF 3x3 (texel size for 2048 shadow map)
+    let texel_size = 1.0 / 2048.0;
+    var shadow = 0.0;
+    for (var x = -1; x <= 1; x = x + 1) {
+        for (var y = -1; y <= 1; y = y + 1) {
+            let offset = vec2<f32>(f32(x), f32(y)) * texel_size;
+            shadow = shadow + textureSampleCompare(shadow_map, shadow_sampler, shadow_uv + offset, current_depth - 0.005);
+        }
+    }
+    return shadow / 9.0;
+}
+
 // Fresnel with roughness for IBL (Sébastien Lagarde)
 fn fresnel_schlick_roughness(cos_theta: f32, F0: vec3<f32>, roughness: f32) -> vec3<f32> {
     let smooth_val = max(vec3<f32>(1.0 - roughness), F0);
@@ -173,6 +204,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // F0: non-metal 0.04, metal uses albedo
     let F0 = mix(vec3<f32>(0.04), albedo, metallic);
+
+    // === Shadow ===
+    let shadow = calculate_shadow(in.world_position, scene.shadow_view_proj);
 
     // === Direct lighting (multi-light loop) ===
     let light_count = u32(scene.material_params.w);
@@ -227,7 +261,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
         let NdotL = max(dot(N, L), 0.0);
 
-        Lo = Lo + (kD * albedo / PI + specular) * radiance * NdotL;
+        // Apply shadow only to directional light (index 0)
+        var light_shadow = 1.0;
+        if (li == 0u && light_type == 0u) {
+            light_shadow = shadow;
+        }
+
+        Lo = Lo + (kD * albedo / PI + specular) * radiance * NdotL * light_shadow;
     }
 
     // === Indirect lighting (IBL) ===
@@ -532,13 +572,15 @@ impl PbrEcsApp {
             ],
         });
 
-        // IBL bind group (group 2: BRDF LUT texture + sampler)
+        // IBL + Shadow bind group (group 2: BRDF LUT + shadow map)
         let brdf_lut_data = generate_brdf_lut(256);
         let (_, brdf_lut_view) = create_texture_linear(device, 256, 256, &brdf_lut_data, "BRDF LUT");
+        let (_, shadow_map_view) = create_shadow_map(device, SHADOW_MAP_SIZE, "Shadow Map");
+        let shadow_sampler = create_shadow_sampler(device, "Shadow Sampler");
 
         let ibl_bgl = device.device().create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
-                label: Some("IBL BGL"),
+                label: Some("IBL+Shadow BGL"),
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0, visibility: wgpu::ShaderStages::FRAGMENT,
@@ -553,15 +595,30 @@ impl PbrEcsApp {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2, visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Depth,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        }, count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3, visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                        count: None,
+                    },
                 ],
             },
         );
         let ibl_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("IBL BG"),
+            label: Some("IBL+Shadow BG"),
             layout: &ibl_bgl,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&brdf_lut_view) },
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&shadow_map_view) },
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&shadow_sampler) },
             ],
         });
 
@@ -688,6 +745,13 @@ impl PbrEcsApp {
         // Pack all lights into GPU array
         let (gpu_lights, light_count) = pack_scene_lights(scene_lights);
 
+        // Compute light-space matrix for shadow mapping
+        let light_dir = light.direction.normalize();
+        let light_pos = -light_dir * 15.0;
+        let light_view = glam::Mat4::look_at_lh(light_pos, glam::Vec3::ZERO, glam::Vec3::Y);
+        let light_proj = glam::Mat4::orthographic_lh(-10.0, 10.0, -10.0, 10.0, 0.1, 30.0);
+        let shadow_view_proj = light_proj * light_view;
+
         // === Pass 1: Scene → HDR render target ===
         for (i, cmd) in draw_list.commands.iter().enumerate() {
             let Some(gpu_mesh) = render_assets.get_mesh(&cmd.mesh) else { continue };
@@ -705,6 +769,7 @@ impl PbrEcsApp {
                 light_color: [light.color.x, light.color.y, light.color.z, light.intensity],
                 material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, light_count as f32],
                 lights: gpu_lights,
+                shadow_view_proj: shadow_view_proj.to_cols_array_2d(),
             };
             device.queue().write_buffer(ub, 0, bytemuck::bytes_of(&uniform));
 

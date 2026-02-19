@@ -34,6 +34,7 @@ pub use buffer::{
     create_uniform_buffer, create_depth_texture, create_hdr_render_target,
     DEPTH_FORMAT, HDR_FORMAT,
     create_texture, create_texture_linear, create_sampler,
+    create_shadow_map, create_shadow_sampler, SHADOW_MAP_SIZE,
 };
 pub use state::{PbrSceneUniform, GpuLight, MAX_LIGHTS};
 
