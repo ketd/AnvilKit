@@ -62,3 +62,7 @@ path = "../../examples/hello_ecs.rs"
 [[example]]
 name = "hello_pbr_ecs"
 path = "../../examples/hello_pbr_ecs.rs"
+
+[[example]]
+name = "showcase"
+path = "../../examples/showcase.rs"
