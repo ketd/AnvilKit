@@ -19,6 +19,6 @@ pub mod gltf_loader;
 pub mod prelude {
     pub use crate::mesh::MeshData;
     pub use crate::material::{TextureData, MaterialData};
-    pub use crate::scene::SceneData;
-    pub use crate::gltf_loader::{load_gltf_mesh, load_gltf_scene};
+    pub use crate::scene::{SceneData, Submesh, MultiMeshScene};
+    pub use crate::gltf_loader::{load_gltf_mesh, load_gltf_scene, load_gltf_scene_multi};
 }

@@ -193,6 +193,66 @@ pub fn load_gltf_scene(path: impl AsRef<Path>) -> Result<SceneData> {
     Ok(SceneData { mesh, material })
 }
 
+/// 从 glTF/GLB 文件加载多子网格场景数据
+///
+/// 提取所有 mesh 的所有 primitive，每个 primitive 生成一个 Submesh。
+///
+/// # 示例
+///
+/// ```rust,no_run
+/// use anvilkit_assets::gltf_loader::load_gltf_scene_multi;
+///
+/// let scene = load_gltf_scene_multi("assets/model.glb").expect("加载失败");
+/// println!("子网格: {}, 总顶点: {}", scene.submesh_count(), scene.total_vertex_count());
+/// ```
+pub fn load_gltf_scene_multi(path: impl AsRef<Path>) -> Result<crate::scene::MultiMeshScene> {
+    let path = path.as_ref();
+    info!("加载 glTF 多子网格场景: {}", path.display());
+
+    let (document, buffers, images) = gltf::import(path)
+        .map_err(|e| AnvilKitError::asset_with_path(
+            format!("glTF 导入失败: {}", e),
+            path.to_string_lossy().to_string(),
+        ))?;
+
+    let mut submeshes = Vec::new();
+
+    for gltf_mesh in document.meshes() {
+        for primitive in gltf_mesh.primitives() {
+            let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+
+            let Some(positions) = reader.read_positions().map(|p| p.map(Vec3::from).collect::<Vec<_>>()) else {
+                continue;
+            };
+
+            let normals: Vec<Vec3> = reader.read_normals()
+                .map(|n| n.map(Vec3::from).collect())
+                .unwrap_or_else(|| vec![Vec3::Z; positions.len()]);
+
+            let texcoords: Vec<Vec2> = reader.read_tex_coords(0)
+                .map(|tc| tc.into_f32().map(Vec2::from).collect())
+                .unwrap_or_else(|| vec![Vec2::ZERO; positions.len()]);
+
+            let tangents: Vec<[f32; 4]> = reader.read_tangents()
+                .map(|t| t.collect())
+                .unwrap_or_else(|| vec![[1.0, 0.0, 0.0, 1.0]; positions.len()]);
+
+            let Some(indices) = reader.read_indices().map(|i| i.into_u32().collect::<Vec<_>>()) else {
+                continue;
+            };
+
+            let mesh = MeshData { positions, normals, texcoords, tangents, indices };
+            let material = extract_material(&primitive, &images);
+
+            info!("子网格: {} 顶点, {} 索引", mesh.vertex_count(), mesh.index_count());
+            submeshes.push(crate::scene::Submesh { mesh, material });
+        }
+    }
+
+    info!("多子网格场景加载完成: {} 个子网格", submeshes.len());
+    Ok(crate::scene::MultiMeshScene { submeshes })
+}
+
 /// 从 glTF primitive 提取材质数据
 fn extract_material(
     primitive: &gltf::Primitive<'_>,
