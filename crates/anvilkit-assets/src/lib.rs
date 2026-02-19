@@ -15,10 +15,12 @@ pub mod mesh;
 pub mod material;
 pub mod scene;
 pub mod gltf_loader;
+pub mod asset_server;
 
 pub mod prelude {
     pub use crate::mesh::MeshData;
     pub use crate::material::{TextureData, MaterialData};
     pub use crate::scene::{SceneData, Submesh, MultiMeshScene};
     pub use crate::gltf_loader::{load_gltf_mesh, load_gltf_scene, load_gltf_scene_multi};
+    pub use crate::asset_server::{AssetServer, AssetHandle, AssetStorage, AssetId, LoadState};
 }
