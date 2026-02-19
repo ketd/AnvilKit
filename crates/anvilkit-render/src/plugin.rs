@@ -7,7 +7,7 @@ use log::info;
 
 use crate::window::WindowConfig;
 use crate::renderer::assets::{MeshHandle, MaterialHandle, RenderAssets};
-use crate::renderer::draw::{ActiveCamera, DrawCommand, DrawCommandList, SceneLights, MaterialParams};
+use crate::renderer::draw::{ActiveCamera, Aabb, DrawCommand, DrawCommandList, Frustum, SceneLights, MaterialParams};
 use crate::renderer::state::RenderState;
 
 /// 渲染插件
@@ -218,14 +218,33 @@ fn camera_system(
 
 /// 渲染提取系统 (PostUpdate, after camera_system)
 ///
-/// 查询 (MeshHandle, MaterialHandle, Transform, Option<MaterialParams>) → 填充 DrawCommandList
+/// 查询 (MeshHandle, MaterialHandle, Transform, Option<MaterialParams>, Option<Aabb>)
+/// → 视锥体剔除 → 填充 DrawCommandList
 fn render_extract_system(
-    query: Query<(&MeshHandle, &MaterialHandle, &Transform, Option<&MaterialParams>)>,
+    query: Query<(&MeshHandle, &MaterialHandle, &Transform, Option<&MaterialParams>, Option<&Aabb>)>,
+    active_camera: Res<ActiveCamera>,
     mut draw_list: ResMut<DrawCommandList>,
 ) {
     draw_list.clear();
 
-    for (mesh, material, transform, mat_params) in query.iter() {
+    let frustum = Frustum::from_view_proj(&active_camera.view_proj);
+
+    for (mesh, material, transform, mat_params, aabb) in query.iter() {
+        // Frustum culling: if entity has an Aabb, test visibility
+        if let Some(aabb) = aabb {
+            let model = transform.compute_matrix();
+            // Transform AABB center to world space
+            let local_center = aabb.center();
+            let world_center = model.transform_point3(local_center);
+            // Scale half_extents by model matrix (approximate for uniform scale)
+            let scale = transform.scale;
+            let world_half = aabb.half_extents() * scale;
+
+            if !frustum.intersects_aabb(world_center, world_half) {
+                continue; // 不可见，跳过
+            }
+        }
+
         let default_params = MaterialParams::default();
         let p = mat_params.unwrap_or(&default_params);
 
