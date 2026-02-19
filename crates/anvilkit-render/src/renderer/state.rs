@@ -52,6 +52,8 @@ pub struct RenderState {
     pub tonemap_pipeline: wgpu::RenderPipeline,
     pub tonemap_bind_group: wgpu::BindGroup,
     pub tonemap_bind_group_layout: wgpu::BindGroupLayout,
+    // IBL
+    pub ibl_bind_group: wgpu::BindGroup,
 }
 
 #[cfg(test)]

@@ -18,8 +18,9 @@ use crate::renderer::{RenderDevice, RenderSurface};
 use crate::renderer::assets::RenderAssets;
 use crate::renderer::draw::{ActiveCamera, DrawCommandList, SceneLights};
 use crate::renderer::state::{RenderState, PbrSceneUniform};
-use crate::renderer::buffer::{create_uniform_buffer, create_depth_texture, create_hdr_render_target, create_sampler};
+use crate::renderer::buffer::{create_uniform_buffer, create_depth_texture, create_hdr_render_target, create_sampler, create_texture_linear};
 use crate::renderer::RenderPipelineBuilder;
+use crate::renderer::ibl::generate_brdf_lut;
 use anvilkit_core::error::{AnvilKitError, Result};
 
 /// ACES Filmic tone mapping post-process shader (fullscreen triangle)
@@ -367,6 +368,39 @@ impl RenderApp {
             .expect("创建 Tonemap 管线失败")
             .into_pipeline();
 
+        // IBL: BRDF LUT
+        let brdf_lut_data = generate_brdf_lut(256);
+        let (_, brdf_lut_view) = create_texture_linear(device, 256, 256, &brdf_lut_data, "ECS BRDF LUT");
+
+        let ibl_bgl = device.device().create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                label: Some("ECS IBL BGL"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0, visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        }, count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            },
+        );
+        let ibl_bind_group = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("ECS IBL BG"),
+            layout: &ibl_bgl,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&brdf_lut_view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+            ],
+        });
+
         app.insert_resource(RenderState {
             surface_format: format,
             surface_size: (w, h),
@@ -378,10 +412,11 @@ impl RenderApp {
             tonemap_pipeline,
             tonemap_bind_group,
             tonemap_bind_group_layout,
+            ibl_bind_group,
         });
 
         self.gpu_initialized = true;
-        info!("RenderState (HDR) 已注入 ECS World");
+        info!("RenderState (HDR + IBL) 已注入 ECS World");
     }
 
     /// 处理窗口大小变化
@@ -524,6 +559,7 @@ impl RenderApp {
                 render_pass.set_pipeline(&gpu_material.pipeline);
                 render_pass.set_bind_group(0, &render_state.scene_bind_group, &[]);
                 render_pass.set_bind_group(1, &gpu_material.bind_group, &[]);
+                render_pass.set_bind_group(2, &render_state.ibl_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
                 render_pass.set_index_buffer(gpu_mesh.index_buffer.slice(..), gpu_mesh.index_format);
                 render_pass.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);

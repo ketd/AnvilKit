@@ -22,6 +22,7 @@ pub mod buffer;
 pub mod assets;
 pub mod draw;
 pub mod state;
+pub mod ibl;
 
 // 重新导出主要类型
 pub use device::RenderDevice;

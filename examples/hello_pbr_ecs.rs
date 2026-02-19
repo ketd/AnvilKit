@@ -1,7 +1,7 @@
-//! # ECS 驱动的 PBR 渲染 + 法线贴图 + HDR 管线
+//! # ECS PBR + 法线贴图 + HDR + IBL 环境光
 //!
-//! AnvilKit M6c 示例：HDR 渲染管线 + ACES Filmic tone mapping。
-//! 场景渲染到 Rgba16Float 离屏 RT，再通过全屏后处理 pass 进行 tone mapping。
+//! AnvilKit M6d 示例：完整 PBR 管线 + IBL 环境光。
+//! BRDF LUT + hemisphere irradiance + split-sum specular。
 //!
 //! 运行: `cargo run -p anvilkit-render --example hello_pbr_ecs`
 
@@ -12,11 +12,12 @@ use anvilkit_render::renderer::{
              create_hdr_render_target, create_texture, create_texture_linear, create_sampler},
     assets::RenderAssets,
     draw::{ActiveCamera, DrawCommandList, SceneLights, DirectionalLight, MaterialParams},
+    ibl::generate_brdf_lut,
 };
 use anvilkit_render::plugin::CameraComponent;
 use anvilkit_assets::gltf_loader::load_gltf_scene;
 
-/// Cook-Torrance PBR WGSL 着色器 with TBN Normal Mapping
+/// Cook-Torrance PBR + TBN Normal Mapping + IBL Ambient
 const SHADER_SOURCE: &str = r#"
 const PI: f32 = 3.14159265359;
 
@@ -41,6 +42,12 @@ var base_color_sampler: sampler;
 var normal_map_texture: texture_2d<f32>;
 @group(1) @binding(3)
 var normal_map_sampler: sampler;
+
+// IBL resources (group 2)
+@group(2) @binding(0)
+var brdf_lut: texture_2d<f32>;
+@group(2) @binding(1)
+var brdf_lut_sampler: sampler;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -105,6 +112,32 @@ fn geometry_smith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f
     return geometry_schlick_ggx(NdotV, roughness) * geometry_schlick_ggx(NdotL, roughness);
 }
 
+// Hemisphere irradiance — simple sky/ground ambient model
+fn hemisphere_irradiance(N: vec3<f32>) -> vec3<f32> {
+    let sky_color = vec3<f32>(0.30, 0.50, 0.90);    // blue sky
+    let ground_color = vec3<f32>(0.10, 0.08, 0.05);  // dark ground
+    let t = N.y * 0.5 + 0.5;  // remap [-1,1] → [0,1]
+    return mix(ground_color, sky_color, t);
+}
+
+// Approximate prefiltered specular from hemisphere
+fn hemisphere_specular(R: vec3<f32>, roughness: f32) -> vec3<f32> {
+    let sky_color = vec3<f32>(0.50, 0.70, 1.00);
+    let ground_color = vec3<f32>(0.10, 0.08, 0.05);
+    let t = R.y * 0.5 + 0.5;
+    // Rougher surfaces see blurred environment → blend toward average
+    let avg = (sky_color + ground_color) * 0.5;
+    let sharp = mix(ground_color, sky_color, t);
+    let blur = 1.0 - roughness * roughness;
+    return mix(avg, sharp, blur);
+}
+
+// Fresnel with roughness for IBL (Sébastien Lagarde)
+fn fresnel_schlick_roughness(cos_theta: f32, F0: vec3<f32>, roughness: f32) -> vec3<f32> {
+    let smooth_val = max(vec3<f32>(1.0 - roughness), F0);
+    return F0 + (smooth_val - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let albedo = textureSample(base_color_texture, base_color_sampler, in.texcoord).rgb;
@@ -114,13 +147,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Sample normal map and transform from tangent space to world space
     let normal_map = textureSample(normal_map_texture, normal_map_sampler, in.texcoord).rgb;
-    // Unpack [0,1] -> [-1,1]
     var tangent_normal = normal_map * 2.0 - vec3<f32>(1.0);
     tangent_normal.x = tangent_normal.x * normal_scale;
     tangent_normal.y = tangent_normal.y * normal_scale;
     tangent_normal = normalize(tangent_normal);
 
-    // TBN matrix: transform from tangent space to world space
     let T = normalize(in.world_tangent);
     let B = normalize(in.world_bitangent);
     let Ng = normalize(in.world_normal);
@@ -129,34 +160,44 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let V = normalize(scene.camera_pos.xyz - in.world_position);
     let L = normalize(-scene.light_dir.xyz);
     let H = normalize(V + L);
+    let NdotV = max(dot(N, V), 0.0);
 
     // F0: non-metal 0.04, metal uses albedo
     let F0 = mix(vec3<f32>(0.04), albedo, metallic);
 
-    // Cook-Torrance BRDF
+    // === Direct lighting (Cook-Torrance) ===
     let D = distribution_ggx(N, H, roughness);
     let G = geometry_smith(N, V, L, roughness);
     let F = fresnel_schlick(max(dot(H, V), 0.0), F0);
 
     let numerator = D * G * F;
-    let denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
+    let denominator = 4.0 * NdotV * max(dot(N, L), 0.0) + 0.0001;
     let specular = numerator / denominator;
 
-    // Energy conservation: kD = (1 - F) * (1 - metallic)
-    let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
-
+    let kD_direct = (vec3<f32>(1.0) - F) * (1.0 - metallic);
     let NdotL = max(dot(N, L), 0.0);
     let light_radiance = scene.light_color.xyz * scene.light_color.w;
+    let Lo = (kD_direct * albedo / PI + specular) * light_radiance * NdotL;
 
-    // Direct lighting = (diffuse + specular) * light radiance * NdotL
-    let Lo = (kD * albedo / PI + specular) * light_radiance * NdotL;
+    // === Indirect lighting (IBL) ===
+    let F_ibl = fresnel_schlick_roughness(NdotV, F0, roughness);
+    let kD_ibl = (vec3<f32>(1.0) - F_ibl) * (1.0 - metallic);
 
-    // Ambient (simple constant, IBL in M6d)
-    let ambient = vec3<f32>(0.03) * albedo;
+    // Diffuse IBL: hemisphere irradiance
+    let irradiance = hemisphere_irradiance(N);
+    let diffuse_ibl = irradiance * albedo * kD_ibl;
+
+    // Specular IBL: prefiltered color * (F0 * scale + bias)
+    let R = reflect(-V, N);
+    let prefiltered_color = hemisphere_specular(R, roughness);
+    let brdf = textureSample(brdf_lut, brdf_lut_sampler, vec2<f32>(NdotV, roughness)).rg;
+    let specular_ibl = prefiltered_color * (F0 * brdf.x + brdf.y);
+
+    let ambient = diffuse_ibl + specular_ibl;
 
     let color = ambient + Lo;
 
-    // Output linear HDR — tone mapping and gamma are done in post-process pass
+    // Output linear HDR — tone mapping in post-process pass
     return vec4<f32>(color, 1.0);
 }
 "#;
@@ -237,7 +278,7 @@ fn main() {
     let mut app = App::new();
     app.add_plugins(RenderPlugin::new().with_window_config(
         WindowConfig::new()
-            .with_title("AnvilKit - HDR PBR (M6c)")
+            .with_title("AnvilKit - PBR + IBL (M6d)")
             .with_size(800, 600),
     ));
     app.insert_resource(FrameTime(std::time::Instant::now()));
@@ -253,7 +294,7 @@ fn main() {
 
     let event_loop = EventLoop::new().unwrap();
     let config = WindowConfig::new()
-        .with_title("AnvilKit - HDR PBR (M6c)")
+        .with_title("AnvilKit - PBR + IBL (M6d)")
         .with_size(800, 600);
 
     event_loop.run_app(&mut PbrEcsApp {
@@ -266,6 +307,7 @@ fn main() {
         hdr_texture_view: None,
         tonemap_pipeline: None,
         tonemap_bind_group: None,
+        ibl_bind_group: None,
         mesh_vertices,
         mesh_indices: scene.mesh.indices,
         material: scene.material,
@@ -283,6 +325,8 @@ struct PbrEcsApp {
     hdr_texture_view: Option<wgpu::TextureView>,
     tonemap_pipeline: Option<wgpu::RenderPipeline>,
     tonemap_bind_group: Option<wgpu::BindGroup>,
+    // IBL
+    ibl_bind_group: Option<wgpu::BindGroup>,
     mesh_vertices: Vec<PbrVertex>,
     mesh_indices: Vec<u32>,
     material: anvilkit_assets::material::MaterialData,
@@ -383,15 +427,48 @@ impl PbrEcsApp {
             ],
         });
 
-        // PBR Pipeline — renders to HDR_FORMAT (Rgba16Float)
+        // IBL bind group (group 2: BRDF LUT texture + sampler)
+        let brdf_lut_data = generate_brdf_lut(256);
+        let (_, brdf_lut_view) = create_texture_linear(device, 256, 256, &brdf_lut_data, "BRDF LUT");
+
+        let ibl_bgl = device.device().create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                label: Some("IBL BGL"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0, visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        }, count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            },
+        );
+        let ibl_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("IBL BG"),
+            layout: &ibl_bgl,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&brdf_lut_view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+            ],
+        });
+
+        // PBR Pipeline — renders to HDR_FORMAT, 3 bind groups (scene, material, IBL)
         let pipeline = RenderPipelineBuilder::new()
             .with_vertex_shader(SHADER_SOURCE)
             .with_fragment_shader(SHADER_SOURCE)
             .with_format(HDR_FORMAT)
             .with_vertex_layouts(vec![PbrVertex::layout()])
             .with_depth_format(DEPTH_FORMAT)
-            .with_bind_group_layouts(vec![scene_bgl, mat_bgl])
-            .with_label("PBR HDR Pipeline")
+            .with_bind_group_layouts(vec![scene_bgl, mat_bgl, ibl_bgl])
+            .with_label("PBR HDR IBL Pipeline")
             .build(device)
             .expect("创建 PBR 管线失败");
 
@@ -472,8 +549,9 @@ impl PbrEcsApp {
         self.hdr_texture_view = Some(hdr_view);
         self.tonemap_pipeline = Some(tonemap_pipeline.into_pipeline());
         self.tonemap_bind_group = Some(tonemap_bg);
+        self.ibl_bind_group = Some(ibl_bg);
         self.initialized = true;
-        println!("HDR PBR 场景初始化完成！");
+        println!("HDR PBR + IBL 场景初始化完成！");
     }
 
     fn render_frame(&self) {
@@ -484,6 +562,7 @@ impl PbrEcsApp {
         let Some(hdr_view) = &self.hdr_texture_view else { return };
         let Some(tonemap_pipeline) = &self.tonemap_pipeline else { return };
         let Some(tonemap_bg) = &self.tonemap_bind_group else { return };
+        let Some(ibl_bg) = &self.ibl_bind_group else { return };
         let Some(active_camera) = self.app.world.get_resource::<ActiveCamera>() else { return };
         let Some(draw_list) = self.app.world.get_resource::<DrawCommandList>() else { return };
         let Some(render_assets) = self.app.world.get_resource::<RenderAssets>() else { return };
@@ -555,6 +634,7 @@ impl PbrEcsApp {
                 rp.set_pipeline(&gpu_mat.pipeline);
                 rp.set_bind_group(0, scene_bg, &[]);
                 rp.set_bind_group(1, &gpu_mat.bind_group, &[]);
+                rp.set_bind_group(2, ibl_bg, &[]);
                 rp.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
                 rp.set_index_buffer(gpu_mesh.index_buffer.slice(..), gpu_mesh.index_format);
                 rp.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);
