@@ -16,6 +16,7 @@ pub mod material;
 pub mod scene;
 pub mod gltf_loader;
 pub mod asset_server;
+pub mod animation;
 
 pub mod prelude {
     pub use crate::mesh::MeshData;

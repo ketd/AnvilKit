@@ -24,6 +24,8 @@ pub mod draw;
 pub mod state;
 pub mod ibl;
 pub mod sprite;
+pub mod ui;
+pub mod particle;
 
 // 重新导出主要类型
 pub use device::RenderDevice;
