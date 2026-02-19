@@ -144,9 +144,6 @@ mod tests {
     fn test_brdf_lut_values_in_range() {
         let data = generate_brdf_lut(16);
         for chunk in data.chunks(4) {
-            // R and G should be valid [0, 255]
-            assert!(chunk[0] <= 255);
-            assert!(chunk[1] <= 255);
             // B is always 0, A is always 255
             assert_eq!(chunk[2], 0);
             assert_eq!(chunk[3], 255);

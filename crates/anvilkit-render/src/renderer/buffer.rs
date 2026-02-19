@@ -327,6 +327,9 @@ pub const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 /// 默认阴影贴图分辨率
 pub const SHADOW_MAP_SIZE: u32 = 2048;
 
+/// MSAA 采样数（设为 1 可禁用 MSAA）
+pub const MSAA_SAMPLE_COUNT: u32 = 4;
+
 /// 创建阴影深度贴图
 ///
 /// 使用 Depth32Float 格式，可作为渲染附件（shadow pass）和纹理采样（main pass）。
@@ -518,6 +521,50 @@ pub fn create_hdr_render_target(
         dimension: wgpu::TextureDimension::D2,
         format: HDR_FORMAT,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view)
+}
+
+/// 创建 MSAA 深度纹理（sample_count=MSAA_SAMPLE_COUNT）
+pub fn create_depth_texture_msaa(
+    device: &RenderDevice,
+    width: u32,
+    height: u32,
+    label: &str,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let texture = device.device().create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: MSAA_SAMPLE_COUNT,
+        dimension: wgpu::TextureDimension::D2,
+        format: DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view)
+}
+
+/// 创建 MSAA HDR 颜色纹理（sample_count=MSAA_SAMPLE_COUNT，仅 RENDER_ATTACHMENT）
+///
+/// 此纹理用作 MSAA 渲染附件，resolve 到单采样 HDR RT 后由 tonemap pass 采样。
+pub fn create_hdr_msaa_texture(
+    device: &RenderDevice,
+    width: u32,
+    height: u32,
+    label: &str,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let texture = device.device().create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: MSAA_SAMPLE_COUNT,
+        dimension: wgpu::TextureDimension::D2,
+        format: HDR_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());

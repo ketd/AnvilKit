@@ -8,12 +8,13 @@
 use anvilkit_render::prelude::*;
 use anvilkit_render::renderer::{
     RenderPipelineBuilder, DEPTH_FORMAT, HDR_FORMAT,
-    buffer::{PbrVertex, Vertex, create_uniform_buffer, create_depth_texture,
-             create_hdr_render_target, create_texture, create_texture_linear, create_sampler},
+    buffer::{PbrVertex, Vertex, create_uniform_buffer,
+             create_depth_texture_msaa, create_hdr_render_target, create_hdr_msaa_texture,
+             create_texture, create_texture_linear, create_sampler,
+             create_shadow_map, create_shadow_sampler, SHADOW_MAP_SIZE, MSAA_SAMPLE_COUNT},
     assets::RenderAssets,
     draw::{ActiveCamera, DrawCommandList, SceneLights, DirectionalLight, PointLight, MaterialParams},
     state::GpuLight,
-    buffer::{create_shadow_map, create_shadow_sampler, SHADOW_MAP_SIZE},
     ibl::generate_brdf_lut,
 };
 use anvilkit_render::plugin::CameraComponent;
@@ -465,6 +466,7 @@ fn main() {
         scene_bind_group: None,
         depth_texture_view: None,
         hdr_texture_view: None,
+        hdr_msaa_texture_view: None,
         tonemap_pipeline: None,
         tonemap_bind_group: None,
         ibl_bind_group: None,
@@ -481,8 +483,9 @@ struct PbrEcsApp {
     scene_uniform_buffer: Option<wgpu::Buffer>,
     scene_bind_group: Option<wgpu::BindGroup>,
     depth_texture_view: Option<wgpu::TextureView>,
-    // HDR multi-pass
+    // HDR multi-pass + MSAA
     hdr_texture_view: Option<wgpu::TextureView>,
+    hdr_msaa_texture_view: Option<wgpu::TextureView>,
     tonemap_pipeline: Option<wgpu::RenderPipeline>,
     tonemap_bind_group: Option<wgpu::BindGroup>,
     // IBL
@@ -520,7 +523,7 @@ impl PbrEcsApp {
             layout: &scene_bgl,
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: ub.as_entire_binding() }],
         });
-        let (_, depth_view) = create_depth_texture(device, w, h, "Depth");
+        let (_, depth_view) = create_depth_texture_msaa(device, w, h, "Depth");
 
         // Material bind group (group 1: 5 textures + 1 shared sampler)
         let tex_entry = |t: &Option<anvilkit_assets::material::TextureData>, label, fallback: &[u8; 4], srgb: bool| {
@@ -635,20 +638,22 @@ impl PbrEcsApp {
             ],
         });
 
-        // PBR Pipeline — renders to HDR_FORMAT, 3 bind groups (scene, material, IBL)
+        // PBR Pipeline — renders to HDR_FORMAT with MSAA 4x
         let pipeline = RenderPipelineBuilder::new()
             .with_vertex_shader(SHADER_SOURCE)
             .with_fragment_shader(SHADER_SOURCE)
             .with_format(HDR_FORMAT)
             .with_vertex_layouts(vec![PbrVertex::layout()])
             .with_depth_format(DEPTH_FORMAT)
+            .with_multisample_count(MSAA_SAMPLE_COUNT)
             .with_bind_group_layouts(vec![scene_bgl, mat_bgl, ibl_bgl])
-            .with_label("PBR HDR IBL Pipeline")
+            .with_label("PBR HDR MSAA Pipeline")
             .build(device)
             .expect("创建 PBR 管线失败");
 
         // HDR render target
         let (_, hdr_view) = create_hdr_render_target(device, w, h, "HDR RT");
+        let (_, hdr_msaa_view) = create_hdr_msaa_texture(device, w, h, "HDR MSAA");
 
         // Tone mapping post-process pipeline
         let tonemap_bgl = device.device().create_bind_group_layout(
@@ -723,6 +728,7 @@ impl PbrEcsApp {
         self.scene_bind_group = Some(scene_bg);
         self.depth_texture_view = Some(depth_view);
         self.hdr_texture_view = Some(hdr_view);
+        self.hdr_msaa_texture_view = Some(hdr_msaa_view);
         self.tonemap_pipeline = Some(tonemap_pipeline.into_pipeline());
         self.tonemap_bind_group = Some(tonemap_bg);
         self.ibl_bind_group = Some(ibl_bg);
@@ -736,6 +742,7 @@ impl PbrEcsApp {
         let Some(scene_bg) = &self.scene_bind_group else { return };
         let Some(depth_view) = &self.depth_texture_view else { return };
         let Some(hdr_view) = &self.hdr_texture_view else { return };
+        let Some(hdr_msaa_view) = &self.hdr_msaa_texture_view else { return };
         let Some(tonemap_pipeline) = &self.tonemap_pipeline else { return };
         let Some(tonemap_bg) = &self.tonemap_bind_group else { return };
         let Some(ibl_bg) = &self.ibl_bind_group else { return };
@@ -805,11 +812,11 @@ impl PbrEcsApp {
                 };
 
                 let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("HDR Scene Pass"),
+                    label: Some("HDR MSAA Scene Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: hdr_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations { load: color_load, store: wgpu::StoreOp::Store },
+                        view: hdr_msaa_view,
+                        resolve_target: Some(hdr_view),
+                        ops: wgpu::Operations { load: color_load, store: wgpu::StoreOp::Discard },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                         view: depth_view,
@@ -876,7 +883,7 @@ impl ApplicationHandler for PbrEcsApp {
         match &ev {
             WindowEvent::Resized(new_size) if self.initialized && new_size.width > 0 && new_size.height > 0 => {
                 if let Some(device) = self.render_app.render_device() {
-                    let (_, depth_view) = create_depth_texture(device, new_size.width, new_size.height, "Depth");
+                    let (_, depth_view) = create_depth_texture_msaa(device, new_size.width, new_size.height, "Depth");
                     self.depth_texture_view = Some(depth_view);
 
                     // Recreate HDR RT and tonemap bind group at new size
@@ -917,6 +924,8 @@ impl ApplicationHandler for PbrEcsApp {
                         self.tonemap_bind_group = Some(new_bg);
                     }
                     self.hdr_texture_view = Some(hdr_view);
+                    let (_, hdr_msaa_view) = create_hdr_msaa_texture(device, new_size.width, new_size.height, "HDR MSAA");
+                    self.hdr_msaa_texture_view = Some(hdr_msaa_view);
                 }
             }
             WindowEvent::RedrawRequested if self.initialized => {

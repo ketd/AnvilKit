@@ -19,7 +19,8 @@ use crate::renderer::assets::RenderAssets;
 use crate::renderer::draw::{ActiveCamera, DrawCommandList, SceneLights};
 use crate::renderer::state::{RenderState, PbrSceneUniform, GpuLight, MAX_LIGHTS};
 use crate::renderer::buffer::{
-    create_uniform_buffer, create_depth_texture, create_hdr_render_target,
+    create_uniform_buffer, create_depth_texture_msaa,
+    create_hdr_render_target, create_hdr_msaa_texture,
     create_sampler, create_texture_linear, create_shadow_map, create_shadow_sampler,
     Vertex, PbrVertex, SHADOW_MAP_SIZE,
 };
@@ -376,10 +377,11 @@ impl RenderApp {
             }],
         });
 
-        let (_, depth_texture_view) = create_depth_texture(device, w, h, "ECS Depth");
+        let (_, depth_texture_view) = create_depth_texture_msaa(device, w, h, "ECS Depth MSAA");
 
-        // HDR render target
+        // HDR render target (resolve target, sample_count=1) + MSAA color attachment
         let (_, hdr_texture_view) = create_hdr_render_target(device, w, h, "ECS HDR RT");
+        let (_, hdr_msaa_texture_view) = create_hdr_msaa_texture(device, w, h, "ECS HDR MSAA");
         let sampler = create_sampler(device, "ECS Tonemap Sampler");
 
         // Tonemap bind group layout + bind group
@@ -540,6 +542,7 @@ impl RenderApp {
             ibl_shadow_bind_group_layout,
             shadow_pipeline,
             shadow_map_view,
+            hdr_msaa_texture_view,
         });
 
         self.gpu_initialized = true;
@@ -563,11 +566,12 @@ impl RenderApp {
             if let (Some(app), Some(device)) = (&mut self.app, &self.render_device) {
                 if let Some(mut rs) = app.world.get_resource_mut::<RenderState>() {
                     rs.surface_size = (new_size.width, new_size.height);
-                    let (_, depth_view) = create_depth_texture(device, new_size.width, new_size.height, "ECS Depth");
+                    let (_, depth_view) = create_depth_texture_msaa(device, new_size.width, new_size.height, "ECS Depth MSAA");
                     rs.depth_texture_view = depth_view;
 
-                    // Recreate HDR RT and tonemap bind group
+                    // Recreate HDR RT (resolve), MSAA color, and tonemap bind group
                     let (_, hdr_view) = create_hdr_render_target(device, new_size.width, new_size.height, "ECS HDR RT");
+                    let (_, hdr_msaa_view) = create_hdr_msaa_texture(device, new_size.width, new_size.height, "ECS HDR MSAA");
                     let sampler = create_sampler(device, "ECS Sampler");
                     let new_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
                         label: Some("ECS Tonemap BG"),
@@ -578,6 +582,7 @@ impl RenderApp {
                         ],
                     });
                     rs.hdr_texture_view = hdr_view;
+                    rs.hdr_msaa_texture_view = hdr_msaa_view;
                     rs.tonemap_bind_group = new_bg;
                 }
             }
@@ -718,9 +723,9 @@ impl RenderApp {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("ECS HDR Scene Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &render_state.hdr_texture_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations { load: color_load, store: wgpu::StoreOp::Store },
+                        view: &render_state.hdr_msaa_texture_view,
+                        resolve_target: Some(&render_state.hdr_texture_view),
+                        ops: wgpu::Operations { load: color_load, store: wgpu::StoreOp::Discard },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                         view: &render_state.depth_texture_view,

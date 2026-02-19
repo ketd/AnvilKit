@@ -98,6 +98,8 @@ pub struct RenderState {
     // Shadow pass
     pub shadow_pipeline: wgpu::RenderPipeline,
     pub shadow_map_view: wgpu::TextureView,
+    // MSAA
+    pub hdr_msaa_texture_view: wgpu::TextureView,
 }
 
 #[cfg(test)]
