@@ -21,9 +21,19 @@ fn next_id() -> u64 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Component)]
 pub struct MeshHandle(pub u64);
 
+impl MeshHandle {
+    /// 获取内部 ID（用于排序和批处理）
+    pub fn index(&self) -> u64 { self.0 }
+}
+
 /// 材质 GPU 句柄
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Component)]
 pub struct MaterialHandle(pub u64);
+
+impl MaterialHandle {
+    /// 获取内部 ID（用于排序和批处理）
+    pub fn index(&self) -> u64 { self.0 }
+}
 
 /// GPU 端网格数据
 pub struct GpuMesh {

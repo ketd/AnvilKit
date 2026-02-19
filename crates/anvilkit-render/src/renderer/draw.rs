@@ -283,6 +283,7 @@ pub struct DrawCommand {
 /// 每帧的绘制命令列表
 ///
 /// 由 render_extract_system 填充，由 RenderApp::render_ecs() 消费。
+/// 支持按 mesh+material 排序分组以减少管线状态切换。
 #[derive(Resource, Default)]
 pub struct DrawCommandList {
     pub commands: Vec<DrawCommand>,
@@ -295,6 +296,37 @@ impl DrawCommandList {
 
     pub fn push(&mut self, cmd: DrawCommand) {
         self.commands.push(cmd);
+    }
+
+    /// 按 (material, mesh) 排序以实现批处理
+    ///
+    /// 相同 material 的命令排在一起，减少管线状态切换。
+    /// 相同 mesh 的命令排在一起，减少顶点缓冲区切换。
+    pub fn sort_for_batching(&mut self) {
+        self.commands.sort_by(|a, b| {
+            a.material.index().cmp(&b.material.index())
+                .then(a.mesh.index().cmp(&b.mesh.index()))
+        });
+    }
+}
+
+/// GPU 实例数据（per-instance，128 字节）
+///
+/// 包含每个实例的变换和材质参数。
+/// 用于 GPU instancing 时通过 storage buffer 传递。
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct InstanceData {
+    pub model: [[f32; 4]; 4],         // 64 bytes
+    pub normal_matrix: [[f32; 4]; 4], // 64 bytes
+}
+
+impl Default for InstanceData {
+    fn default() -> Self {
+        Self {
+            model: glam::Mat4::IDENTITY.to_cols_array_2d(),
+            normal_matrix: glam::Mat4::IDENTITY.to_cols_array_2d(),
+        }
     }
 }
 

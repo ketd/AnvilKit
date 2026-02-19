@@ -258,6 +258,9 @@ fn render_extract_system(
             emissive_factor: p.emissive_factor,
         });
     }
+
+    // Sort for batching: group by material → mesh to minimize state changes
+    draw_list.sort_for_batching();
 }
 
 #[cfg(test)]
