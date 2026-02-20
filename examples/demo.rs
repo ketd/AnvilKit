@@ -411,7 +411,8 @@ impl ShowcaseApp {
                     }),
                     timestamp_writes: None, occlusion_query_set: None,
                 });
-                rp.set_pipeline(&gmat.pipeline);
+                let pipeline = ra.get_pipeline(&gmat.pipeline_handle).unwrap();
+                rp.set_pipeline(pipeline);
                 rp.set_bind_group(0, scene_bg, &[]);
                 rp.set_bind_group(1, &gmat.bind_group, &[]);
                 rp.set_bind_group(2, ibl_bg, &[]);

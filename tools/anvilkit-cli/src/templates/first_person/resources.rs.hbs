@@ -1,0 +1,36 @@
+use bevy_ecs::prelude::*;
+
+#[derive(Debug, Resource)]
+pub struct GameConfig {
+    pub clear_color: [f32; 4],
+    pub move_speed: f32,
+    pub mouse_sensitivity: f32,
+}
+
+impl Default for GameConfig {
+    fn default() -> Self {
+        Self {
+            clear_color: [0.4, 0.6, 0.9, 1.0],
+            move_speed: 5.0,
+            mouse_sensitivity: 0.003,
+        }
+    }
+}
+
+/// FPS camera look state.
+#[derive(Debug, Resource)]
+pub struct CameraLook {
+    pub yaw: f32,
+    pub pitch: f32,
+}
+
+impl Default for CameraLook {
+    fn default() -> Self {
+        Self { yaw: 0.0, pitch: 0.0 }
+    }
+}
+
+#[derive(Debug, Default, Resource)]
+pub struct GameState {
+    pub frame_count: u64,
+}

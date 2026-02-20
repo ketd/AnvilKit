@@ -1,0 +1,36 @@
+use bevy_ecs::prelude::*;
+use anvilkit_core::math::Transform;
+use anvilkit_ecs::physics::DeltaTime;
+use anvilkit_input::prelude::{InputState, KeyCode};
+
+use crate::components::{Player, MoveSpeed};
+use crate::resources::GameConfig;
+
+/// Window size resource for coordinate calculations.
+#[derive(Debug, Default, Resource)]
+pub struct WindowSize {
+    pub width: f32,
+    pub height: f32,
+}
+
+/// WASD movement system for the player entity (top-down XZ plane).
+pub fn player_movement_system(
+    dt: Res<DeltaTime>,
+    input: Res<InputState>,
+    config: Res<GameConfig>,
+    mut query: Query<(&mut Transform, &MoveSpeed), With<Player>>,
+) {
+    let mut dir = glam::Vec3::ZERO;
+    if input.is_key_pressed(KeyCode::W) { dir.z += 1.0; }
+    if input.is_key_pressed(KeyCode::S) { dir.z -= 1.0; }
+    if input.is_key_pressed(KeyCode::A) { dir.x -= 1.0; }
+    if input.is_key_pressed(KeyCode::D) { dir.x += 1.0; }
+
+    if dir.length_squared() > 0.0 {
+        dir = dir.normalize();
+    }
+
+    for (mut transform, speed) in query.iter_mut() {
+        transform.translation += dir * speed.0 * config.player_speed * dt.0;
+    }
+}

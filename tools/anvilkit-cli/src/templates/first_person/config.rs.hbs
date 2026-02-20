@@ -1,0 +1,95 @@
+use serde::Deserialize;
+use std::path::Path;
+
+#[derive(Debug, Deserialize)]
+pub struct AnvilKitConfig {
+    pub project: ProjectSection,
+    #[serde(default)]
+    pub window: WindowSection,
+    #[serde(default)]
+    pub camera: CameraSection,
+    #[serde(default)]
+    pub render: RenderSection,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProjectSection {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WindowSection {
+    #[serde(default = "default_title")]
+    pub title: String,
+    #[serde(default = "default_width")]
+    pub width: u32,
+    #[serde(default = "default_height")]
+    pub height: u32,
+}
+
+impl Default for WindowSection {
+    fn default() -> Self {
+        Self { title: default_title(), width: default_width(), height: default_height() }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CameraSection {
+    #[serde(default = "default_fov")]
+    pub fov: f32,
+    #[serde(default = "default_near")]
+    pub near: f32,
+    #[serde(default = "default_far")]
+    pub far: f32,
+    #[serde(default = "default_cam_pos")]
+    pub position: [f32; 3],
+    #[serde(default = "default_look_at")]
+    pub look_at: [f32; 3],
+}
+
+impl Default for CameraSection {
+    fn default() -> Self {
+        Self {
+            fov: default_fov(), near: default_near(), far: default_far(),
+            position: default_cam_pos(), look_at: default_look_at(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RenderSection {
+    #[serde(default = "default_clear_color")]
+    pub clear_color: [f32; 4],
+}
+
+impl Default for RenderSection {
+    fn default() -> Self {
+        Self { clear_color: default_clear_color() }
+    }
+}
+
+fn default_title() -> String { "{{display_name}}".into() }
+fn default_width() -> u32 { 1280 }
+fn default_height() -> u32 { 720 }
+fn default_fov() -> f32 { 55.0 }
+fn default_near() -> f32 { 0.1 }
+fn default_far() -> f32 { 100.0 }
+fn default_cam_pos() -> [f32; 3] { [0.0, 12.0, -10.0] }
+fn default_look_at() -> [f32; 3] { [0.0, 0.0, 0.0] }
+fn default_clear_color() -> [f32; 4] { [0.15, 0.3, 0.6, 1.0] }
+
+pub fn load_config() -> AnvilKitConfig {
+    // Try loading from anvilkit.toml next to the executable, then from project root
+    let candidates = [
+        Path::new("anvilkit.toml").to_path_buf(),
+        std::env::current_dir().unwrap_or_default().join("anvilkit.toml"),
+    ];
+    for path in &candidates {
+        if path.exists() {
+            let content = std::fs::read_to_string(path).expect("Failed to read anvilkit.toml");
+            return toml::from_str(&content).expect("Failed to parse anvilkit.toml");
+        }
+    }
+    // Return defaults if no config found
+    toml::from_str("[project]\nname = \"{{display_name}}\"").unwrap()
+}

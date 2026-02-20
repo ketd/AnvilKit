@@ -1,0 +1,21 @@
+use bevy_ecs::prelude::*;
+
+/// Global game configuration loaded from anvilkit.toml.
+#[derive(Debug, Resource)]
+pub struct GameConfig {
+    pub clear_color: [f32; 4],
+}
+
+impl Default for GameConfig {
+    fn default() -> Self {
+        Self {
+            clear_color: [0.15, 0.3, 0.6, 1.0],
+        }
+    }
+}
+
+/// Runtime game state.
+#[derive(Debug, Default, Resource)]
+pub struct GameState {
+    pub frame_count: u64,
+}

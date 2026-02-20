@@ -1,6 +1,7 @@
 //! # GPU 资产管理
 //!
 //! 管理 GPU 端的网格和材质资源，提供 Handle-based 的资产引用系统。
+//! 支持管线共享：多个材质可引用同一渲染管线，避免重复创建。
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -35,6 +36,12 @@ impl MaterialHandle {
     pub fn index(&self) -> u64 { self.0 }
 }
 
+/// 渲染管线句柄
+///
+/// 多个材质可引用同一管线，减少 GPU 管线对象的数量。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PipelineHandle(pub u64);
+
 /// GPU 端网格数据
 pub struct GpuMesh {
     pub vertex_buffer: Buffer,
@@ -44,18 +51,21 @@ pub struct GpuMesh {
 }
 
 /// GPU 端材质数据
+///
+/// 材质通过 [`PipelineHandle`] 引用共享管线，而非直接持有 `RenderPipeline`。
 pub struct GpuMaterial {
-    pub pipeline: RenderPipeline,
+    pub pipeline_handle: PipelineHandle,
     pub bind_group: BindGroup,
 }
 
 /// GPU 资产存储
 ///
-/// 管理所有已上传到 GPU 的网格和材质资源。
+/// 管理所有已上传到 GPU 的网格、材质和渲染管线资源。
 #[derive(Resource, Default)]
 pub struct RenderAssets {
     meshes: HashMap<MeshHandle, GpuMesh>,
     materials: HashMap<MaterialHandle, GpuMaterial>,
+    pipelines: HashMap<PipelineHandle, RenderPipeline>,
 }
 
 impl RenderAssets {
@@ -99,18 +109,44 @@ impl RenderAssets {
         handle
     }
 
-    /// 创建材质并返回句柄
+    /// 注册渲染管线并返回句柄
+    ///
+    /// 注册后的管线可被多个材质共享引用。
+    pub fn register_pipeline(&mut self, pipeline: RenderPipeline) -> PipelineHandle {
+        let handle = PipelineHandle(next_id());
+        self.pipelines.insert(handle, pipeline);
+        handle
+    }
+
+    /// 创建引用共享管线的材质
+    ///
+    /// # 参数
+    ///
+    /// - `pipeline_handle`: 通过 [`register_pipeline`](Self::register_pipeline) 获得的管线句柄
+    /// - `bind_group`: 材质专属的绑定组
+    pub fn create_material_with_pipeline(
+        &mut self,
+        pipeline_handle: PipelineHandle,
+        bind_group: BindGroup,
+    ) -> MaterialHandle {
+        let handle = MaterialHandle(next_id());
+        self.materials.insert(handle, GpuMaterial {
+            pipeline_handle,
+            bind_group,
+        });
+        handle
+    }
+
+    /// 创建材质并返回句柄（向后兼容 API）
+    ///
+    /// 内部自动注册管线并创建材质。适用于不需要管线共享的场景。
     pub fn create_material(
         &mut self,
         pipeline: RenderPipeline,
         bind_group: BindGroup,
     ) -> MaterialHandle {
-        let handle = MaterialHandle(next_id());
-        self.materials.insert(handle, GpuMaterial {
-            pipeline,
-            bind_group,
-        });
-        handle
+        let pipeline_handle = self.register_pipeline(pipeline);
+        self.create_material_with_pipeline(pipeline_handle, bind_group)
     }
 
     /// 获取 GPU 网格
@@ -121,5 +157,10 @@ impl RenderAssets {
     /// 获取 GPU 材质
     pub fn get_material(&self, handle: &MaterialHandle) -> Option<&GpuMaterial> {
         self.materials.get(handle)
+    }
+
+    /// 获取渲染管线
+    pub fn get_pipeline(&self, handle: &PipelineHandle) -> Option<&RenderPipeline> {
+        self.pipelines.get(handle)
     }
 }

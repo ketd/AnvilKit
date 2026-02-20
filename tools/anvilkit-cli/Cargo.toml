@@ -1,0 +1,22 @@
+[package]
+name = "anvilkit-cli"
+version = "0.1.0"
+edition = "2021"
+description = "AnvilKit game engine CLI tool"
+
+[[bin]]
+name = "anvil"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "color"] }
+toml_edit = "0.22"
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+handlebars = "5"
+dialoguer = "0.11"
+console = "0.15"
+indicatif = "0.17"
+anyhow = "1.0"
+walkdir = "2"
+which = "6"

@@ -17,6 +17,7 @@ pub mod scene;
 pub mod gltf_loader;
 pub mod asset_server;
 pub mod animation;
+pub mod procedural;
 
 pub mod prelude {
     pub use crate::mesh::MeshData;
@@ -24,4 +25,5 @@ pub mod prelude {
     pub use crate::scene::{SceneData, Submesh, MultiMeshScene};
     pub use crate::gltf_loader::{load_gltf_mesh, load_gltf_scene, load_gltf_scene_multi};
     pub use crate::asset_server::{AssetServer, AssetHandle, AssetStorage, AssetId, LoadState};
+    pub use crate::procedural::{generate_sphere, generate_plane, generate_box};
 }

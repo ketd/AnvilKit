@@ -1,0 +1,17 @@
+use bevy_ecs::prelude::*;
+
+/// Player marker component.
+#[derive(Debug, Clone, Component)]
+pub struct Player;
+
+/// Ground plane marker.
+#[derive(Debug, Clone, Component)]
+pub struct Ground;
+
+/// Obstacle marker.
+#[derive(Debug, Clone, Component)]
+pub struct Obstacle;
+
+/// Movement speed component.
+#[derive(Debug, Clone, Component)]
+pub struct MoveSpeed(pub f32);

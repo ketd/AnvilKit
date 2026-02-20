@@ -3,6 +3,7 @@
 //! 基于 winit 0.30 的 ApplicationHandler 实现应用生命周期管理和事件处理。
 
 use std::sync::Arc;
+use std::time::Instant;
 use winit::{
     application::ApplicationHandler,
     event::{WindowEvent, DeviceEvent, DeviceId},
@@ -13,6 +14,7 @@ use winit::{
 use log::{info, error, debug};
 
 use anvilkit_ecs::app::App;
+use anvilkit_ecs::physics::DeltaTime;
 use anvilkit_input::prelude::{InputState, KeyCode, MouseButton};
 use crate::window::{WindowConfig, WindowState};
 use crate::renderer::{RenderDevice, RenderSurface};
@@ -136,6 +138,9 @@ pub struct RenderApp {
     app: Option<App>,
     /// GPU 是否已初始化并注入到 ECS World
     gpu_initialized: bool,
+
+    /// 上一帧时间戳，用于计算真实帧时间
+    last_frame_time: Instant,
 }
 
 impl RenderApp {
@@ -165,6 +170,7 @@ impl RenderApp {
             exit_requested: false,
             app: None,
             gpu_initialized: false,
+            last_frame_time: Instant::now(),
         }
     }
 
@@ -687,7 +693,9 @@ impl RenderApp {
                     occlusion_query_set: None,
                 });
 
-                render_pass.set_pipeline(&gpu_material.pipeline);
+                let pipeline = render_assets.get_pipeline(&gpu_material.pipeline_handle)
+                    .expect("材质引用了不存在的管线");
+                render_pass.set_pipeline(pipeline);
                 render_pass.set_bind_group(0, &render_state.scene_bind_group, &[]);
                 render_pass.set_bind_group(1, &gpu_material.bind_group, &[]);
                 render_pass.set_bind_group(2, &render_state.ibl_shadow_bind_group, &[]);
@@ -869,6 +877,14 @@ impl ApplicationHandler for RenderApp {
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         // 如果持有 ECS App，每帧调用 update() 运行 ECS 系统
         if let Some(app) = &mut self.app {
+            // 计算真实帧时间并写入 ECS DeltaTime 资源
+            let now = Instant::now();
+            let raw_dt = now.duration_since(self.last_frame_time).as_secs_f32();
+            self.last_frame_time = now;
+            // Clamp dt to [0.001, 0.1] to prevent physics explosions
+            let dt = raw_dt.clamp(0.001, 0.1);
+            app.world.insert_resource(DeltaTime(dt));
+
             app.update();
 
             // 帧结束，清除 just_pressed / just_released 状态

@@ -1,0 +1,21 @@
+use bevy_ecs::prelude::*;
+
+#[derive(Debug, Resource)]
+pub struct GameConfig {
+    pub clear_color: [f32; 4],
+    pub player_speed: f32,
+}
+
+impl Default for GameConfig {
+    fn default() -> Self {
+        Self {
+            clear_color: [0.15, 0.3, 0.6, 1.0],
+            player_speed: 5.0,
+        }
+    }
+}
+
+#[derive(Debug, Default, Resource)]
+pub struct GameState {
+    pub frame_count: u64,
+}

@@ -1,0 +1,31 @@
+use anvilkit_render::prelude::*;
+use anvilkit_render::plugin::CameraComponent;
+use anvilkit_input::prelude::InputState;
+use anvilkit_ecs::physics::DeltaTime;
+
+fn main() {
+    env_logger::init();
+    println!("{{display_name}} — powered by AnvilKit");
+
+    let mut app = App::new();
+    app.add_plugins(RenderPlugin::new().with_window_config(
+        WindowConfig::new()
+            .with_title("{{display_name}}")
+            .with_size(1280, 720),
+    ));
+
+    app.insert_resource(InputState::new());
+    app.insert_resource(DeltaTime(1.0 / 60.0));
+
+    // Camera
+    let eye = glam::Vec3::new(0.0, 5.0, -8.0);
+    let look_dir = (glam::Vec3::ZERO - eye).normalize();
+    let cam_rot = glam::Quat::from_rotation_arc(glam::Vec3::Z, look_dir);
+    app.world.spawn((
+        CameraComponent { fov: 60.0, near: 0.1, far: 100.0, is_active: true, aspect_ratio: 1280.0 / 720.0 },
+        Transform::from_xyz(eye.x, eye.y, eye.z).with_rotation(cam_rot),
+    ));
+
+    // Use the built-in ECS rendering path
+    RenderApp::run(app);
+}

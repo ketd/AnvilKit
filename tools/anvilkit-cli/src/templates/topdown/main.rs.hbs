@@ -1,0 +1,316 @@
+use anvilkit_render::prelude::*;
+use anvilkit_render::renderer::{
+    buffer::{
+        create_depth_texture_msaa, create_hdr_render_target,
+        create_hdr_msaa_texture, create_sampler,
+    },
+    assets::RenderAssets,
+    draw::{ActiveCamera, DrawCommandList, SceneLights, DirectionalLight, PointLight, MaterialParams},
+    state::{GpuLight, PbrSceneUniform},
+};
+use anvilkit_render::plugin::CameraComponent;
+use anvilkit_input::prelude::InputState;
+use anvilkit_ecs::physics::DeltaTime;
+
+use {{project_name}}::render::setup;
+use {{project_name}}::components::*;
+use {{project_name}}::resources::*;
+use {{project_name}}::systems::input as input_sys;
+
+fn pack_scene_lights(lights: &SceneLights) -> ([GpuLight; 8], u32) {
+    let mut gpu = [GpuLight::default(); 8];
+    let mut n = 0u32;
+    let d = &lights.directional;
+    gpu[0] = GpuLight {
+        position_type: [0.0, 0.0, 0.0, 0.0],
+        direction_range: [d.direction.x, d.direction.y, d.direction.z, 0.0],
+        color_intensity: [d.color.x, d.color.y, d.color.z, d.intensity],
+        params: [0.0; 4],
+    };
+    n += 1;
+    for pl in &lights.point_lights {
+        if n >= 8 { break; }
+        gpu[n as usize] = GpuLight {
+            position_type: [pl.position.x, pl.position.y, pl.position.z, 1.0],
+            direction_range: [0.0, 0.0, 0.0, pl.range],
+            color_intensity: [pl.color.x, pl.color.y, pl.color.z, pl.intensity],
+            params: [0.0; 4],
+        };
+        n += 1;
+    }
+    (gpu, n)
+}
+
+fn main() {
+    env_logger::init();
+    println!("{{display_name}} — powered by AnvilKit");
+    println!("  WASD to move, ESC to quit");
+
+    let mut app = App::new();
+    app.add_plugins(RenderPlugin::new().with_window_config(
+        WindowConfig::new()
+            .with_title("{{display_name}}")
+            .with_size(1280, 720),
+    ));
+
+    app.insert_resource(InputState::new());
+    app.insert_resource(DeltaTime(1.0 / 60.0));
+    app.insert_resource(GameState::default());
+    app.insert_resource(GameConfig::default());
+    app.insert_resource(input_sys::WindowSize::default());
+
+    // Systems
+    app.add_systems(AnvilKitSchedule::Update, input_sys::player_movement_system);
+
+    // Lighting
+    app.insert_resource(SceneLights {
+        directional: DirectionalLight {
+            direction: glam::Vec3::new(-0.3, -0.8, 0.4).normalize(),
+            color: glam::Vec3::new(1.0, 0.97, 0.92),
+            intensity: 3.5,
+        },
+        point_lights: vec![
+            PointLight { position: glam::Vec3::new(0.0, 6.0, 0.0), color: glam::Vec3::new(1.0, 0.95, 0.85), intensity: 20.0, range: 20.0 },
+        ],
+        spot_lights: vec![],
+    });
+
+    // Camera — top-down view looking straight down
+    let eye = glam::Vec3::new(0.0, 15.0, -0.01);
+    let look_dir = (glam::Vec3::ZERO - eye).normalize();
+    let cam_rot = glam::Quat::from_rotation_arc(glam::Vec3::Z, look_dir);
+    app.world.spawn((
+        CameraComponent { fov: 55.0, near: 0.1, far: 100.0, is_active: true, aspect_ratio: 1280.0 / 720.0 },
+        Transform::from_xyz(eye.x, eye.y, eye.z).with_rotation(cam_rot),
+    ));
+
+    let event_loop = EventLoop::new().unwrap();
+    let wconfig = WindowConfig::new().with_title("{{display_name}}").with_size(1280, 720);
+    event_loop.run_app(&mut GameApp {
+        render_app: RenderApp::new(wconfig),
+        app,
+        initialized: false,
+        scene_gpu: None,
+    }).unwrap();
+}
+
+struct GameApp {
+    render_app: RenderApp,
+    app: App,
+    initialized: bool,
+    scene_gpu: Option<setup::SceneGpu>,
+}
+
+impl GameApp {
+    fn init_scene(&mut self) {
+        if self.initialized { return; }
+        let Some(device) = self.render_app.render_device() else { return };
+        let Some(format) = self.render_app.surface_format() else { return };
+        let (w, h) = self.render_app.window_state().size();
+
+        let mut assets = self.app.world.resource_mut::<RenderAssets>();
+        let gpu = setup::init_scene(device, format, w, h, &mut assets);
+
+        // Player
+        self.app.world.spawn((
+            Player, MoveSpeed(1.0),
+            Transform::from_xyz(0.0, 0.4, 0.0),
+            gpu.player_mesh, gpu.player_material,
+            MaterialParams { metallic: 0.2, roughness: 0.5, normal_scale: 1.0, emissive_factor: [0.0; 3] },
+        ));
+
+        // Ground
+        self.app.world.spawn((
+            Ground,
+            Transform::from_xyz(0.0, 0.0, 0.0),
+            gpu.plane_mesh, gpu.ground_material,
+            MaterialParams { metallic: 0.0, roughness: 0.9, normal_scale: 1.0, emissive_factor: [0.0; 3] },
+        ));
+
+        // Obstacles
+        let obstacle_positions = [
+            glam::Vec3::new(3.0, 0.5, 2.0),
+            glam::Vec3::new(-2.0, 0.5, 4.0),
+            glam::Vec3::new(1.0, 0.5, -3.0),
+            glam::Vec3::new(-4.0, 0.5, -1.0),
+        ];
+        for pos in &obstacle_positions {
+            self.app.world.spawn((
+                Obstacle,
+                Transform::from_xyz(pos.x, pos.y, pos.z),
+                gpu.obstacle_mesh, gpu.obstacle_material,
+                MaterialParams { metallic: 0.1, roughness: 0.7, normal_scale: 1.0, emissive_factor: [0.0; 3] },
+            ));
+        }
+
+        self.scene_gpu = Some(gpu);
+        self.initialized = true;
+        println!("Scene initialized: player + ground + obstacles");
+    }
+
+    fn render_frame(&mut self) {
+        let Some(device) = self.render_app.render_device() else { return };
+        let Some(ref gpu) = self.scene_gpu else { return };
+        let (cam_vp, cam_pos) = {
+            let Some(cam) = self.app.world.get_resource::<ActiveCamera>() else { return };
+            (cam.view_proj, cam.camera_pos)
+        };
+        let Some(dl) = self.app.world.get_resource::<DrawCommandList>() else { return };
+        let Some(ra) = self.app.world.get_resource::<RenderAssets>() else { return };
+        if dl.commands.is_empty() { return; }
+
+        let Some(frame) = self.render_app.get_current_frame() else { return };
+        let swapchain = frame.texture.create_view(&Default::default());
+        let def_lights = SceneLights::default();
+        let lights = self.app.world.get_resource::<SceneLights>().unwrap_or(&def_lights);
+        let (gpu_lights, lc) = pack_scene_lights(lights);
+        let ld = lights.directional.direction.normalize();
+
+        let cmd_count = dl.commands.len();
+        for (i, cmd) in dl.commands.iter().enumerate() {
+            let Some(gm) = ra.get_mesh(&cmd.mesh) else { continue };
+            let Some(gmat) = ra.get_material(&cmd.material) else { continue };
+            let m = cmd.model_matrix;
+            let u = PbrSceneUniform {
+                model: m.to_cols_array_2d(),
+                view_proj: cam_vp.to_cols_array_2d(),
+                normal_matrix: m.inverse().transpose().to_cols_array_2d(),
+                camera_pos: [cam_pos.x, cam_pos.y, cam_pos.z, 0.0],
+                light_dir: [ld.x, ld.y, ld.z, 0.0],
+                light_color: [lights.directional.color.x, lights.directional.color.y, lights.directional.color.z, lights.directional.intensity],
+                material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, lc as f32],
+                lights: gpu_lights,
+                shadow_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+                emissive_factor: [cmd.emissive_factor[0], cmd.emissive_factor[1], cmd.emissive_factor[2], 0.0],
+            };
+            device.queue().write_buffer(&gpu.scene_ub, 0, bytemuck::bytes_of(&u));
+            let is_last = i == cmd_count - 1;
+            let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Scene Enc") });
+            {
+                let cl = if i == 0 { wgpu::LoadOp::Clear(wgpu::Color { r: 0.15, g: 0.3, b: 0.6, a: 1.0 }) } else { wgpu::LoadOp::Load };
+                let dl_op = if i == 0 { wgpu::LoadOp::Clear(1.0) } else { wgpu::LoadOp::Load };
+                let (resolve_target, store_op) = if is_last {
+                    (Some(&gpu.hdr_view as &wgpu::TextureView), wgpu::StoreOp::Discard)
+                } else { (None, wgpu::StoreOp::Store) };
+                let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Scene Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &gpu.hdr_msaa_view, resolve_target,
+                        ops: wgpu::Operations { load: cl, store: store_op },
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &gpu.depth_view,
+                        depth_ops: Some(wgpu::Operations { load: dl_op, store: wgpu::StoreOp::Store }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None, occlusion_query_set: None,
+                });
+                let pipeline = ra.get_pipeline(&gmat.pipeline_handle).unwrap();
+                rp.set_pipeline(pipeline);
+                rp.set_bind_group(0, &gpu.scene_bg, &[]);
+                rp.set_bind_group(1, &gmat.bind_group, &[]);
+                rp.set_bind_group(2, &gpu.ibl_bg, &[]);
+                rp.set_vertex_buffer(0, gm.vertex_buffer.slice(..));
+                rp.set_index_buffer(gm.index_buffer.slice(..), gm.index_format);
+                rp.draw_indexed(0..gm.index_count, 0, 0..1);
+            }
+            device.queue().submit(std::iter::once(enc.finish()));
+        }
+
+        // Tonemap
+        {
+            let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Tonemap Enc") });
+            { let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Tonemap"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &swapchain, resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: None, timestamp_writes: None, occlusion_query_set: None,
+            });
+            rp.set_pipeline(&gpu.tonemap_pipeline);
+            rp.set_bind_group(0, &gpu.tonemap_bg, &[]);
+            rp.draw(0..3, 0..1); }
+            device.queue().submit(std::iter::once(enc.finish()));
+        }
+        frame.present();
+    }
+}
+
+impl ApplicationHandler for GameApp {
+    fn resumed(&mut self, el: &ActiveEventLoop) {
+        self.render_app.resumed(el);
+        self.init_scene();
+    }
+    fn window_event(&mut self, el: &ActiveEventLoop, wid: WindowId, ev: WindowEvent) {
+        match &ev {
+            WindowEvent::Resized(s) if self.initialized && s.width > 0 && s.height > 0 => {
+                if let Some(device) = self.render_app.render_device() {
+                    if let Some(ref mut gpu) = self.scene_gpu {
+                        let (_, dv) = create_depth_texture_msaa(device, s.width, s.height, "Depth");
+                        gpu.depth_view = dv;
+                        let (_, hv) = create_hdr_render_target(device, s.width, s.height, "HDR RT");
+                        let (_, hmv) = create_hdr_msaa_texture(device, s.width, s.height, "HDR MSAA");
+                        let samp = create_sampler(device, "Sampler");
+                        let tex_entry = |b: u32| wgpu::BindGroupLayoutEntry {
+                            binding: b, visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }, count: None,
+                        };
+                        let layout = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                            label: Some("Tonemap BGL"),
+                            entries: &[ tex_entry(0), wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
+                                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None } ],
+                        });
+                        gpu.tonemap_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+                            label: Some("Tonemap BG"), layout: &layout,
+                            entries: &[
+                                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&hv) },
+                                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&samp) },
+                            ],
+                        });
+                        gpu.hdr_view = hv;
+                        gpu.hdr_msaa_view = hmv;
+                    }
+                }
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                use winit::keyboard::{KeyCode as WK, PhysicalKey};
+                if let PhysicalKey::Code(code) = event.physical_key {
+                    if let Some(key) = anvilkit_input::prelude::KeyCode::from_winit(code) {
+                        if let Some(mut input) = self.app.world.get_resource_mut::<InputState>() {
+                            if event.state.is_pressed() { input.press_key(key); } else { input.release_key(key); }
+                        }
+                    }
+                    if event.state.is_pressed() && code == WK::Escape { el.exit(); return; }
+                }
+                return;
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                if let Some(mut input) = self.app.world.get_resource_mut::<InputState>() {
+                    input.set_mouse_position(glam::Vec2::new(position.x as f32, position.y as f32));
+                }
+                return;
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                if let Some(mb) = anvilkit_input::prelude::MouseButton::from_winit(*button) {
+                    if let Some(mut input) = self.app.world.get_resource_mut::<InputState>() {
+                        if state.is_pressed() { input.press_mouse(mb); } else { input.release_mouse(mb); }
+                    }
+                }
+                return;
+            }
+            WindowEvent::RedrawRequested if self.initialized => { self.render_frame(); return; }
+            _ => {}
+        }
+        self.render_app.window_event(el, wid, ev);
+    }
+    fn device_event(&mut self, el: &ActiveEventLoop, did: winit::event::DeviceId, ev: winit::event::DeviceEvent) {
+        self.render_app.device_event(el, did, ev);
+    }
+    fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
+        self.app.update();
+        if let Some(mut input) = self.app.world.get_resource_mut::<InputState>() { input.end_frame(); }
+        if let Some(w) = self.render_app.window() { w.request_redraw(); }
+    }
+}

@@ -495,7 +495,8 @@ impl PbrEcsApp {
                     occlusion_query_set: None,
                 });
 
-                rp.set_pipeline(&gpu_mat.pipeline);
+                let pipeline = render_assets.get_pipeline(&gpu_mat.pipeline_handle).unwrap();
+                rp.set_pipeline(pipeline);
                 rp.set_bind_group(0, scene_bg, &[]);
                 rp.set_bind_group(1, &gpu_mat.bind_group, &[]);
                 rp.set_bind_group(2, ibl_bg, &[]);

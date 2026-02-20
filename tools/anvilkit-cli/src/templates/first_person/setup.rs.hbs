@@ -1,0 +1,224 @@
+use anvilkit_render::prelude::*;
+use anvilkit_render::renderer::{
+    RenderPipelineBuilder, DEPTH_FORMAT, HDR_FORMAT,
+    buffer::{
+        PbrVertex, Vertex, create_uniform_buffer,
+        create_depth_texture_msaa, create_hdr_render_target, create_hdr_msaa_texture,
+        create_texture, create_texture_linear, create_sampler,
+        create_shadow_map, create_shadow_sampler, SHADOW_MAP_SIZE, MSAA_SAMPLE_COUNT,
+    },
+    assets::RenderAssets,
+    ibl::generate_brdf_lut,
+};
+use anvilkit_assets::procedural::{generate_plane, generate_box};
+
+use crate::render::colors;
+
+const SHADER_SOURCE: &str = include_str!("{{shader_depth}}shaders/pbr.wgsl");
+const TONEMAP_SHADER: &str = include_str!("{{shader_depth}}shaders/tonemap.wgsl");
+
+fn mesh_data_to_pbr(mesh: &anvilkit_assets::mesh::MeshData) -> (Vec<PbrVertex>, Vec<u32>) {
+    let verts: Vec<PbrVertex> = (0..mesh.positions.len())
+        .map(|i| PbrVertex {
+            position: mesh.positions[i].into(),
+            normal: mesh.normals[i].into(),
+            texcoord: mesh.texcoords[i].into(),
+            tangent: mesh.tangents[i],
+        })
+        .collect();
+    (verts, mesh.indices.clone())
+}
+
+pub struct SceneGpu {
+    pub player_mesh: MeshHandle,
+    pub plane_mesh: MeshHandle,
+    pub obstacle_mesh: MeshHandle,
+    pub player_material: MaterialHandle,
+    pub ground_material: MaterialHandle,
+    pub obstacle_material: MaterialHandle,
+    pub pipeline_handle: PipelineHandle,
+    pub scene_ub: wgpu::Buffer,
+    pub scene_bg: wgpu::BindGroup,
+    pub depth_view: wgpu::TextureView,
+    pub hdr_view: wgpu::TextureView,
+    pub hdr_msaa_view: wgpu::TextureView,
+    pub tonemap_pipeline: wgpu::RenderPipeline,
+    pub tonemap_bg: wgpu::BindGroup,
+    pub ibl_bg: wgpu::BindGroup,
+}
+
+pub fn init_scene(
+    device: &RenderDevice,
+    format: wgpu::TextureFormat,
+    w: u32,
+    h: u32,
+    assets: &mut RenderAssets,
+) -> SceneGpu {
+    let initial = PbrSceneUniform::default();
+    let ub = create_uniform_buffer(device, "Scene UB", bytemuck::bytes_of(&initial));
+    let scene_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Scene BGL"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    });
+    let scene_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Scene BG"),
+        layout: &scene_bgl,
+        entries: &[wgpu::BindGroupEntry { binding: 0, resource: ub.as_entire_binding() }],
+    });
+    let (_, depth_view) = create_depth_texture_msaa(device, w, h, "Depth");
+
+    let make_tex = |data: &[u8; 4], label: &str, srgb: bool| -> wgpu::TextureView {
+        if srgb { create_texture(device, 1, 1, data, label).1 }
+        else { create_texture_linear(device, 1, 1, data, label).1 }
+    };
+    let flat_normal = make_tex(&[128, 128, 255, 255], "FlatNormal", false);
+    let white_lin = make_tex(&[255, 255, 255, 255], "WhiteLin", false);
+    let white_tex = make_tex(&[255, 255, 255, 255], "WhiteTex", true);
+    let sampler = create_sampler(device, "Sampler");
+
+    let tex_entry = |b: u32| wgpu::BindGroupLayoutEntry {
+        binding: b, visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            view_dimension: wgpu::TextureViewDimension::D2, multisampled: false,
+        }, count: None,
+    };
+    let mat_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Mat BGL"),
+        entries: &[
+            tex_entry(0), tex_entry(1), tex_entry(2), tex_entry(3), tex_entry(4),
+            wgpu::BindGroupLayoutEntry {
+                binding: 5, visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None,
+            },
+        ],
+    });
+    let make_mat_bg = |bc: &wgpu::TextureView, label: &str| -> wgpu::BindGroup {
+        device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(label), layout: &mat_bgl,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(bc) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&flat_normal) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&white_lin) },
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&white_lin) },
+                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&white_tex) },
+                wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::Sampler(&sampler) },
+            ],
+        })
+    };
+
+    // IBL + Shadow
+    let brdf_data = generate_brdf_lut(256);
+    let (_, brdf_view) = create_texture_linear(device, 256, 256, &brdf_data, "BRDF LUT");
+    let (_, shadow_view) = create_shadow_map(device, SHADOW_MAP_SIZE, "Shadow Map");
+    let shadow_samp = create_shadow_sampler(device, "Shadow Sampler");
+    let ibl_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("IBL+Shadow BGL"),
+        entries: &[
+            tex_entry(0),
+            wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None },
+            wgpu::BindGroupLayoutEntry { binding: 2, visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth,
+                    view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }, count: None },
+            wgpu::BindGroupLayoutEntry { binding: 3, visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison), count: None },
+        ],
+    });
+    let ibl_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("IBL+Shadow BG"), layout: &ibl_bgl,
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&brdf_view) },
+            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&shadow_view) },
+            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&shadow_samp) },
+        ],
+    });
+
+    // PBR pipeline
+    let pbr_pipeline = {
+        let layout = device.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("PBR Layout"), bind_group_layouts: &[&scene_bgl, &mat_bgl, &ibl_bgl],
+            push_constant_ranges: &[],
+        });
+        let shader = device.device().create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("PBR Shader"), source: wgpu::ShaderSource::Wgsl(SHADER_SOURCE.into()),
+        });
+        device.device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("PBR Pipeline"), layout: Some(&layout),
+            vertex: wgpu::VertexState { module: &shader, entry_point: "vs_main", buffers: &[PbrVertex::layout()] },
+            fragment: Some(wgpu::FragmentState { module: &shader, entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState { format: HDR_FORMAT, blend: None, write_mask: wgpu::ColorWrites::ALL })] }),
+            primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: Some(wgpu::Face::Back), ..Default::default() },
+            depth_stencil: Some(wgpu::DepthStencilState { format: DEPTH_FORMAT, depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual, stencil: Default::default(), bias: Default::default() }),
+            multisample: wgpu::MultisampleState { count: MSAA_SAMPLE_COUNT, mask: !0, alpha_to_coverage_enabled: false },
+            multiview: None,
+        })
+    };
+    let pipeline_handle = assets.register_pipeline(pbr_pipeline);
+
+    // Meshes
+    let player_data = generate_box([0.4, 0.4, 0.4]);
+    let (pv, pi) = mesh_data_to_pbr(&player_data);
+    let player_mesh = assets.upload_mesh_u32(device, &pv, &pi, "Player Box");
+
+    let plane_data = generate_plane(20.0, 20.0);
+    let (gv, gi) = mesh_data_to_pbr(&plane_data);
+    let plane_mesh = assets.upload_mesh_u32(device, &gv, &gi, "Ground");
+
+    let obstacle_data = generate_box([0.5, 0.5, 0.5]);
+    let (ov, oi) = mesh_data_to_pbr(&obstacle_data);
+    let obstacle_mesh = assets.upload_mesh_u32(device, &ov, &oi, "Obstacle");
+
+    // Materials
+    let player_bc = make_tex(&[60, 120, 220, 255], "Player BC", true);
+    let player_material = assets.create_material_with_pipeline(pipeline_handle, make_mat_bg(&player_bc, "Player Mat"));
+
+    let ground_bc = make_tex(&colors::GROUND_COLOR, "Ground BC", true);
+    let ground_material = assets.create_material_with_pipeline(pipeline_handle, make_mat_bg(&ground_bc, "Ground Mat"));
+
+    let obstacle_bc = make_tex(&[180, 60, 60, 255], "Obstacle BC", true);
+    let obstacle_material = assets.create_material_with_pipeline(pipeline_handle, make_mat_bg(&obstacle_bc, "Obstacle Mat"));
+
+    // HDR + Tonemap
+    let (_, hdr_view) = create_hdr_render_target(device, w, h, "HDR RT");
+    let (_, hdr_msaa_view) = create_hdr_msaa_texture(device, w, h, "HDR MSAA");
+    let tm_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Tonemap BGL"),
+        entries: &[
+            tex_entry(0),
+            wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None },
+        ],
+    });
+    let tm_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Tonemap BG"), layout: &tm_bgl,
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&hdr_view) },
+            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+        ],
+    });
+    let tm_pipe = RenderPipelineBuilder::new()
+        .with_vertex_shader(TONEMAP_SHADER).with_fragment_shader(TONEMAP_SHADER)
+        .with_format(format).with_vertex_layouts(vec![]).with_bind_group_layouts(vec![tm_bgl])
+        .with_label("Tonemap Pipeline").build(device).expect("Failed to create tonemap pipeline");
+
+    SceneGpu {
+        player_mesh, plane_mesh, obstacle_mesh,
+        player_material, ground_material, obstacle_material,
+        pipeline_handle, scene_ub: ub, scene_bg, depth_view,
+        hdr_view, hdr_msaa_view,
+        tonemap_pipeline: tm_pipe.into_pipeline(), tonemap_bg: tm_bg, ibl_bg,
+    }
+}

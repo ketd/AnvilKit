@@ -1,0 +1,16 @@
+[package]
+name = "{{project_name}}"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anvilkit-core = { path = "{{crate_depth}}crates/anvilkit-core", features = ["bevy_ecs"] }
+anvilkit-ecs = { path = "{{crate_depth}}crates/anvilkit-ecs" }
+anvilkit-render = { path = "{{crate_depth}}crates/anvilkit-render" }
+anvilkit-input = { path = "{{crate_depth}}crates/anvilkit-input" }
+bevy_ecs = "0.14"
+glam = { version = "0.24", features = ["serde"] }
+wgpu = "0.19"
+winit = "0.30"
+log = "0.4"
+env_logger = "0.10"

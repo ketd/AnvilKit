@@ -1,0 +1,38 @@
+[project]
+name = "{{display_name}}"
+version = "0.1.0"
+package = "{{project_name}}"
+
+[window]
+title = "{{display_name}}"
+width = 1280
+height = 720
+vsync = true
+
+[render]
+msaa_samples = 4
+hdr = true
+shadows = true
+clear_color = [0.15, 0.3, 0.6, 1.0]
+
+[camera]
+fov = 55.0
+near = 0.1
+far = 100.0
+position = [0.0, 15.0, 0.0]
+look_at = [0.0, 0.0, 0.0]
+
+[physics]
+enabled = true
+gravity = [0.0, -9.81, 0.0]
+
+[scene.lighting]
+directional_direction = [-0.3, -0.8, 0.4]
+directional_color = [1.0, 0.97, 0.92]
+directional_intensity = 3.5
+
+[[scene.lighting.point_lights]]
+position = [0.0, 6.0, 0.0]
+color = [1.0, 0.95, 0.85]
+intensity = 20.0
+range = 20.0

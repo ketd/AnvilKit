@@ -43,7 +43,7 @@ pub mod prelude {
     pub use crate::plugin::{RenderPlugin, CameraComponent};
 
     // ECS 渲染资源
-    pub use crate::renderer::assets::{MeshHandle, MaterialHandle, RenderAssets};
+    pub use crate::renderer::assets::{MeshHandle, MaterialHandle, PipelineHandle, RenderAssets};
     pub use crate::renderer::draw::{ActiveCamera, Aabb, DrawCommandList, Frustum, InstanceData, SceneLights, DirectionalLight, PointLight, SpotLight, MaterialParams};
     pub use crate::renderer::state::{RenderState, PbrSceneUniform, GpuLight, MAX_LIGHTS};
 
