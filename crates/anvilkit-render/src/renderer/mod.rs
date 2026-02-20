@@ -27,6 +27,9 @@ pub mod sprite;
 pub mod ui;
 pub mod particle;
 pub mod debug;
+pub mod raycast;
+pub mod line;
+pub mod text;
 
 // 重新导出主要类型
 pub use device::RenderDevice;

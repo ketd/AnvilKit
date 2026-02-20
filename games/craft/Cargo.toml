@@ -1,0 +1,20 @@
+[package]
+name = "craft"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anvilkit-core = { path = "../../crates/anvilkit-core", features = ["bevy_ecs"] }
+anvilkit-ecs = { path = "../../crates/anvilkit-ecs" }
+anvilkit-render = { path = "../../crates/anvilkit-render" }
+anvilkit-assets = { path = "../../crates/anvilkit-assets" }
+anvilkit-input = { path = "../../crates/anvilkit-input" }
+bevy_ecs = "0.14"
+glam = { version = "0.24", features = ["serde"] }
+bytemuck = { version = "1", features = ["derive"] }
+wgpu = "0.19"
+winit = "0.30"
+noise = "0.9"
+image = { version = "0.24", default-features = false, features = ["png"] }
+log = "0.4"
+env_logger = "0.10"
