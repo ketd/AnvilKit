@@ -13,6 +13,7 @@ use winit::{
 use log::{info, error, debug};
 
 use anvilkit_ecs::app::App;
+use anvilkit_input::prelude::{InputState, KeyCode, MouseButton};
 use crate::window::{WindowConfig, WindowState};
 use crate::renderer::{RenderDevice, RenderSurface};
 use crate::renderer::assets::RenderAssets;
@@ -786,6 +787,56 @@ impl ApplicationHandler for RenderApp {
                 self.handle_scale_factor_changed(scale_factor);
             }
 
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let winit::keyboard::PhysicalKey::Code(code) = event.physical_key {
+                    if let Some(app) = &mut self.app {
+                        if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+                            if let Some(key) = KeyCode::from_winit(code) {
+                                if event.state.is_pressed() {
+                                    input.press_key(key);
+                                } else {
+                                    input.release_key(key);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            WindowEvent::MouseInput { state, button, .. } => {
+                if let Some(app) = &mut self.app {
+                    if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+                        if let Some(btn) = MouseButton::from_winit(button) {
+                            if state.is_pressed() {
+                                input.press_mouse(btn);
+                            } else {
+                                input.release_mouse(btn);
+                            }
+                        }
+                    }
+                }
+            }
+
+            WindowEvent::CursorMoved { position, .. } => {
+                if let Some(app) = &mut self.app {
+                    if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+                        input.set_mouse_position(glam::Vec2::new(position.x as f32, position.y as f32));
+                    }
+                }
+            }
+
+            WindowEvent::MouseWheel { delta, .. } => {
+                if let Some(app) = &mut self.app {
+                    if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+                        let scroll = match delta {
+                            winit::event::MouseScrollDelta::LineDelta(_, y) => y,
+                            winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 120.0,
+                        };
+                        input.add_scroll_delta(scroll);
+                    }
+                }
+            }
+
             WindowEvent::Focused(focused) => {
                 debug!("窗口焦点变化: {}", focused);
                 self.window_state.set_focused(focused);
@@ -819,6 +870,11 @@ impl ApplicationHandler for RenderApp {
         // 如果持有 ECS App，每帧调用 update() 运行 ECS 系统
         if let Some(app) = &mut self.app {
             app.update();
+
+            // 帧结束，清除 just_pressed / just_released 状态
+            if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+                input.end_frame();
+            }
         }
 
         if let Some(window) = &self.window {

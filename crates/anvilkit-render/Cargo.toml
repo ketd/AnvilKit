@@ -14,6 +14,7 @@ categories = ["game-development", "graphics", "rendering"]
 anvilkit-core = { path = "../anvilkit-core", features = ["bevy_ecs"] }
 anvilkit-ecs = { path = "../anvilkit-ecs" }
 anvilkit-assets = { path = "../anvilkit-assets" }
+anvilkit-input = { path = "../anvilkit-input" }
 
 # ECS 框架（derive 宏需要直接引用）
 bevy_ecs = "0.14"
@@ -30,6 +31,9 @@ glam = { workspace = true }
 
 # 安全的内存布局转换（顶点数据）
 bytemuck = { version = "1", features = ["derive"] }
+
+# UI 布局
+taffy = "0.4"
 
 # 日志记录
 log = "0.4"
@@ -54,7 +58,6 @@ dev = ["debug"]
 
 [dev-dependencies]
 env_logger = "0.10"
-anvilkit-input = { path = "../anvilkit-input" }
 
 [[example]]
 name = "hello_ecs"
@@ -71,3 +74,7 @@ path = "../../examples/showcase.rs"
 [[example]]
 name = "demo"
 path = "../../examples/demo.rs"
+
+[[example]]
+name = "game"
+path = "../../examples/game.rs"

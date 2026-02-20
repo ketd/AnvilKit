@@ -279,6 +279,58 @@ impl AnimationPlayer {
     }
 }
 
+// ---------------------------------------------------------------------------
+//  Bone matrix computation for GPU skinning
+// ---------------------------------------------------------------------------
+
+/// 从骨骼层次和动画播放器计算每个关节的最终骨骼矩阵
+///
+/// 返回 joint_count 个矩阵，每个 = global_transform[j] * inverse_bind_matrix[j]
+/// 顶点着色器中: skinned_pos = sum(weight[i] * bone_matrices[joint[i]] * pos)
+pub fn compute_bone_matrices(skeleton: &Skeleton, player: &AnimationPlayer) -> Vec<Mat4> {
+    let n = skeleton.joint_count();
+    let mut local_transforms: Vec<Mat4> = vec![Mat4::IDENTITY; n];
+
+    // Sample each channel at current time to build local transforms
+    for channel in &player.clip.channels {
+        let idx = channel.joint_index;
+        if idx >= n { continue; }
+        let value = channel.sample(player.current_time);
+
+        match channel.property {
+            AnimationProperty::Translation => {
+                let t = glam::Vec3::new(value[0], value[1], value[2]);
+                local_transforms[idx] = Mat4::from_translation(t) * local_transforms[idx];
+            }
+            AnimationProperty::Rotation => {
+                let q = glam::Quat::from_xyzw(value[0], value[1], value[2], value[3]).normalize();
+                local_transforms[idx] = Mat4::from_quat(q) * local_transforms[idx];
+            }
+            AnimationProperty::Scale => {
+                let s = glam::Vec3::new(value[0], value[1], value[2]);
+                local_transforms[idx] = Mat4::from_scale(s) * local_transforms[idx];
+            }
+        }
+    }
+
+    // Propagate through hierarchy to get global transforms
+    let mut global_transforms: Vec<Mat4> = vec![Mat4::IDENTITY; n];
+    for j in 0..n {
+        global_transforms[j] = if let Some(parent) = skeleton.joints[j].parent {
+            global_transforms[parent] * local_transforms[j]
+        } else {
+            local_transforms[j]
+        };
+    }
+
+    // Final bone matrices = global * inverse_bind
+    global_transforms
+        .iter()
+        .enumerate()
+        .map(|(j, g)| *g * skeleton.joints[j].inverse_bind_matrix)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -330,5 +382,50 @@ mod tests {
         player.looping = true;
         player.advance(2.5);
         assert!((player.current_time - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_compute_bone_matrices_identity() {
+        let skeleton = Skeleton {
+            joints: vec![
+                Joint { name: "Root".into(), parent: None, inverse_bind_matrix: Mat4::IDENTITY },
+            ],
+        };
+        let clip = AnimationClip { name: "Empty".into(), channels: vec![] };
+        let player = AnimationPlayer::new(clip);
+
+        let matrices = compute_bone_matrices(&skeleton, &player);
+        assert_eq!(matrices.len(), 1);
+        // Identity local * Identity inverse_bind = Identity
+        let diff = (matrices[0] - Mat4::IDENTITY).abs_diff_eq(Mat4::ZERO, 0.001);
+        assert!(diff);
+    }
+
+    #[test]
+    fn test_compute_bone_matrices_translation() {
+        let skeleton = Skeleton {
+            joints: vec![
+                Joint { name: "Root".into(), parent: None, inverse_bind_matrix: Mat4::IDENTITY },
+            ],
+        };
+        let clip = AnimationClip {
+            name: "Move".into(),
+            channels: vec![AnimationChannel {
+                joint_index: 0,
+                property: AnimationProperty::Translation,
+                interpolation: Interpolation::Linear,
+                keyframes: vec![
+                    Keyframe { time: 0.0, value: [0.0, 0.0, 0.0, 0.0] },
+                    Keyframe { time: 1.0, value: [2.0, 0.0, 0.0, 0.0] },
+                ],
+            }],
+        };
+        let mut player = AnimationPlayer::new(clip);
+        player.current_time = 0.5;
+
+        let matrices = compute_bone_matrices(&skeleton, &player);
+        // At t=0.5, translation should be (1, 0, 0)
+        let col3 = matrices[0].col(3);
+        assert!((col3.x - 1.0).abs() < 0.01);
     }
 }

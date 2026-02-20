@@ -33,7 +33,7 @@ pub use device::RenderDevice;
 pub use surface::RenderSurface;
 pub use pipeline::{RenderPipelineBuilder, BasicRenderPipeline};
 pub use buffer::{
-    Vertex, ColorVertex, MeshVertex, PbrVertex,
+    Vertex, ColorVertex, MeshVertex, PbrVertex, SkinnedVertex,
     create_vertex_buffer, create_index_buffer, create_index_buffer_u32,
     create_uniform_buffer, create_depth_texture, create_hdr_render_target,
     DEPTH_FORMAT, HDR_FORMAT,

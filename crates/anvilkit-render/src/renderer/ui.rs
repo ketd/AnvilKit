@@ -9,6 +9,8 @@
 //! - [`UiText`]: 文本内容和字体配置
 
 use bevy_ecs::prelude::*;
+use bytemuck::{Pod, Zeroable};
+use wgpu::util::DeviceExt;
 /// Flexbox 排列方向
 ///
 /// # 示例
@@ -209,6 +211,374 @@ impl Default for UiNode {
             style: UiStyle::default(),
             visible: true,
             computed_rect: [0.0; 4],
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+//  UiLayoutEngine — taffy-based layout computation
+// ---------------------------------------------------------------------------
+
+use taffy::prelude as tf;
+
+/// UI 布局引擎
+///
+/// 将 UiNode 树转换为 taffy 布局树，计算 computed_rect。
+pub struct UiLayoutEngine {
+    taffy: tf::TaffyTree,
+}
+
+impl UiLayoutEngine {
+    pub fn new() -> Self {
+        Self {
+            taffy: tf::TaffyTree::new(),
+        }
+    }
+
+    /// 将 UiStyle 转换为 taffy Style
+    fn convert_style(style: &UiStyle, node: &UiNode) -> tf::Style {
+        let to_dim = |v: &Val| match v {
+            Val::Auto => tf::Dimension::Auto,
+            Val::Px(px) => tf::Dimension::Length(*px),
+            Val::Percent(pct) => tf::Dimension::Percent(*pct / 100.0),
+        };
+
+        let to_len_pct_auto = |v: &Val| match v {
+            Val::Auto => tf::LengthPercentageAuto::Auto,
+            Val::Px(px) => tf::LengthPercentageAuto::Length(*px),
+            Val::Percent(pct) => tf::LengthPercentageAuto::Percent(*pct / 100.0),
+        };
+
+        let flex_dir = match style.flex_direction {
+            FlexDirection::Row => tf::FlexDirection::Row,
+            FlexDirection::RowReverse => tf::FlexDirection::RowReverse,
+            FlexDirection::Column => tf::FlexDirection::Column,
+            FlexDirection::ColumnReverse => tf::FlexDirection::ColumnReverse,
+        };
+
+        let justify = match style.justify_content {
+            Align::Start => Some(tf::JustifyContent::Start),
+            Align::Center => Some(tf::JustifyContent::Center),
+            Align::End => Some(tf::JustifyContent::End),
+            Align::SpaceBetween => Some(tf::JustifyContent::SpaceBetween),
+            Align::SpaceAround => Some(tf::JustifyContent::SpaceAround),
+            _ => Some(tf::JustifyContent::Start),
+        };
+
+        let align = match style.align_items {
+            Align::Start => Some(tf::AlignItems::Start),
+            Align::Center => Some(tf::AlignItems::Center),
+            Align::End => Some(tf::AlignItems::End),
+            Align::Stretch => Some(tf::AlignItems::Stretch),
+            _ => Some(tf::AlignItems::Start),
+        };
+
+        let _ = node; // node is reserved for text sizing hints in the future
+
+        tf::Style {
+            display: tf::Display::Flex,
+            flex_direction: flex_dir,
+            justify_content: justify,
+            align_items: align,
+            size: tf::Size {
+                width: to_dim(&style.width),
+                height: to_dim(&style.height),
+            },
+            min_size: tf::Size {
+                width: to_dim(&style.min_width),
+                height: to_dim(&style.min_height),
+            },
+            max_size: tf::Size {
+                width: to_dim(&style.max_width),
+                height: to_dim(&style.max_height),
+            },
+            padding: tf::Rect {
+                top: tf::LengthPercentage::Length(style.padding[0]),
+                right: tf::LengthPercentage::Length(style.padding[1]),
+                bottom: tf::LengthPercentage::Length(style.padding[2]),
+                left: tf::LengthPercentage::Length(style.padding[3]),
+            },
+            margin: tf::Rect {
+                top: to_len_pct_auto(&Val::Px(style.margin[0])),
+                right: to_len_pct_auto(&Val::Px(style.margin[1])),
+                bottom: to_len_pct_auto(&Val::Px(style.margin[2])),
+                left: to_len_pct_auto(&Val::Px(style.margin[3])),
+            },
+            gap: tf::Size {
+                width: tf::LengthPercentage::Length(style.gap),
+                height: tf::LengthPercentage::Length(style.gap),
+            },
+            flex_grow: style.flex_grow,
+            flex_shrink: style.flex_shrink,
+            ..Default::default()
+        }
+    }
+
+    /// 计算一组根级 UiNode 的布局
+    ///
+    /// 返回 `(entity, [x, y, width, height])` 列表
+    pub fn compute_layout(
+        &mut self,
+        nodes: &[(Entity, &UiNode)],
+        container_width: f32,
+        container_height: f32,
+    ) -> Vec<(Entity, [f32; 4])> {
+        self.taffy = tf::TaffyTree::new();
+        let mut results = Vec::new();
+        let mut children = Vec::new();
+
+        for (entity, node) in nodes {
+            let style = Self::convert_style(&node.style, node);
+            let taffy_node = self.taffy.new_leaf(style).unwrap();
+            children.push((*entity, taffy_node));
+        }
+
+        // Root container
+        let child_ids: Vec<_> = children.iter().map(|(_, n)| *n).collect();
+        let root = self.taffy.new_with_children(
+            tf::Style {
+                display: tf::Display::Flex,
+                flex_direction: tf::FlexDirection::Column,
+                size: tf::Size {
+                    width: tf::Dimension::Length(container_width),
+                    height: tf::Dimension::Length(container_height),
+                },
+                ..Default::default()
+            },
+            &child_ids,
+        ).unwrap();
+
+        let available = tf::Size {
+            width: tf::AvailableSpace::Definite(container_width),
+            height: tf::AvailableSpace::Definite(container_height),
+        };
+        self.taffy.compute_layout(root, available).ok();
+
+        for (entity, taffy_node) in &children {
+            if let Ok(layout) = self.taffy.layout(*taffy_node) {
+                results.push((*entity, [
+                    layout.location.x,
+                    layout.location.y,
+                    layout.size.width,
+                    layout.size.height,
+                ]));
+            }
+        }
+
+        results
+    }
+}
+
+impl Default for UiLayoutEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
+//  UiRenderer — GPU pipeline for UI rectangles
+// ---------------------------------------------------------------------------
+
+const UI_SHADER: &str = include_str!("../../../../shaders/ui.wgsl");
+
+/// UI 矩形 GPU 顶点
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+pub struct UiVertex {
+    pub position: [f32; 2],
+    pub rect_min: [f32; 2],
+    pub rect_size: [f32; 2],
+    pub color: [f32; 4],
+    pub border_color: [f32; 4],
+    pub params: [f32; 4], // border_radius, border_width, 0, 0
+}
+
+impl UiVertex {
+    fn layout() -> wgpu::VertexBufferLayout<'static> {
+        const ATTRIBUTES: &[wgpu::VertexAttribute] = &[
+            wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float32x2 },
+            wgpu::VertexAttribute { offset: 8, shader_location: 1, format: wgpu::VertexFormat::Float32x2 },
+            wgpu::VertexAttribute { offset: 16, shader_location: 2, format: wgpu::VertexFormat::Float32x2 },
+            wgpu::VertexAttribute { offset: 24, shader_location: 3, format: wgpu::VertexFormat::Float32x4 },
+            wgpu::VertexAttribute { offset: 40, shader_location: 4, format: wgpu::VertexFormat::Float32x4 },
+            wgpu::VertexAttribute { offset: 56, shader_location: 5, format: wgpu::VertexFormat::Float32x4 },
+        ];
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<UiVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: ATTRIBUTES,
+        }
+    }
+}
+
+/// GPU UI 渲染器
+pub struct UiRenderer {
+    pub pipeline: wgpu::RenderPipeline,
+    pub ortho_buffer: wgpu::Buffer,
+    pub ortho_bind_group: wgpu::BindGroup,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+struct UiOrthoUniform {
+    projection: [[f32; 4]; 4],
+}
+
+impl UiRenderer {
+    pub fn new(device: &super::RenderDevice, format: wgpu::TextureFormat) -> Self {
+        let shader = device.device().create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("UI Shader"),
+            source: wgpu::ShaderSource::Wgsl(UI_SHADER.into()),
+        });
+
+        let ortho_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("UI Ortho BGL"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let pipeline_layout = device.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("UI Pipeline Layout"),
+            bind_group_layouts: &[&ortho_bgl],
+            push_constant_ranges: &[],
+        });
+
+        let pipeline = device.device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("UI Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[UiVertex::layout()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
+        let initial = UiOrthoUniform {
+            projection: glam::Mat4::IDENTITY.to_cols_array_2d(),
+        };
+        let ortho_buffer = device.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("UI Ortho UB"),
+            contents: bytemuck::bytes_of(&initial),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let ortho_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("UI Ortho BG"),
+            layout: &ortho_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: ortho_buffer.as_entire_binding(),
+            }],
+        });
+
+        Self {
+            pipeline,
+            ortho_buffer,
+            ortho_bind_group: ortho_bg,
+        }
+    }
+
+    /// 从 computed_rect 列表渲染 UI 矩形
+    pub fn render(
+        &self,
+        device: &super::RenderDevice,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::TextureView,
+        nodes: &[&UiNode],
+        screen_width: f32,
+        screen_height: f32,
+    ) {
+        if nodes.is_empty() {
+            return;
+        }
+
+        // Update ortho
+        let ortho = glam::Mat4::orthographic_lh(0.0, screen_width, screen_height, 0.0, -1.0, 1.0);
+        let uniform = UiOrthoUniform {
+            projection: ortho.to_cols_array_2d(),
+        };
+        device.queue().write_buffer(&self.ortho_buffer, 0, bytemuck::bytes_of(&uniform));
+
+        // Build vertices
+        let mut vertices = Vec::new();
+        for node in nodes {
+            if !node.visible || node.computed_rect[2] <= 0.0 || node.computed_rect[3] <= 0.0 {
+                continue;
+            }
+            let [x, y, w, h] = node.computed_rect;
+            let params = [node.border_radius, node.border_width, 0.0, 0.0];
+
+            // 6 vertices (2 triangles)
+            let corners = [
+                [0.0f32, 0.0], [1.0, 0.0], [1.0, 1.0],
+                [0.0, 0.0], [1.0, 1.0], [0.0, 1.0],
+            ];
+            for corner in &corners {
+                vertices.push(UiVertex {
+                    position: *corner,
+                    rect_min: [x, y],
+                    rect_size: [w, h],
+                    color: node.background_color,
+                    border_color: node.border_color,
+                    params,
+                });
+            }
+        }
+
+        if vertices.is_empty() {
+            return;
+        }
+
+        let vb = device.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("UI VB"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        {
+            let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("UI Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: target,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            rp.set_pipeline(&self.pipeline);
+            rp.set_bind_group(0, &self.ortho_bind_group, &[]);
+            rp.set_vertex_buffer(0, vb.slice(..));
+            rp.draw(0..vertices.len() as u32, 0..1);
         }
     }
 }

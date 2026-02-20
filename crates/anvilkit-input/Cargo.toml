@@ -11,3 +11,4 @@ repository = "https://github.com/ketd/AnvilKit"
 bevy_ecs = "0.14"
 glam = { workspace = true }
 log = "0.4"
+winit = "0.30"

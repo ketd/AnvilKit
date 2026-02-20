@@ -27,6 +27,7 @@ use anvilkit_render::renderer::{
 };
 use anvilkit_render::plugin::CameraComponent;
 use anvilkit_assets::gltf_loader::load_gltf_scene;
+use anvilkit_input::prelude::{InputState, KeyCode};
 
 // ---------------------------------------------------------------------------
 //  PBR Shader (same as hello_pbr_ecs — full pipeline)
@@ -132,7 +133,6 @@ fn main() {
         .with_size(1024, 768);
 
     event_loop.run_app(&mut ShowcaseApp {
-        keys_held: std::collections::HashSet::new(),
         orbit_yaw: 0.0,
         orbit_pitch: 0.2,
         orbit_distance: 6.0,
@@ -154,7 +154,6 @@ fn main() {
 }
 
 struct ShowcaseApp {
-    keys_held: std::collections::HashSet<winit::keyboard::KeyCode>,
     orbit_yaw: f32,
     orbit_pitch: f32,
     orbit_distance: f32,
@@ -481,12 +480,17 @@ impl ApplicationHandler for ShowcaseApp {
             WindowEvent::KeyboardInput { event, .. } => {
                 use winit::keyboard::{KeyCode as WK, PhysicalKey};
                 if let PhysicalKey::Code(code) = event.physical_key {
-                    if event.state.is_pressed() {
-                        self.keys_held.insert(code);
-                        if code == WK::Escape { el.exit(); return; }
-                    } else {
-                        self.keys_held.remove(&code);
+                    // Forward to InputState via RenderApp
+                    if let Some(key) = anvilkit_input::prelude::KeyCode::from_winit(code) {
+                        if let Some(mut input) = self.app.world.get_resource_mut::<InputState>() {
+                            if event.state.is_pressed() {
+                                input.press_key(key);
+                            } else {
+                                input.release_key(key);
+                            }
+                        }
                     }
+                    if event.state.is_pressed() && code == WK::Escape { el.exit(); return; }
                 }
                 return;
             }
@@ -504,17 +508,18 @@ impl ApplicationHandler for ShowcaseApp {
     }
 
     fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
-        use winit::keyboard::KeyCode as WK;
         let dt = 1.0 / 60.0f32;
         let speed = 1.5 * dt;
 
-        // Keyboard orbit camera
-        if self.keys_held.contains(&WK::KeyA) || self.keys_held.contains(&WK::ArrowLeft) { self.orbit_yaw -= speed; }
-        if self.keys_held.contains(&WK::KeyD) || self.keys_held.contains(&WK::ArrowRight) { self.orbit_yaw += speed; }
-        if self.keys_held.contains(&WK::KeyW) || self.keys_held.contains(&WK::ArrowUp) { self.orbit_pitch = (self.orbit_pitch + speed * 0.7).min(1.2); }
-        if self.keys_held.contains(&WK::KeyS) || self.keys_held.contains(&WK::ArrowDown) { self.orbit_pitch = (self.orbit_pitch - speed * 0.7).max(-1.2); }
-        if self.keys_held.contains(&WK::Equal) { self.orbit_distance = (self.orbit_distance - speed * 3.0).max(1.5); }
-        if self.keys_held.contains(&WK::Minus) { self.orbit_distance = (self.orbit_distance + speed * 3.0).min(20.0); }
+        // Keyboard orbit camera via InputState
+        if let Some(input) = self.app.world.get_resource::<InputState>() {
+            if input.is_key_pressed(KeyCode::A) || input.is_key_pressed(KeyCode::Left) { self.orbit_yaw -= speed; }
+            if input.is_key_pressed(KeyCode::D) || input.is_key_pressed(KeyCode::Right) { self.orbit_yaw += speed; }
+            if input.is_key_pressed(KeyCode::W) || input.is_key_pressed(KeyCode::Up) { self.orbit_pitch = (self.orbit_pitch + speed * 0.7).min(1.2); }
+            if input.is_key_pressed(KeyCode::S) || input.is_key_pressed(KeyCode::Down) { self.orbit_pitch = (self.orbit_pitch - speed * 0.7).max(-1.2); }
+            if input.is_key_pressed(KeyCode::Key9) { self.orbit_distance = (self.orbit_distance - speed * 3.0).max(1.5); }
+            if input.is_key_pressed(KeyCode::Key0) { self.orbit_distance = (self.orbit_distance + speed * 3.0).min(20.0); }
+        }
 
         let eye = glam::Vec3::new(
             self.orbit_yaw.sin() * self.orbit_pitch.cos() * self.orbit_distance,
@@ -530,6 +535,9 @@ impl ApplicationHandler for ShowcaseApp {
             }
         }
         self.app.update();
+        if let Some(mut input) = self.app.world.get_resource_mut::<InputState>() {
+            input.end_frame();
+        }
         if let Some(w) = self.render_app.window() { w.request_redraw(); }
     }
 }

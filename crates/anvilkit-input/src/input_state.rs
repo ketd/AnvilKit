@@ -34,6 +34,48 @@ pub enum KeyCode {
     LShift, RShift, LControl, RControl, LAlt, RAlt,
 }
 
+impl KeyCode {
+    /// 将 winit KeyCode 映射到 AnvilKit KeyCode
+    pub fn from_winit(key: winit::keyboard::KeyCode) -> Option<KeyCode> {
+        use winit::keyboard::KeyCode as WK;
+        match key {
+            WK::KeyA => Some(KeyCode::A), WK::KeyB => Some(KeyCode::B),
+            WK::KeyC => Some(KeyCode::C), WK::KeyD => Some(KeyCode::D),
+            WK::KeyE => Some(KeyCode::E), WK::KeyF => Some(KeyCode::F),
+            WK::KeyG => Some(KeyCode::G), WK::KeyH => Some(KeyCode::H),
+            WK::KeyI => Some(KeyCode::I), WK::KeyJ => Some(KeyCode::J),
+            WK::KeyK => Some(KeyCode::K), WK::KeyL => Some(KeyCode::L),
+            WK::KeyM => Some(KeyCode::M), WK::KeyN => Some(KeyCode::N),
+            WK::KeyO => Some(KeyCode::O), WK::KeyP => Some(KeyCode::P),
+            WK::KeyQ => Some(KeyCode::Q), WK::KeyR => Some(KeyCode::R),
+            WK::KeyS => Some(KeyCode::S), WK::KeyT => Some(KeyCode::T),
+            WK::KeyU => Some(KeyCode::U), WK::KeyV => Some(KeyCode::V),
+            WK::KeyW => Some(KeyCode::W), WK::KeyX => Some(KeyCode::X),
+            WK::KeyY => Some(KeyCode::Y), WK::KeyZ => Some(KeyCode::Z),
+            WK::Digit0 => Some(KeyCode::Key0), WK::Digit1 => Some(KeyCode::Key1),
+            WK::Digit2 => Some(KeyCode::Key2), WK::Digit3 => Some(KeyCode::Key3),
+            WK::Digit4 => Some(KeyCode::Key4), WK::Digit5 => Some(KeyCode::Key5),
+            WK::Digit6 => Some(KeyCode::Key6), WK::Digit7 => Some(KeyCode::Key7),
+            WK::Digit8 => Some(KeyCode::Key8), WK::Digit9 => Some(KeyCode::Key9),
+            WK::F1 => Some(KeyCode::F1), WK::F2 => Some(KeyCode::F2),
+            WK::F3 => Some(KeyCode::F3), WK::F4 => Some(KeyCode::F4),
+            WK::F5 => Some(KeyCode::F5), WK::F6 => Some(KeyCode::F6),
+            WK::F7 => Some(KeyCode::F7), WK::F8 => Some(KeyCode::F8),
+            WK::F9 => Some(KeyCode::F9), WK::F10 => Some(KeyCode::F10),
+            WK::F11 => Some(KeyCode::F11), WK::F12 => Some(KeyCode::F12),
+            WK::Space => Some(KeyCode::Space), WK::Enter => Some(KeyCode::Enter),
+            WK::Escape => Some(KeyCode::Escape), WK::Tab => Some(KeyCode::Tab),
+            WK::Backspace => Some(KeyCode::Backspace), WK::Delete => Some(KeyCode::Delete),
+            WK::ArrowLeft => Some(KeyCode::Left), WK::ArrowRight => Some(KeyCode::Right),
+            WK::ArrowUp => Some(KeyCode::Up), WK::ArrowDown => Some(KeyCode::Down),
+            WK::ShiftLeft => Some(KeyCode::LShift), WK::ShiftRight => Some(KeyCode::RShift),
+            WK::ControlLeft => Some(KeyCode::LControl), WK::ControlRight => Some(KeyCode::RControl),
+            WK::AltLeft => Some(KeyCode::LAlt), WK::AltRight => Some(KeyCode::RAlt),
+            _ => None,
+        }
+    }
+}
+
 /// 鼠标按钮
 ///
 /// # 示例
@@ -48,6 +90,18 @@ pub enum MouseButton {
     Left,
     Right,
     Middle,
+}
+
+impl MouseButton {
+    /// 将 winit MouseButton 映射到 AnvilKit MouseButton
+    pub fn from_winit(button: winit::event::MouseButton) -> Option<MouseButton> {
+        match button {
+            winit::event::MouseButton::Left => Some(MouseButton::Left),
+            winit::event::MouseButton::Right => Some(MouseButton::Right),
+            winit::event::MouseButton::Middle => Some(MouseButton::Middle),
+            _ => None,
+        }
+    }
 }
 
 /// 输入状态资源

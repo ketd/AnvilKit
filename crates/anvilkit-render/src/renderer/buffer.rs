@@ -215,6 +215,51 @@ impl Vertex for PbrVertex {
     }
 }
 
+/// 带骨骼蒙皮的 PBR 顶点
+///
+/// 在 PbrVertex 基础上增加 joint_indices 和 joint_weights，
+/// 用于 GPU 端骨骼动画蒙皮。
+///
+/// # 内存布局
+///
+/// | 偏移 | 属性 | 格式 |
+/// |------|------|------|
+/// | 0 | position | Float32x3 |
+/// | 12 | normal | Float32x3 |
+/// | 24 | texcoord | Float32x2 |
+/// | 32 | tangent | Float32x4 |
+/// | 48 | joint_indices | Uint16x4 |
+/// | 56 | joint_weights | Float32x4 |
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+pub struct SkinnedVertex {
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    pub texcoord: [f32; 2],
+    pub tangent: [f32; 4],
+    pub joint_indices: [u16; 4],
+    pub joint_weights: [f32; 4],
+}
+
+impl Vertex for SkinnedVertex {
+    fn layout() -> VertexBufferLayout<'static> {
+        const ATTRIBUTES: &[VertexAttribute] = &[
+            VertexAttribute { offset: 0, shader_location: 0, format: VertexFormat::Float32x3 },
+            VertexAttribute { offset: 12, shader_location: 1, format: VertexFormat::Float32x3 },
+            VertexAttribute { offset: 24, shader_location: 2, format: VertexFormat::Float32x2 },
+            VertexAttribute { offset: 32, shader_location: 3, format: VertexFormat::Float32x4 },
+            VertexAttribute { offset: 48, shader_location: 4, format: VertexFormat::Uint16x4 },
+            VertexAttribute { offset: 56, shader_location: 5, format: VertexFormat::Float32x4 },
+        ];
+
+        VertexBufferLayout {
+            array_stride: std::mem::size_of::<SkinnedVertex>() as u64,
+            step_mode: VertexStepMode::Vertex,
+            attributes: ATTRIBUTES,
+        }
+    }
+}
+
 /// 创建顶点缓冲区
 ///
 /// 将顶点数据上传到 GPU 内存。

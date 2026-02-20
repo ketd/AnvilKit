@@ -3,6 +3,7 @@
 //! 提供与 AnvilKit ECS 系统的集成，实现渲染功能的插件化。
 
 use anvilkit_ecs::prelude::*;
+use anvilkit_input::prelude::InputState;
 use log::info;
 
 use crate::window::WindowConfig;
@@ -101,6 +102,7 @@ impl Plugin for RenderPlugin {
         app.init_resource::<DrawCommandList>();
         app.init_resource::<RenderAssets>();
         app.init_resource::<SceneLights>();
+        app.insert_resource(InputState::new());
 
         // 添加真实 ECS 渲染系统到 PostUpdate 阶段
         app.add_systems(

@@ -5,6 +5,7 @@ members = [
     "crates/anvilkit-render",
     "crates/anvilkit-assets",
     "crates/anvilkit-input",
+    "crates/anvilkit-audio",
 ]
 
 resolver = "2"
@@ -40,9 +41,13 @@ rapier3d = "0.18"
 
 # Audio dependencies
 kira = "0.8"
+rodio = { version = "0.19", default-features = false, features = ["wav", "vorbis", "mp3"] }
 
 # Asset loading
 gltf = "1.4"
+
+# UI layout
+taffy = "0.4"
 
 # Development tools
 egui = "0.24"

@@ -53,6 +53,21 @@ impl Aabb {
     pub fn half_extents(&self) -> Vec3 {
         (self.max - self.min) * 0.5
     }
+
+    /// 测试两个 AABB 是否相交
+    pub fn intersects(&self, other: &Aabb) -> bool {
+        self.min.x <= other.max.x && self.max.x >= other.min.x
+            && self.min.y <= other.max.y && self.max.y >= other.min.y
+            && self.min.z <= other.max.z && self.max.z >= other.min.z
+    }
+
+    /// 将 AABB 按偏移量平移
+    pub fn translated(&self, offset: Vec3) -> Aabb {
+        Aabb {
+            min: self.min + offset,
+            max: self.max + offset,
+        }
+    }
 }
 
 impl Default for Aabb {

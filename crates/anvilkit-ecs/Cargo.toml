@@ -20,6 +20,9 @@ glam = { workspace = true }
 # 错误处理
 thiserror = { workspace = true }
 
+# 物理引擎（可选）
+rapier3d = { workspace = true, optional = true }
+
 # 序列化支持（可选）
 serde = { workspace = true, optional = true }
 
@@ -31,6 +34,8 @@ approx = "0.5"
 default = []
 # 序列化支持
 serde = ["dep:serde", "anvilkit-core/serde", "bevy_ecs/serialize"]
+# rapier3d 物理集成
+rapier = ["dep:rapier3d"]
 # 调试功能
 debug = []
 

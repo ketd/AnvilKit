@@ -10,6 +10,8 @@
 
 use bevy_ecs::prelude::*;
 use glam::Vec3;
+use bytemuck::{Pod, Zeroable};
+use wgpu::util::DeviceExt;
 
 /// 单个粒子的运行时状态
 ///
@@ -224,9 +226,208 @@ impl ParticleSystem {
     }
 }
 
+// ---------------------------------------------------------------------------
+//  ParticleRenderer — GPU pipeline for particle point-sprite rendering
+// ---------------------------------------------------------------------------
+
+const PARTICLE_SHADER: &str = include_str!("../../../../shaders/particle.wgsl");
+
+/// 粒子 GPU 顶点 (32 bytes)
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+pub struct ParticleVertex {
+    pub position: [f32; 3],
+    pub color: [f32; 4],
+    pub size: f32,
+}
+
+impl ParticleVertex {
+    pub fn layout() -> wgpu::VertexBufferLayout<'static> {
+        const ATTRIBUTES: &[wgpu::VertexAttribute] = &[
+            wgpu::VertexAttribute {
+                offset: 0,
+                shader_location: 0,
+                format: wgpu::VertexFormat::Float32x3,
+            },
+            wgpu::VertexAttribute {
+                offset: 12,
+                shader_location: 1,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                offset: 28,
+                shader_location: 2,
+                format: wgpu::VertexFormat::Float32,
+            },
+        ];
+
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<ParticleVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: ATTRIBUTES,
+        }
+    }
+}
+
+/// 粒子渲染器场景 uniform (64 bytes)
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct ParticleSceneUniform {
+    pub view_proj: [[f32; 4]; 4],
+}
+
+/// GPU 粒子渲染器
+pub struct ParticleRenderer {
+    pub pipeline: wgpu::RenderPipeline,
+    pub scene_buffer: wgpu::Buffer,
+    pub scene_bind_group: wgpu::BindGroup,
+}
+
+impl ParticleRenderer {
+    pub fn new(device: &super::RenderDevice, format: wgpu::TextureFormat) -> Self {
+        let shader = device.device().create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Particle Shader"),
+            source: wgpu::ShaderSource::Wgsl(PARTICLE_SHADER.into()),
+        });
+
+        let scene_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Particle Scene BGL"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let pipeline_layout = device.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Particle Pipeline Layout"),
+            bind_group_layouts: &[&scene_bgl],
+            push_constant_ranges: &[],
+        });
+
+        let pipeline = device.device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Particle Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[ParticleVertex::layout()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
+        let initial = ParticleSceneUniform {
+            view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+        };
+        let scene_buffer = device.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Particle Scene UB"),
+            contents: bytemuck::bytes_of(&initial),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let scene_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Particle Scene BG"),
+            layout: &scene_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: scene_buffer.as_entire_binding(),
+            }],
+        });
+
+        Self {
+            pipeline,
+            scene_buffer,
+            scene_bind_group: scene_bg,
+        }
+    }
+
+    /// 从 ParticleSystem 收集存活粒子并渲染
+    pub fn render(
+        &self,
+        device: &super::RenderDevice,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::TextureView,
+        particle_system: &ParticleSystem,
+        view_proj: &glam::Mat4,
+    ) {
+        let vertices: Vec<ParticleVertex> = particle_system
+            .alive_particles()
+            .map(|p| ParticleVertex {
+                position: p.position.into(),
+                color: p.color,
+                size: p.size,
+            })
+            .collect();
+
+        if vertices.is_empty() {
+            return;
+        }
+
+        // Update view-projection
+        let uniform = ParticleSceneUniform {
+            view_proj: view_proj.to_cols_array_2d(),
+        };
+        device.queue().write_buffer(&self.scene_buffer, 0, bytemuck::bytes_of(&uniform));
+
+        let instance_buffer = device.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Particle Instance VB"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        {
+            let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Particle Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: target,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            rp.set_pipeline(&self.pipeline);
+            rp.set_bind_group(0, &self.scene_bind_group, &[]);
+            rp.set_vertex_buffer(0, instance_buffer.slice(..));
+            // 6 vertices per quad (billboard), one instance per particle
+            rp.draw(0..6, 0..vertices.len() as u32);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_particle_vertex_size() {
+        assert_eq!(std::mem::size_of::<ParticleVertex>(), 32);
+    }
 
     #[test]
     fn test_particle_lifecycle() {

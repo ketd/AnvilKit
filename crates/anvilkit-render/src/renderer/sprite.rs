@@ -12,7 +12,8 @@
 use bevy_ecs::prelude::*;
 use glam::{Vec2, Vec3};
 use bytemuck::{Pod, Zeroable};
-use wgpu::{VertexBufferLayout, VertexAttribute, VertexFormat, VertexStepMode};
+use wgpu::{self, VertexBufferLayout, VertexAttribute, VertexFormat, VertexStepMode};
+use wgpu::util::DeviceExt;
 
 use super::buffer::Vertex;
 
@@ -302,6 +303,188 @@ impl SpriteBatch {
         self.vertices.clear();
         for sprite in sprites {
             self.vertices.extend_from_slice(&sprite);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+//  SpriteRenderer — GPU pipeline for 2D sprite rendering
+// ---------------------------------------------------------------------------
+
+const SPRITE_SHADER: &str = include_str!("../../../../shaders/sprite.wgsl");
+
+/// 正交投影 uniform (64 bytes)
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct OrthoUniform {
+    pub projection: [[f32; 4]; 4],
+}
+
+/// GPU 2D 精灵渲染器
+pub struct SpriteRenderer {
+    pub pipeline: wgpu::RenderPipeline,
+    pub ortho_buffer: wgpu::Buffer,
+    pub ortho_bind_group: wgpu::BindGroup,
+    pub ortho_bind_group_layout: wgpu::BindGroupLayout,
+    pub texture_bind_group_layout: wgpu::BindGroupLayout,
+}
+
+impl SpriteRenderer {
+    /// 创建精灵渲染器
+    pub fn new(device: &super::RenderDevice, format: wgpu::TextureFormat) -> Self {
+        let shader = device.device().create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Sprite Shader"),
+            source: wgpu::ShaderSource::Wgsl(SPRITE_SHADER.into()),
+        });
+
+        // Ortho uniform bind group layout (group 0)
+        let ortho_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Sprite Ortho BGL"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        // Texture bind group layout (group 1)
+        let tex_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Sprite Texture BGL"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        let pipeline_layout = device.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Sprite Pipeline Layout"),
+            bind_group_layouts: &[&ortho_bgl, &tex_bgl],
+            push_constant_ranges: &[],
+        });
+
+        let pipeline = device.device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Sprite Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[SpriteVertex::layout()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
+        // Create ortho uniform buffer
+        let initial = OrthoUniform {
+            projection: glam::Mat4::IDENTITY.to_cols_array_2d(),
+        };
+        let ortho_buffer = device.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sprite Ortho UB"),
+            contents: bytemuck::bytes_of(&initial),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let ortho_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Sprite Ortho BG"),
+            layout: &ortho_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: ortho_buffer.as_entire_binding(),
+            }],
+        });
+
+        Self {
+            pipeline,
+            ortho_buffer,
+            ortho_bind_group: ortho_bg,
+            ortho_bind_group_layout: ortho_bgl,
+            texture_bind_group_layout: tex_bgl,
+        }
+    }
+
+    /// 渲染精灵批次
+    pub fn render(
+        &self,
+        device: &super::RenderDevice,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::TextureView,
+        batch: &SpriteBatch,
+        texture_bind_group: &wgpu::BindGroup,
+        screen_width: f32,
+        screen_height: f32,
+    ) {
+        if batch.vertices.is_empty() {
+            return;
+        }
+
+        // Update ortho projection
+        let ortho = glam::Mat4::orthographic_lh(0.0, screen_width, screen_height, 0.0, -1.0, 1.0);
+        let uniform = OrthoUniform {
+            projection: ortho.to_cols_array_2d(),
+        };
+        device.queue().write_buffer(&self.ortho_buffer, 0, bytemuck::bytes_of(&uniform));
+
+        // Upload vertices
+        let vb = device.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sprite VB"),
+            contents: bytemuck::cast_slice(&batch.vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        {
+            let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Sprite Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: target,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            rp.set_pipeline(&self.pipeline);
+            rp.set_bind_group(0, &self.ortho_bind_group, &[]);
+            rp.set_bind_group(1, texture_bind_group, &[]);
+            rp.set_vertex_buffer(0, vb.slice(..));
+            rp.draw(0..batch.vertices.len() as u32, 0..1);
         }
     }
 }
