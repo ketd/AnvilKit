@@ -57,6 +57,32 @@ impl MeshData {
     /// };
     /// assert_eq!(mesh.vertex_count(), 100);
     /// ```
+    /// 验证所有顶点属性数组长度一致
+    ///
+    /// # 返回
+    ///
+    /// 如果长度不一致返回错误描述
+    pub fn validate(&self) -> Result<(), String> {
+        let n = self.positions.len();
+        if self.normals.len() != n {
+            return Err(format!(
+                "normals.len()={} != positions.len()={}", self.normals.len(), n
+            ));
+        }
+        if self.texcoords.len() != n {
+            return Err(format!(
+                "texcoords.len()={} != positions.len()={}", self.texcoords.len(), n
+            ));
+        }
+        if self.tangents.len() != n {
+            return Err(format!(
+                "tangents.len()={} != positions.len()={}", self.tangents.len(), n
+            ));
+        }
+        Ok(())
+    }
+
+    /// 顶点数量
     pub fn vertex_count(&self) -> usize {
         self.positions.len()
     }

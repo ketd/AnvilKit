@@ -31,6 +31,7 @@
 //! }
 //! ```
 
+use std::collections::HashSet;
 use bevy_ecs::prelude::*;
 use crate::plugin::Plugin;
 use crate::schedule::{AnvilKitSchedule, ScheduleLabel};
@@ -68,6 +69,8 @@ pub struct App {
     should_exit: bool,
     /// Startup 是否已经运行
     has_started: bool,
+    /// 已注册的唯一插件类型名（防止重复注册）
+    registered_plugins: HashSet<String>,
 }
 
 impl Default for App {
@@ -96,6 +99,7 @@ impl App {
             world,
             should_exit: false,
             has_started: false,
+            registered_plugins: HashSet::new(),
         }
     }
 
@@ -114,6 +118,13 @@ impl App {
     /// app.add_plugins(AnvilKitEcsPlugin);
     /// ```
     pub fn add_plugins<P: Plugin>(&mut self, plugin: P) -> &mut Self {
+        if plugin.is_unique() {
+            let type_name = std::any::type_name::<P>().to_string();
+            if !self.registered_plugins.insert(type_name.clone()) {
+                log::warn!("插件 {} 已注册，跳过重复注册", type_name);
+                return self;
+            }
+        }
         plugin.build(self);
         self
     }
@@ -234,13 +245,21 @@ impl App {
         // 首次调用运行 Startup
         if !self.has_started {
             self.has_started = true;
-            let _ = self.world.try_run_schedule(AnvilKitSchedule::Startup);
+            if let Err(e) = self.world.try_run_schedule(AnvilKitSchedule::Startup) {
+                log::error!("Startup schedule 执行失败: {:?}", e);
+            }
         }
 
         // 每帧运行 PreUpdate → Update → PostUpdate
-        let _ = self.world.try_run_schedule(AnvilKitSchedule::PreUpdate);
-        let _ = self.world.try_run_schedule(AnvilKitSchedule::Update);
-        let _ = self.world.try_run_schedule(AnvilKitSchedule::PostUpdate);
+        if let Err(e) = self.world.try_run_schedule(AnvilKitSchedule::PreUpdate) {
+            log::error!("PreUpdate schedule 执行失败: {:?}", e);
+        }
+        if let Err(e) = self.world.try_run_schedule(AnvilKitSchedule::Update) {
+            log::error!("Update schedule 执行失败: {:?}", e);
+        }
+        if let Err(e) = self.world.try_run_schedule(AnvilKitSchedule::PostUpdate) {
+            log::error!("PostUpdate schedule 执行失败: {:?}", e);
+        }
     }
 
     /// 标记应用应该退出

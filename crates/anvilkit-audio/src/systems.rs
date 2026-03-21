@@ -52,10 +52,14 @@ pub fn audio_playback_system(
                             let reader = BufReader::new(file);
                             match rodio::Decoder::new(reader) {
                                 Ok(decoder) => {
-                                    let sink = engine.get_or_create_sink(entity);
-                                    sink.set_volume(source.volume);
-                                    sink.append(decoder);
-                                    debug!("播放音频: {}", source.path);
+                                    match engine.get_or_create_sink(entity) {
+                                        Ok(sink) => {
+                                            sink.set_volume(source.volume);
+                                            sink.append(decoder);
+                                            debug!("播放音频: {}", source.path);
+                                        }
+                                        Err(e) => error!("创建 sink 失败 {}: {}", source.path, e),
+                                    }
                                 }
                                 Err(e) => error!("解码音频失败 {}: {}", source.path, e),
                             }

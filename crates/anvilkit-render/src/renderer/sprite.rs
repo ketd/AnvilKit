@@ -327,6 +327,8 @@ pub struct SpriteRenderer {
     pub ortho_bind_group: wgpu::BindGroup,
     pub ortho_bind_group_layout: wgpu::BindGroupLayout,
     pub texture_bind_group_layout: wgpu::BindGroupLayout,
+    /// Cached vertex buffer for per-frame reuse (grows as needed, never shrinks)
+    cached_vb: Option<(wgpu::Buffer, u64)>,
 }
 
 impl SpriteRenderer {
@@ -432,12 +434,13 @@ impl SpriteRenderer {
             ortho_bind_group: ortho_bg,
             ortho_bind_group_layout: ortho_bgl,
             texture_bind_group_layout: tex_bgl,
+            cached_vb: None,
         }
     }
 
     /// 渲染精灵批次
     pub fn render(
-        &self,
+        &mut self,
         device: &super::RenderDevice,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
@@ -457,12 +460,23 @@ impl SpriteRenderer {
         };
         device.queue().write_buffer(&self.ortho_buffer, 0, bytemuck::bytes_of(&uniform));
 
-        // Upload vertices
-        let vb = device.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Sprite VB"),
-            contents: bytemuck::cast_slice(&batch.vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        // Upload vertices — reuse cached buffer if large enough, otherwise reallocate
+        let data = bytemuck::cast_slice(&batch.vertices);
+        let needed = data.len() as u64;
+        let reuse = self.cached_vb.as_ref().map_or(false, |(_, cap)| *cap >= needed);
+        if !reuse {
+            self.cached_vb = Some((
+                device.device().create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("Sprite VB (cached)"),
+                    size: needed,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }),
+                needed,
+            ));
+        }
+        let vb = &self.cached_vb.as_ref().unwrap().0;
+        device.queue().write_buffer(vb, 0, data);
 
         {
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

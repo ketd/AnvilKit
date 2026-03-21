@@ -1,14 +1,14 @@
 [package]
 name = "anvilkit-audio"
-version = "0.1.0"
-edition = "2021"
-authors = ["AnvilKit Contributors"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "AnvilKit 音频系统 - 基于 rodio 的跨平台音频播放"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/ketd/AnvilKit"
 
 [dependencies]
 anvilkit-ecs = { path = "../anvilkit-ecs" }
-bevy_ecs = "0.14"
+bevy_ecs = { workspace = true }
 rodio = { version = "0.19", default-features = false, features = ["wav", "vorbis", "mp3"] }
 log = "0.4"

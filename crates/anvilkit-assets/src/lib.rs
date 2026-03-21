@@ -11,6 +11,8 @@
 //! println!("顶点数: {}, 索引数: {}", mesh.vertex_count(), mesh.index_count());
 //! ```
 
+#![warn(missing_docs)]
+
 pub mod mesh;
 pub mod material;
 pub mod scene;

@@ -30,6 +30,7 @@ pub mod debug;
 pub mod raycast;
 pub mod line;
 pub mod text;
+pub mod buffer_pool;
 
 // 重新导出主要类型
 pub use device::RenderDevice;
@@ -53,7 +54,7 @@ mod tests {
     #[test]
     fn test_module_exports() {
         let _: Option<RenderDevice> = None;
-        let _: Option<RenderSurface<'_>> = None;
+        let _: Option<RenderSurface> = None;
         let _: Option<BasicRenderPipeline> = None;
     }
 }

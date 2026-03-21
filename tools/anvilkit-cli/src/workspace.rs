@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{CliError, Result};
 
-/// Walk up from `start` looking for a `Cargo.toml` that contains `[workspace]`.
+/// Walk up from `start` looking for a `Cargo.toml` with a `[workspace]` section.
+/// Uses proper TOML parsing to avoid false positives from comments.
 pub fn find_workspace_root(start: &Path) -> Result<PathBuf> {
     let mut dir = if start.is_file() {
         start.parent().unwrap_or(start).to_path_buf()
@@ -14,9 +15,11 @@ pub fn find_workspace_root(start: &Path) -> Result<PathBuf> {
         let cargo_path = dir.join("Cargo.toml");
         if cargo_path.exists() {
             let content = std::fs::read_to_string(&cargo_path)
-                .map_err(|e| CliError::IoError(e))?;
-            if content.contains("[workspace]") {
-                return Ok(dir);
+                .map_err(CliError::IoError)?;
+            if let Ok(doc) = content.parse::<toml::Value>() {
+                if doc.get("workspace").is_some() {
+                    return Ok(dir);
+                }
             }
         }
         if !dir.pop() {
@@ -59,9 +62,12 @@ pub fn find_game_project(start: &Path) -> Result<PathBuf> {
         // Don't go above workspace root
         let cargo = dir.join("Cargo.toml");
         if cargo.exists() {
-            let content = std::fs::read_to_string(&cargo).unwrap_or_default();
-            if content.contains("[workspace]") {
-                return Err(CliError::NotInGameProject);
+            if let Ok(content) = std::fs::read_to_string(&cargo) {
+                if let Ok(doc) = content.parse::<toml::Value>() {
+                    if doc.get("workspace").is_some() {
+                        return Err(CliError::NotInGameProject);
+                    }
+                }
             }
         }
         if !dir.pop() {

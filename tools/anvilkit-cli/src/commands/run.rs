@@ -3,7 +3,7 @@ use console::style;
 use crate::error::{CliError, Result};
 use crate::workspace;
 
-pub fn run(release: bool, _watch: bool) -> Result<()> {
+pub fn run(release: bool) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let ws_root = workspace::find_workspace_root(&cwd)?;
 

@@ -36,7 +36,7 @@ impl Default for GpuLight {
 /// 最大光源数量
 pub const MAX_LIGHTS: usize = 8;
 
-/// PBR 场景 Uniform (768 字节)
+/// PBR 场景 Uniform (848 字节)
 ///
 /// 包含 per-object 变换、材质参数和多光源数据。
 /// 前 256 字节与旧布局兼容（light_dir/light_color 保留但多光源路径不使用）。

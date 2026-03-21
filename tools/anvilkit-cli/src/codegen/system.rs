@@ -1,8 +1,11 @@
 use std::path::Path;
 
 use crate::error::Result;
+use super::validate_identifier;
 
 pub fn generate(project_dir: &Path, name: &str) -> Result<()> {
+    validate_identifier(name)?;
+
     let systems_dir = project_dir.join("src/systems");
     std::fs::create_dir_all(&systems_dir)?;
 

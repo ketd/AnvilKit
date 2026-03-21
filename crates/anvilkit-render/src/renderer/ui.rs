@@ -416,6 +416,8 @@ pub struct UiRenderer {
     pub pipeline: wgpu::RenderPipeline,
     pub ortho_buffer: wgpu::Buffer,
     pub ortho_bind_group: wgpu::BindGroup,
+    /// Cached vertex buffer for per-frame reuse
+    cached_vb: Option<(wgpu::Buffer, u64)>,
 }
 
 #[repr(C)]
@@ -499,12 +501,13 @@ impl UiRenderer {
             pipeline,
             ortho_buffer,
             ortho_bind_group: ortho_bg,
+            cached_vb: None,
         }
     }
 
     /// 从 computed_rect 列表渲染 UI 矩形
     pub fn render(
-        &self,
+        &mut self,
         device: &super::RenderDevice,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
@@ -553,11 +556,23 @@ impl UiRenderer {
             return;
         }
 
-        let vb = device.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("UI VB"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        // Reuse cached buffer if large enough
+        let data = bytemuck::cast_slice(&vertices);
+        let needed = data.len() as u64;
+        let reuse = self.cached_vb.as_ref().map_or(false, |(_, cap)| *cap >= needed);
+        if !reuse {
+            self.cached_vb = Some((
+                device.device().create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("UI VB (cached)"),
+                    size: needed,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }),
+                needed,
+            ));
+        }
+        let vb = &self.cached_vb.as_ref().unwrap().0;
+        device.queue().write_buffer(vb, 0, data);
 
         {
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

@@ -24,7 +24,7 @@ use wgpu::{
 };
 
 use crate::renderer::RenderDevice;
-use crate::renderer::buffer::{ColorVertex, Vertex, create_uniform_buffer, create_vertex_buffer};
+use crate::renderer::buffer::{ColorVertex, Vertex, create_uniform_buffer};
 use crate::renderer::pipeline::RenderPipelineBuilder;
 
 /// Line shader source
@@ -38,6 +38,8 @@ pub struct LineRenderer {
     pipeline: RenderPipeline,
     scene_buffer: Buffer,
     scene_bind_group: BindGroup,
+    /// Cached vertex buffer for per-frame reuse
+    cached_vb: Option<(Buffer, u64)>,
 }
 
 /// 视图-投影 uniform 数据（64 字节，mat4x4<f32>）
@@ -90,29 +92,13 @@ impl LineRenderer {
             }],
         });
 
-        let pipeline_bgl =
-            device
-                .device()
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("Line Pipeline BGL"),
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    }],
-                });
-
+        // Reuse the bind group layout for the pipeline (identical structure)
         let pipeline = RenderPipelineBuilder::new()
             .with_vertex_shader(LINE_SHADER)
             .with_fragment_shader(LINE_SHADER)
             .with_format(format)
             .with_vertex_layouts(vec![ColorVertex::layout()])
-            .with_bind_group_layouts(vec![pipeline_bgl])
+            .with_bind_group_layouts(vec![scene_bind_group_layout])
             .with_topology(wgpu::PrimitiveTopology::LineList)
             .with_label("Line Pipeline")
             .build(device)
@@ -123,6 +109,7 @@ impl LineRenderer {
             pipeline,
             scene_buffer,
             scene_bind_group,
+            cached_vb: None,
         }
     }
 
@@ -136,7 +123,7 @@ impl LineRenderer {
     /// - `lines`: 线段列表，每项为 `(start, end, color)` 的 RGB 颜色
     /// - `view_proj`: 视图-投影矩阵
     pub fn render(
-        &self,
+        &mut self,
         device: &RenderDevice,
         encoder: &mut CommandEncoder,
         target: &TextureView,
@@ -168,7 +155,23 @@ impl LineRenderer {
             });
         }
 
-        let vertex_buffer = create_vertex_buffer(device, "Line Vertices", &vertices);
+        // Reuse cached buffer if large enough
+        let data: &[u8] = bytemuck::cast_slice(&vertices);
+        let needed = data.len() as u64;
+        let reuse = self.cached_vb.as_ref().map_or(false, |(_, cap)| *cap >= needed);
+        if !reuse {
+            self.cached_vb = Some((
+                device.device().create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("Line VB (cached)"),
+                    size: needed,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }),
+                needed,
+            ));
+        }
+        let vertex_buffer = &self.cached_vb.as_ref().unwrap().0;
+        device.queue().write_buffer(vertex_buffer, 0, data);
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

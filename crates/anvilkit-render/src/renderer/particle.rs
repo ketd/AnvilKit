@@ -281,6 +281,8 @@ pub struct ParticleRenderer {
     pub pipeline: wgpu::RenderPipeline,
     pub scene_buffer: wgpu::Buffer,
     pub scene_bind_group: wgpu::BindGroup,
+    /// Cached instance buffer for per-frame reuse
+    cached_instance_buf: Option<(wgpu::Buffer, u64)>,
 }
 
 impl ParticleRenderer {
@@ -358,12 +360,13 @@ impl ParticleRenderer {
             pipeline,
             scene_buffer,
             scene_bind_group: scene_bg,
+            cached_instance_buf: None,
         }
     }
 
     /// 从 ParticleSystem 收集存活粒子并渲染
     pub fn render(
-        &self,
+        &mut self,
         device: &super::RenderDevice,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
@@ -389,11 +392,23 @@ impl ParticleRenderer {
         };
         device.queue().write_buffer(&self.scene_buffer, 0, bytemuck::bytes_of(&uniform));
 
-        let instance_buffer = device.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Particle Instance VB"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        // Reuse cached instance buffer if large enough
+        let data = bytemuck::cast_slice(&vertices);
+        let needed = data.len() as u64;
+        let reuse = self.cached_instance_buf.as_ref().map_or(false, |(_, cap)| *cap >= needed);
+        if !reuse {
+            self.cached_instance_buf = Some((
+                device.device().create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("Particle Instance VB (cached)"),
+                    size: needed,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }),
+                needed,
+            ));
+        }
+        let instance_buffer = &self.cached_instance_buf.as_ref().unwrap().0;
+        device.queue().write_buffer(instance_buffer, 0, data);
 
         {
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

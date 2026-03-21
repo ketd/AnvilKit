@@ -24,29 +24,7 @@ use billiards::render::{setup, colors};
 //  Helpers
 // ---------------------------------------------------------------------------
 
-fn pack_scene_lights(lights: &SceneLights) -> ([GpuLight; 8], u32) {
-    let mut gpu = [GpuLight::default(); 8];
-    let mut n = 0u32;
-    let d = &lights.directional;
-    gpu[0] = GpuLight {
-        position_type: [0.0, 0.0, 0.0, 0.0],
-        direction_range: [d.direction.x, d.direction.y, d.direction.z, 0.0],
-        color_intensity: [d.color.x, d.color.y, d.color.z, d.intensity],
-        params: [0.0; 4],
-    };
-    n += 1;
-    for pl in &lights.point_lights {
-        if n >= 8 { break; }
-        gpu[n as usize] = GpuLight {
-            position_type: [pl.position.x, pl.position.y, pl.position.z, 1.0],
-            direction_range: [0.0, 0.0, 0.0, pl.range],
-            color_intensity: [pl.color.x, pl.color.y, pl.color.z, pl.intensity],
-            params: [0.0; 4],
-        };
-        n += 1;
-    }
-    (gpu, n)
-}
+use anvilkit_render::window::pack_lights;
 
 /// Triangle rack positions for 15 balls.
 /// Row 0 (apex, 1 ball) faces the cue ball; row 4 (5 balls) is the back.
@@ -307,13 +285,12 @@ impl BilliardApp {
 
         let def_lights = SceneLights::default();
         let lights = self.app.world.get_resource::<SceneLights>().unwrap_or(&def_lights);
-        let (gpu_lights, lc) = pack_scene_lights(lights);
+        let (gpu_lights, lc) = pack_lights(lights);
         let ld = lights.directional.direction.normalize();
 
         // HDR Scene pass — render all objects into MSAA HDR target
         // Each object needs its own uniform update + render pass submission
         // (write_buffer can't happen during a render pass)
-        let cmd_count = dl.commands.len();
         for (i, cmd) in dl.commands.iter().enumerate() {
             let Some(gm) = ra.get_mesh(&cmd.mesh) else { continue };
             let Some(gmat) = ra.get_material(&cmd.material) else { continue };
@@ -332,23 +309,17 @@ impl BilliardApp {
             };
             device.queue().write_buffer(&gpu.scene_ub, 0, bytemuck::bytes_of(&u));
 
-            let is_last = i == cmd_count - 1;
             let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Billiard Scene Enc") });
             {
                 let cl = if i == 0 { wgpu::LoadOp::Clear(wgpu::Color { r: 0.05, g: 0.12, b: 0.25, a: 1.0 }) } else { wgpu::LoadOp::Load };
                 let dl_op = if i == 0 { wgpu::LoadOp::Clear(1.0) } else { wgpu::LoadOp::Load };
-                // Only resolve MSAA on the last draw command; store MSAA for intermediate passes
-                let (resolve_target, store_op) = if is_last {
-                    (Some(&gpu.hdr_view as &wgpu::TextureView), wgpu::StoreOp::Discard)
-                } else {
-                    (None, wgpu::StoreOp::Store)
-                };
+                // Always resolve MSAA to HDR target (every pass, not just last)
                 let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Billiard Scene Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &gpu.hdr_msaa_view,
-                        resolve_target,
-                        ops: wgpu::Operations { load: cl, store: store_op },
+                        resolve_target: Some(&gpu.hdr_view),
+                        ops: wgpu::Operations { load: cl, store: wgpu::StoreOp::Discard },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                         view: &gpu.depth_view,
@@ -393,7 +364,7 @@ impl BilliardApp {
         }
 
         // Aim line (only in Aiming phase)
-        if let Some(ref lr) = self.line_renderer {
+        if let Some(ref mut lr) = self.line_renderer {
             // Copy data out of world to avoid borrow conflicts
             let aim_data: Option<(glam::Vec3, glam::Vec3)> = {
                 let gs = self.app.world.get_resource::<GameState>();
@@ -429,7 +400,7 @@ impl BilliardApp {
         }
 
         // Text UI
-        if let Some(ref tr) = self.text_renderer {
+        if let Some(ref mut tr) = self.text_renderer {
             let (sw, sh) = self.render_app.window_state().size();
             let status = {
                 let gs = self.app.world.get_resource::<GameState>().unwrap();

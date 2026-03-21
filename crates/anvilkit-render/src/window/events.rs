@@ -34,7 +34,8 @@ use anvilkit_core::error::{AnvilKitError, Result};
 /// 将 SceneLights 打包为 GPU 光源数组
 ///
 /// 返回 (lights_array, light_count)。方向光占 slot 0，其余填充点光和聚光。
-fn pack_lights(scene_lights: &SceneLights) -> ([GpuLight; MAX_LIGHTS], u32) {
+/// 可被游戏和示例直接调用，不必复制此函数。
+pub fn pack_lights(scene_lights: &SceneLights) -> ([GpuLight; MAX_LIGHTS], u32) {
     let mut lights = [GpuLight::default(); MAX_LIGHTS];
     let mut count = 0u32;
 
@@ -79,7 +80,7 @@ fn pack_lights(scene_lights: &SceneLights) -> ([GpuLight; MAX_LIGHTS], u32) {
 ///
 /// 生成一个从光源方向看向原点的 view-projection 矩阵，
 /// 用于 shadow pass 的深度渲染。
-fn compute_light_space_matrix(light_direction: &glam::Vec3) -> glam::Mat4 {
+pub fn compute_light_space_matrix(light_direction: &glam::Vec3) -> glam::Mat4 {
     let light_dir = light_direction.normalize();
     // 光源位置设在场景中心的反方向
     let light_pos = -light_dir * 15.0;
@@ -127,8 +128,8 @@ pub struct RenderApp {
     window_state: WindowState,
     /// 渲染设备（延迟初始化）
     render_device: Option<RenderDevice>,
-    /// 渲染表面（延迟初始化，持有对 window 的引用）
-    render_surface: Option<RenderSurface<'static>>,
+    /// 渲染表面（延迟初始化，内部持有 Arc<Window>）
+    render_surface: Option<RenderSurface>,
 
     /// 是否请求退出
     exit_requested: bool,
@@ -274,12 +275,7 @@ impl RenderApp {
         info!("初始化渲染设备和表面");
 
         let device = RenderDevice::new(window).await?;
-
-        // SAFETY: Arc<Window> 保证了 window 的生命周期至少与 self 相同。
-        let window_ref: &Arc<Window> = unsafe {
-            &*(window as *const Arc<Window>)
-        };
-        let surface = RenderSurface::new(&device, window_ref)?;
+        let surface = RenderSurface::new_with_vsync(&device, window, self.config.vsync)?;
 
         self.render_device = Some(device);
         self.render_surface = Some(surface);
@@ -572,7 +568,7 @@ impl RenderApp {
             return;
         }
 
-        let frame = match surface.get_current_frame() {
+        let frame = match surface.get_current_frame_with_recovery(device) {
             Ok(frame) => frame,
             Err(e) => {
                 error!("获取当前帧失败: {}", e);
@@ -594,107 +590,115 @@ impl RenderApp {
         // Compute light-space matrix for shadow mapping (directional light)
         let shadow_view_proj = compute_light_space_matrix(&light.direction);
 
-        // === Pass 0: Shadow pass → shadow depth map ===
-        for cmd in draw_list.commands.iter() {
-            let Some(gpu_mesh) = render_assets.get_mesh(&cmd.mesh) else { continue };
+        // === Batched rendering: single encoder, multiple passes, single submit ===
+        let mut encoder = device.device().create_command_encoder(
+            &wgpu::CommandEncoderDescriptor { label: Some("ECS Frame Encoder") },
+        );
 
-            let model = cmd.model_matrix;
-            let shadow_uniform = PbrSceneUniform {
-                model: model.to_cols_array_2d(),
-                view_proj: shadow_view_proj.to_cols_array_2d(),
-                ..Default::default()
-            };
-            device.queue().write_buffer(
-                &render_state.scene_uniform_buffer, 0, bytemuck::bytes_of(&shadow_uniform),
-            );
-
-            let mut encoder = device.device().create_command_encoder(
-                &wgpu::CommandEncoderDescriptor { label: Some("Shadow Encoder") },
-            );
-            {
-                let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Shadow Pass"),
-                    color_attachments: &[],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &render_state.shadow_map_view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(1.0),
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
+        // --- Pass 0: Shadow pass → shadow depth map ---
+        {
+            let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Shadow Pass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &render_state.shadow_map_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
                     }),
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-                rp.set_pipeline(&render_state.shadow_pipeline);
-                rp.set_bind_group(0, &render_state.scene_bind_group, &[]);
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            rp.set_pipeline(&render_state.shadow_pipeline);
+            rp.set_bind_group(0, &render_state.scene_bind_group, &[]);
+
+            for cmd in draw_list.commands.iter() {
+                let Some(gpu_mesh) = render_assets.get_mesh(&cmd.mesh) else { continue };
+
+                let shadow_uniform = PbrSceneUniform {
+                    model: cmd.model_matrix.to_cols_array_2d(),
+                    view_proj: shadow_view_proj.to_cols_array_2d(),
+                    ..Default::default()
+                };
+                device.queue().write_buffer(
+                    &render_state.scene_uniform_buffer, 0, bytemuck::bytes_of(&shadow_uniform),
+                );
+
                 rp.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
                 rp.set_index_buffer(gpu_mesh.index_buffer.slice(..), gpu_mesh.index_format);
                 rp.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);
             }
-            device.queue().submit(std::iter::once(encoder.finish()));
         }
 
-        // === Pass 1: Scene → HDR render target ===
-        for (i, cmd) in draw_list.commands.iter().enumerate() {
-            let Some(gpu_mesh) = render_assets.get_mesh(&cmd.mesh) else { continue };
-            let Some(gpu_material) = render_assets.get_material(&cmd.material) else { continue };
-
-            let model = cmd.model_matrix;
-            let normal_matrix = model.inverse().transpose();
-
-            let uniform = PbrSceneUniform {
-                model: model.to_cols_array_2d(),
-                view_proj: view_proj.to_cols_array_2d(),
-                normal_matrix: normal_matrix.to_cols_array_2d(),
-                camera_pos: [camera_pos.x, camera_pos.y, camera_pos.z, 0.0],
-                light_dir: [light.direction.x, light.direction.y, light.direction.z, 0.0],
-                light_color: [light.color.x, light.color.y, light.color.z, light.intensity],
-                material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, light_count as f32],
-                lights: gpu_lights,
-                shadow_view_proj: shadow_view_proj.to_cols_array_2d(),
-                emissive_factor: [cmd.emissive_factor[0], cmd.emissive_factor[1], cmd.emissive_factor[2], 0.0],
-            };
-            device.queue().write_buffer(
-                &render_state.scene_uniform_buffer,
-                0,
-                bytemuck::bytes_of(&uniform),
-            );
-
-            let mut encoder = device.device().create_command_encoder(
-                &wgpu::CommandEncoderDescriptor { label: Some("ECS HDR Scene Encoder") },
-            );
-
-            {
-                let color_load = if i == 0 {
-                    wgpu::LoadOp::Clear(wgpu::Color { r: 0.15, g: 0.3, b: 0.6, a: 1.0 })
-                } else {
-                    wgpu::LoadOp::Load
-                };
-                let depth_load = if i == 0 {
-                    wgpu::LoadOp::Clear(1.0)
-                } else {
-                    wgpu::LoadOp::Load
-                };
-
-                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("ECS HDR Scene Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &render_state.hdr_msaa_texture_view,
-                        resolve_target: Some(&render_state.hdr_texture_view),
-                        ops: wgpu::Operations { load: color_load, store: wgpu::StoreOp::Discard },
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &render_state.depth_texture_view,
-                        depth_ops: Some(wgpu::Operations { load: depth_load, store: wgpu::StoreOp::Store }),
-                        stencil_ops: None,
+        // --- Pass 1: Scene → HDR render target ---
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("ECS HDR Scene Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &render_state.hdr_msaa_texture_view,
+                    resolve_target: Some(&render_state.hdr_texture_view),
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.15, g: 0.3, b: 0.6, a: 1.0 }),
+                        store: wgpu::StoreOp::Discard,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &render_state.depth_texture_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
                     }),
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
 
-                let pipeline = render_assets.get_pipeline(&gpu_material.pipeline_handle)
-                    .expect("材质引用了不存在的管线");
+            for cmd in draw_list.commands.iter() {
+                let Some(gpu_mesh) = render_assets.get_mesh(&cmd.mesh) else { continue };
+                let Some(gpu_material) = render_assets.get_material(&cmd.material) else { continue };
+
+                let model = cmd.model_matrix;
+                // Normal matrix: for uniform scale, transpose == inverse().transpose()
+                // but transpose is O(1) vs inverse is O(n³). Use inverse().transpose()
+                // only when non-uniform scale is detected.
+                let scale = glam::Vec3::new(
+                    model.x_axis.truncate().length(),
+                    model.y_axis.truncate().length(),
+                    model.z_axis.truncate().length(),
+                );
+                let normal_matrix = if (scale.x - scale.y).abs() < 0.001
+                    && (scale.y - scale.z).abs() < 0.001
+                {
+                    // Uniform scale — transpose is sufficient
+                    model.transpose()
+                } else {
+                    // Non-uniform scale — need full inverse transpose
+                    model.inverse().transpose()
+                };
+
+                let uniform = PbrSceneUniform {
+                    model: model.to_cols_array_2d(),
+                    view_proj: view_proj.to_cols_array_2d(),
+                    normal_matrix: normal_matrix.to_cols_array_2d(),
+                    camera_pos: [camera_pos.x, camera_pos.y, camera_pos.z, 0.0],
+                    light_dir: [light.direction.x, light.direction.y, light.direction.z, 0.0],
+                    light_color: [light.color.x, light.color.y, light.color.z, light.intensity],
+                    material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, light_count as f32],
+                    lights: gpu_lights,
+                    shadow_view_proj: shadow_view_proj.to_cols_array_2d(),
+                    emissive_factor: [cmd.emissive_factor[0], cmd.emissive_factor[1], cmd.emissive_factor[2], 1.0 / SHADOW_MAP_SIZE as f32],
+                };
+                device.queue().write_buffer(
+                    &render_state.scene_uniform_buffer, 0, bytemuck::bytes_of(&uniform),
+                );
+
+                let Some(pipeline) = render_assets.get_pipeline(&gpu_material.pipeline_handle) else {
+                    log::error!("材质引用了不存在的管线");
+                    continue;
+                };
                 render_pass.set_pipeline(pipeline);
                 render_pass.set_bind_group(0, &render_state.scene_bind_group, &[]);
                 render_pass.set_bind_group(1, &gpu_material.bind_group, &[]);
@@ -703,39 +707,32 @@ impl RenderApp {
                 render_pass.set_index_buffer(gpu_mesh.index_buffer.slice(..), gpu_mesh.index_format);
                 render_pass.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);
             }
-
-            device.queue().submit(std::iter::once(encoder.finish()));
         }
 
-        // === Pass 2: Tone mapping HDR → Swapchain ===
+        // --- Pass 2: Tone mapping HDR → Swapchain ---
         {
-            let mut encoder = device.device().create_command_encoder(
-                &wgpu::CommandEncoderDescriptor { label: Some("ECS Tonemap Encoder") },
-            );
+            let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("ECS Tonemap Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &swapchain_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
 
-            {
-                let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("ECS Tonemap Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &swapchain_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-
-                rp.set_pipeline(&render_state.tonemap_pipeline);
-                rp.set_bind_group(0, &render_state.tonemap_bind_group, &[]);
-                rp.draw(0..3, 0..1); // Fullscreen triangle
-            }
-
-            device.queue().submit(std::iter::once(encoder.finish()));
+            rp.set_pipeline(&render_state.tonemap_pipeline);
+            rp.set_bind_group(0, &render_state.tonemap_bind_group, &[]);
+            rp.draw(0..3, 0..1); // Fullscreen triangle
         }
+
+        // Single submit for all passes
+        device.queue().submit(std::iter::once(encoder.finish()));
 
         frame.present();
     }

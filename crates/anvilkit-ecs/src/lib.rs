@@ -52,6 +52,8 @@
 //!    .add_systems(AnvilKitSchedule::Update, movement_system);
 //! ```
 
+#![warn(missing_docs)]
+
 pub mod app;
 pub mod bundle;
 pub mod component;

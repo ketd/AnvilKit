@@ -9,7 +9,7 @@ anvilkit-ecs = { path = "../../crates/anvilkit-ecs" }
 anvilkit-render = { path = "../../crates/anvilkit-render" }
 anvilkit-assets = { path = "../../crates/anvilkit-assets" }
 anvilkit-input = { path = "../../crates/anvilkit-input" }
-bevy_ecs = "0.14"
+bevy_ecs = { workspace = true }
 glam = { workspace = true }
 bytemuck = { version = "1", features = ["derive"] }
 wgpu = "0.19"

@@ -86,13 +86,14 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     return out;
 }
 
-// ---------- PBR functions (same as pbr.wgsl) ----------
+// ---------- PBR functions (unified with pbr.wgsl) ----------
 
-fn distribution_ggx(NdotH: f32, roughness: f32) -> f32 {
+fn distribution_ggx(N: vec3<f32>, H: vec3<f32>, roughness: f32) -> f32 {
     let a = roughness * roughness;
     let a2 = a * a;
+    let NdotH = max(dot(N, H), 0.0);
     let denom = NdotH * NdotH * (a2 - 1.0) + 1.0;
-    return a2 / (PI * denom * denom + 0.0001);
+    return a2 / (PI * denom * denom);
 }
 
 fn geometry_schlick_ggx(NdotV: f32, roughness: f32) -> f32 {
@@ -101,12 +102,13 @@ fn geometry_schlick_ggx(NdotV: f32, roughness: f32) -> f32 {
     return NdotV / (NdotV * (1.0 - k) + k);
 }
 
-fn geometry_smith(NdotV: f32, NdotL: f32, roughness: f32) -> f32 {
-    return geometry_schlick_ggx(NdotV, roughness) * geometry_schlick_ggx(NdotL, roughness);
+fn geometry_smith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f32 {
+    return geometry_schlick_ggx(max(dot(N, V), 0.0), roughness) *
+           geometry_schlick_ggx(max(dot(N, L), 0.0), roughness);
 }
 
 fn fresnel_schlick(cos_theta: f32, F0: vec3<f32>) -> vec3<f32> {
-    return F0 + (vec3<f32>(1.0) - F0) * pow(1.0 - cos_theta, 5.0);
+    return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
 fn fresnel_schlick_roughness(cos_theta: f32, F0: vec3<f32>, roughness: f32) -> vec3<f32> {
@@ -164,8 +166,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let NdotH = max(dot(N, H), 0.0);
         let HdotV = max(dot(H, V), 0.0);
 
-        let D = distribution_ggx(NdotH, roughness);
-        let G = geometry_smith(NdotV, NdotL, roughness);
+        let D = distribution_ggx(N, H, roughness);
+        let G = geometry_smith(N, V, L, roughness);
         let F = fresnel_schlick(HdotV, F0);
 
         let spec = (D * G * F) / (4.0 * NdotV * NdotL + 0.0001);

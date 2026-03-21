@@ -17,6 +17,8 @@
 //! assert!(!input.is_key_just_pressed(KeyCode::Space));
 //! ```
 
+#![warn(missing_docs)]
+
 pub mod input_state;
 pub mod action_map;
 

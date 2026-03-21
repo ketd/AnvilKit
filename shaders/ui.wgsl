@@ -63,7 +63,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Border
     if border_width > 0.0 {
-        let inner_dist = rounded_rect_sdf(in.local_pos, in.rect_size, max(radius - border_width, 0.0));
         let inner_offset = border_width;
         let inner = rounded_rect_sdf(
             in.local_pos - vec2<f32>(inner_offset, inner_offset),

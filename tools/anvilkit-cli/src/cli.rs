@@ -34,9 +34,6 @@ pub enum Command {
         /// Build in release mode
         #[arg(long)]
         release: bool,
-        /// Watch for file changes and rebuild
-        #[arg(long)]
-        watch: bool,
     },
 
     /// Build the game project

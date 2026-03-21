@@ -13,6 +13,8 @@
 //! app.add_plugins(AudioPlugin);
 //! ```
 
+#![warn(missing_docs)]
+
 pub mod engine;
 pub mod systems;
 

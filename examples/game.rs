@@ -98,29 +98,7 @@ fn cube_vertices(half: f32) -> (Vec<PbrVertex>, Vec<u32>) {
 const SHADER_SOURCE: &str = include_str!("../shaders/pbr.wgsl");
 const TONEMAP_SHADER: &str = include_str!("../shaders/tonemap.wgsl");
 
-fn pack_scene_lights(lights: &SceneLights) -> ([GpuLight; 8], u32) {
-    let mut gpu = [GpuLight::default(); 8];
-    let mut n = 0u32;
-    let d = &lights.directional;
-    gpu[0] = GpuLight {
-        position_type: [0.0, 0.0, 0.0, 0.0],
-        direction_range: [d.direction.x, d.direction.y, d.direction.z, 0.0],
-        color_intensity: [d.color.x, d.color.y, d.color.z, d.intensity],
-        params: [0.0; 4],
-    };
-    n += 1;
-    for pl in &lights.point_lights {
-        if n >= 8 { break; }
-        gpu[n as usize] = GpuLight {
-            position_type: [pl.position.x, pl.position.y, pl.position.z, 1.0],
-            direction_range: [0.0, 0.0, 0.0, pl.range],
-            color_intensity: [pl.color.x, pl.color.y, pl.color.z, pl.intensity],
-            params: [0.0; 4],
-        };
-        n += 1;
-    }
-    (gpu, n)
-}
+use anvilkit_render::window::pack_lights;
 
 // ---------------------------------------------------------------------------
 //  Game components
@@ -657,7 +635,7 @@ impl GameApp {
 
         let def_lights = SceneLights::default();
         let lights = self.app.world.get_resource::<SceneLights>().unwrap_or(&def_lights);
-        let (gpu_lights, lc) = pack_scene_lights(lights);
+        let (gpu_lights, lc) = pack_lights(lights);
         let ld = lights.directional.direction.normalize();
 
         // Scene pass → HDR MSAA
@@ -726,7 +704,7 @@ impl GameApp {
         }
 
         // Particle rendering → swapchain (additive overlay)
-        if let Some(ref pr) = self.particle_renderer {
+        if let Some(ref mut pr) = self.particle_renderer {
             if let Some(particles) = self.app.world.get_resource::<GameParticles>() {
                 let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Game Particle Enc") });
                 pr.render(device, &mut enc, &swapchain, &particles.system, &cam.view_proj);
@@ -735,7 +713,7 @@ impl GameApp {
         }
 
         // UI rendering → swapchain (overlay)
-        if let Some(ref ur) = self.ui_renderer {
+        if let Some(ref mut ur) = self.ui_renderer {
             let (sw, sh) = self.render_app.window_state().size();
             // Collect UI node data (query needs &mut World, so clone the data)
             let ui_nodes: Vec<UiNode> = self.app.world.query::<&UiNode>()

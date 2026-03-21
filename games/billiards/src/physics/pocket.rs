@@ -33,7 +33,7 @@ pub fn pocket_detection_system(
     }
 
     // Check numbered balls
-    for (entity, mut t, mut v, mut ball) in &mut ball_query {
+    for (_entity, mut t, mut v, mut ball) in &mut ball_query {
         if ball.potted {
             continue;
         }
@@ -47,7 +47,6 @@ pub fn pocket_detection_system(
                 ball.potted = true;
                 tracker.on_table[ball.number as usize] = false;
                 game_state.potted_this_turn.push(ball.number);
-                let _ = entity;
             }
         }
     }

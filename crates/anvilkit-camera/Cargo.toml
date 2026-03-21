@@ -1,0 +1,17 @@
+[package]
+name = "anvilkit-camera"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "AnvilKit camera system - FPS, third-person, orbit, and free camera controllers with effects"
+
+[dependencies]
+anvilkit-core = { path = "../anvilkit-core", features = ["bevy_ecs"] }
+anvilkit-ecs = { path = "../anvilkit-ecs" }
+anvilkit-input = { path = "../anvilkit-input" }
+anvilkit-render = { path = "../anvilkit-render" }
+bevy_ecs = { workspace = true }
+glam = { workspace = true }
+log = "0.4"

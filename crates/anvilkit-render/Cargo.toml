@@ -1,13 +1,11 @@
 [package]
 name = "anvilkit-render"
-version = "0.1.0"
-edition = "2021"
-authors = ["AnvilKit Contributors"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "AnvilKit 渲染系统 - 基于 wgpu 和 winit 的跨平台图形渲染模块"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/ketd/AnvilKit"
-keywords = ["gamedev", "graphics", "rendering", "wgpu", "winit"]
-categories = ["game-development", "graphics", "rendering"]
 
 [dependencies]
 # AnvilKit 内部依赖
@@ -17,7 +15,7 @@ anvilkit-assets = { path = "../anvilkit-assets" }
 anvilkit-input = { path = "../anvilkit-input" }
 
 # ECS 框架（derive 宏需要直接引用）
-bevy_ecs = "0.14"
+bevy_ecs = { workspace = true }
 
 # 图形渲染核心
 wgpu = "0.19"

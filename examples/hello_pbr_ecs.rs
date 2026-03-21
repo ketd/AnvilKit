@@ -26,44 +26,7 @@ const SHADER_SOURCE: &str = include_str!("../shaders/pbr.wgsl");
 /// 后处理 WGSL 着色器：全屏三角形 + ACES Filmic Tone Mapping
 const TONEMAP_SHADER: &str = include_str!("../shaders/tonemap.wgsl");
 
-/// Pack SceneLights into GpuLight array for the uniform buffer
-fn pack_scene_lights(scene_lights: &SceneLights) -> ([GpuLight; 8], u32) {
-    let mut lights = [GpuLight::default(); 8];
-    let mut count = 0u32;
-
-    let dir = &scene_lights.directional;
-    lights[0] = GpuLight {
-        position_type: [0.0, 0.0, 0.0, 0.0],
-        direction_range: [dir.direction.x, dir.direction.y, dir.direction.z, 0.0],
-        color_intensity: [dir.color.x, dir.color.y, dir.color.z, dir.intensity],
-        params: [0.0; 4],
-    };
-    count += 1;
-
-    for pl in &scene_lights.point_lights {
-        if count >= 8 { break; }
-        lights[count as usize] = GpuLight {
-            position_type: [pl.position.x, pl.position.y, pl.position.z, 1.0],
-            direction_range: [0.0, 0.0, 0.0, pl.range],
-            color_intensity: [pl.color.x, pl.color.y, pl.color.z, pl.intensity],
-            params: [0.0; 4],
-        };
-        count += 1;
-    }
-
-    for sl in &scene_lights.spot_lights {
-        if count >= 8 { break; }
-        lights[count as usize] = GpuLight {
-            position_type: [sl.position.x, sl.position.y, sl.position.z, 2.0],
-            direction_range: [sl.direction.x, sl.direction.y, sl.direction.z, sl.range],
-            color_intensity: [sl.color.x, sl.color.y, sl.color.z, sl.intensity],
-            params: [sl.inner_cone_angle.cos(), sl.outer_cone_angle.cos(), 0.0, 0.0],
-        };
-        count += 1;
-    }
-
-    (lights, count)
-}
+use anvilkit_render::window::pack_lights;
 
 #[derive(Resource)]
 struct FrameTime(std::time::Instant);
@@ -432,7 +395,7 @@ impl PbrEcsApp {
         let light = &scene_lights.directional;
 
         // Pack all lights into GPU array
-        let (gpu_lights, light_count) = pack_scene_lights(scene_lights);
+        let (gpu_lights, light_count) = pack_lights(scene_lights);
 
         // Compute light-space matrix for shadow mapping
         let light_dir = light.direction.normalize();

@@ -110,7 +110,8 @@ fn calculate_shadow(world_pos: vec3<f32>, shadow_vp: mat4x4<f32>) -> f32 {
     let uv = vec2<f32>(ndc.x * 0.5 + 0.5, -ndc.y * 0.5 + 0.5);
     let depth = ndc.z;
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth > 1.0) { return 1.0; }
-    let ts = 1.0 / 2048.0;
+    // Shadow map texel size passed via emissive_factor.w
+    let ts = scene.emissive_factor.w;
     var s = 0.0;
     for (var x = -1; x <= 1; x++) { for (var y = -1; y <= 1; y++) {
         s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(f32(x), f32(y)) * ts, depth - 0.005);

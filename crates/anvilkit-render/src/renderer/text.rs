@@ -28,7 +28,7 @@ use wgpu::{
 };
 
 use crate::renderer::RenderDevice;
-use crate::renderer::buffer::{create_uniform_buffer, create_vertex_buffer, Vertex};
+use crate::renderer::buffer::{create_uniform_buffer, Vertex};
 use crate::renderer::pipeline::RenderPipelineBuilder;
 use crate::renderer::sprite::SpriteVertex;
 
@@ -68,6 +68,8 @@ pub struct TextRenderer {
     font_bind_group: BindGroup,
     ortho_buffer: Buffer,
     ortho_bind_group: BindGroup,
+    /// Cached vertex buffer for per-frame reuse
+    cached_vb: Option<(Buffer, u64)>,
 }
 
 impl TextRenderer {
@@ -192,49 +194,13 @@ impl TextRenderer {
             ],
         });
 
-        // Pipeline (reuse sprite shader: ortho projection group 0, texture group 1)
-        let pipeline_ortho_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Text Pipeline Ortho BGL"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        let pipeline_font_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Text Pipeline Font BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-
+        // Pipeline — reuse the bind group layouts created above (identical structure)
         let pipeline = RenderPipelineBuilder::new()
             .with_vertex_shader(SPRITE_SHADER)
             .with_fragment_shader(SPRITE_SHADER)
             .with_format(format)
             .with_vertex_layouts(vec![SpriteVertex::layout()])
-            .with_bind_group_layouts(vec![pipeline_ortho_bgl, pipeline_font_bgl])
+            .with_bind_group_layouts(vec![ortho_bgl, font_bgl])
             .with_label("Text Pipeline")
             .build(device)
             .expect("创建 Text 管线失败")
@@ -245,6 +211,7 @@ impl TextRenderer {
             font_bind_group,
             ortho_buffer,
             ortho_bind_group,
+            cached_vb: None,
         }
     }
 
@@ -261,7 +228,7 @@ impl TextRenderer {
     /// - `color`: 文字颜色 (RGB)
     /// - `screen_w`, `screen_h`: 屏幕尺寸（像素）
     pub fn draw_text(
-        &self,
+        &mut self,
         device: &RenderDevice,
         encoder: &mut CommandEncoder,
         target: &TextureView,
@@ -323,7 +290,23 @@ impl TextRenderer {
             return;
         }
 
-        let vertex_buffer = create_vertex_buffer(device, "Text Vertices", &vertices);
+        // Reuse cached buffer if large enough
+        let data: &[u8] = bytemuck::cast_slice(&vertices);
+        let needed = data.len() as u64;
+        let reuse = self.cached_vb.as_ref().map_or(false, |(_, cap)| *cap >= needed);
+        if !reuse {
+            self.cached_vb = Some((
+                device.device().create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("Text VB (cached)"),
+                    size: needed,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }),
+                needed,
+            ));
+        }
+        let vertex_buffer = &self.cached_vb.as_ref().unwrap().0;
+        device.queue().write_buffer(vertex_buffer, 0, data);
 
         {
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

@@ -10,6 +10,7 @@ pub enum CliError {
     IoError(std::io::Error),
     TomlError(String),
     CargoFailed(String),
+    InvalidInput(String),
     Other(String),
 }
 
@@ -24,6 +25,7 @@ impl fmt::Display for CliError {
             Self::IoError(e) => write!(f, "I/O error: {}", e),
             Self::TomlError(msg) => write!(f, "TOML error: {}", msg),
             Self::CargoFailed(msg) => write!(f, "Cargo command failed: {}", msg),
+            Self::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
             Self::Other(msg) => write!(f, "{}", msg),
         }
     }

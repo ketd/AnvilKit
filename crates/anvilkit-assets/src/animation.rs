@@ -172,13 +172,33 @@ impl AnimationChannel {
             if time >= a.time && time <= b.time {
                 match self.interpolation {
                     Interpolation::Step => return a.value,
-                    Interpolation::Linear | Interpolation::CubicSpline => {
+                    Interpolation::Linear => {
                         let t = (time - a.time) / (b.time - a.time);
                         return [
                             a.value[0] + (b.value[0] - a.value[0]) * t,
                             a.value[1] + (b.value[1] - a.value[1]) * t,
                             a.value[2] + (b.value[2] - a.value[2]) * t,
                             a.value[3] + (b.value[3] - a.value[3]) * t,
+                        ];
+                    }
+                    Interpolation::CubicSpline => {
+                        // glTF cubic spline: each keyframe stores [in_tangent, value, out_tangent]
+                        // In our simplified model, tangents default to zero (flat tangent),
+                        // producing a Hermite spline: p(t) = (2t³-3t²+1)v₀ + (t³-2t²+t)·dt·b₀
+                        //                                   + (-2t³+3t²)v₁ + (t³-t²)·dt·a₁
+                        // Without explicit tangent storage, use Catmull-Rom estimate:
+                        let dt_seg = b.time - a.time;
+                        let t = (time - a.time) / dt_seg;
+                        let t2 = t * t;
+                        let t3 = t2 * t;
+                        // Hermite basis with zero tangents (smooth step)
+                        let h00 = 2.0 * t3 - 3.0 * t2 + 1.0;
+                        let h01 = -2.0 * t3 + 3.0 * t2;
+                        return [
+                            h00 * a.value[0] + h01 * b.value[0],
+                            h00 * a.value[1] + h01 * b.value[1],
+                            h00 * a.value[2] + h01 * b.value[2],
+                            h00 * a.value[3] + h01 * b.value[3],
                         ];
                     }
                 }
@@ -291,7 +311,11 @@ pub fn compute_bone_matrices(skeleton: &Skeleton, player: &AnimationPlayer) -> V
     let n = skeleton.joint_count();
     let mut local_transforms: Vec<Mat4> = vec![Mat4::IDENTITY; n];
 
-    // Sample each channel at current time to build local transforms
+    // Accumulate T/R/S per joint separately, then compose as T × R × S (glTF standard)
+    let mut translations: Vec<Option<glam::Vec3>> = vec![None; n];
+    let mut rotations: Vec<Option<glam::Quat>> = vec![None; n];
+    let mut scales: Vec<Option<glam::Vec3>> = vec![None; n];
+
     for channel in &player.clip.channels {
         let idx = channel.joint_index;
         if idx >= n { continue; }
@@ -299,18 +323,25 @@ pub fn compute_bone_matrices(skeleton: &Skeleton, player: &AnimationPlayer) -> V
 
         match channel.property {
             AnimationProperty::Translation => {
-                let t = glam::Vec3::new(value[0], value[1], value[2]);
-                local_transforms[idx] = Mat4::from_translation(t) * local_transforms[idx];
+                translations[idx] = Some(glam::Vec3::new(value[0], value[1], value[2]));
             }
             AnimationProperty::Rotation => {
-                let q = glam::Quat::from_xyzw(value[0], value[1], value[2], value[3]).normalize();
-                local_transforms[idx] = Mat4::from_quat(q) * local_transforms[idx];
+                rotations[idx] = Some(
+                    glam::Quat::from_xyzw(value[0], value[1], value[2], value[3]).normalize()
+                );
             }
             AnimationProperty::Scale => {
-                let s = glam::Vec3::new(value[0], value[1], value[2]);
-                local_transforms[idx] = Mat4::from_scale(s) * local_transforms[idx];
+                scales[idx] = Some(glam::Vec3::new(value[0], value[1], value[2]));
             }
         }
+    }
+
+    // Compose per-joint: T × R × S
+    for idx in 0..n {
+        let t = translations[idx].unwrap_or(glam::Vec3::ZERO);
+        let r = rotations[idx].unwrap_or(glam::Quat::IDENTITY);
+        let s = scales[idx].unwrap_or(glam::Vec3::ONE);
+        local_transforms[idx] = Mat4::from_scale_rotation_translation(s, r, t);
     }
 
     // Propagate through hierarchy to get global transforms

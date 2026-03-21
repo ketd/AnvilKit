@@ -21,7 +21,7 @@ fn main() {
             GenerateKind::System { name } => commands::generate::system(&name),
             GenerateKind::Resource { name } => commands::generate::resource(&name),
         },
-        Command::Run { release, watch } => commands::run::run(release, watch),
+        Command::Run { release } => commands::run::run(release),
         Command::Build { release } => commands::build::run(release),
         Command::Check => commands::check::run(),
         Command::Doctor => commands::doctor::run(),

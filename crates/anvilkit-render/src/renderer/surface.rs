@@ -42,16 +42,18 @@ use anvilkit_core::error::{AnvilKitError, Result};
 /// # Ok(())
 /// # }
 /// ```
-pub struct RenderSurface<'w> {
-    /// wgpu 表面
-    surface: Surface<'w>,
+pub struct RenderSurface {
+    /// wgpu 表面（持有 Arc<Window>，保证生命周期安全）
+    surface: Surface<'static>,
     /// 表面配置
     config: SurfaceConfiguration,
     /// 当前纹理格式
     format: TextureFormat,
+    /// 持有窗口引用以保证 surface 生命周期
+    _window: Arc<Window>,
 }
 
-impl<'w> RenderSurface<'w> {
+impl RenderSurface {
     /// 创建新的渲染表面
     /// 
     /// # 参数
@@ -77,29 +79,44 @@ impl<'w> RenderSurface<'w> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn new(device: &RenderDevice, window: &'w Arc<Window>) -> Result<Self> {
-        info!("创建渲染表面");
-        
+    pub fn new(device: &RenderDevice, window: &Arc<Window>) -> Result<Self> {
+        Self::new_with_vsync(device, window, false)
+    }
+
+    /// 创建新的渲染表面（指定 vsync 模式）
+    ///
+    /// - `vsync = true`: 使用 `PresentMode::Fifo`（垂直同步）
+    /// - `vsync = false`: 优先使用 `PresentMode::Mailbox`（三重缓冲，低延迟）
+    pub fn new_with_vsync(device: &RenderDevice, window: &Arc<Window>, vsync: bool) -> Result<Self> {
+        info!("创建渲染表面 (vsync={})", vsync);
+
         // 创建表面
         let surface = device.instance().create_surface(window.clone())
             .map_err(|e| AnvilKitError::render(format!("创建表面失败: {}", e)))?;
-        
+
         // 获取表面能力
         let capabilities = surface.get_capabilities(device.adapter());
-        
+
         // 选择纹理格式
         let format = Self::choose_format(&capabilities.formats);
-        
+
         // 获取窗口大小
         let size = window.inner_size();
-        
+
+        // 选择呈现模式
+        let present_mode = if vsync {
+            PresentMode::Fifo
+        } else {
+            Self::choose_present_mode(&capabilities.present_modes)
+        };
+
         // 创建表面配置
         let config = SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
             width: size.width,
             height: size.height,
-            present_mode: Self::choose_present_mode(&capabilities.present_modes),
+            present_mode,
             alpha_mode: Self::choose_alpha_mode(&capabilities.alpha_modes),
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
@@ -117,6 +134,7 @@ impl<'w> RenderSurface<'w> {
             surface,
             config,
             format,
+            _window: window.clone(),
         })
     }
     
@@ -205,7 +223,7 @@ impl<'w> RenderSurface<'w> {
     /// 
     /// ```rust,no_run
     /// # use anvilkit_render::renderer::{RenderDevice, RenderSurface};
-    /// # async fn example(device: &RenderDevice, surface: &mut RenderSurface<'_>) -> anvilkit_core::error::Result<()> {
+    /// # async fn example(device: &RenderDevice, surface: &mut RenderSurface) -> anvilkit_core::error::Result<()> {
     /// surface.resize(device, 1920, 1080)?;
     /// # Ok(())
     /// # }
@@ -236,7 +254,7 @@ impl<'w> RenderSurface<'w> {
     /// 
     /// ```rust,no_run
     /// # use anvilkit_render::renderer::RenderSurface;
-    /// # async fn example(surface: &RenderSurface<'_>) -> anvilkit_core::error::Result<()> {
+    /// # async fn example(surface: &RenderSurface) -> anvilkit_core::error::Result<()> {
     /// let frame = surface.get_current_frame()?;
     /// let view = frame.texture.create_view(&Default::default());
     /// // 使用纹理视图进行渲染
@@ -261,6 +279,34 @@ impl<'w> RenderSurface<'w> {
                 }
             })
     }
+
+    /// 重新配置表面（用于 Lost/Outdated 恢复）
+    pub fn reconfigure(&self, device: &RenderDevice) {
+        info!("重新配置渲染表面: {}x{}", self.config.width, self.config.height);
+        self.surface.configure(device.device(), &self.config);
+    }
+
+    /// 获取当前帧，自动恢复 Lost/Outdated 错误
+    ///
+    /// 如果首次获取失败（Lost 或 Outdated），自动 reconfigure 后重试一次。
+    pub fn get_current_frame_with_recovery(&self, device: &RenderDevice) -> Result<SurfaceTexture> {
+        match self.surface.get_current_texture() {
+            Ok(frame) => Ok(frame),
+            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                warn!("表面需要重新配置，正在恢复...");
+                self.reconfigure(device);
+                // 重试一次
+                self.surface.get_current_texture()
+                    .map_err(|e| AnvilKitError::render(format!("表面恢复后仍失败: {}", e)))
+            }
+            Err(wgpu::SurfaceError::OutOfMemory) => {
+                Err(AnvilKitError::render("GPU 内存不足".to_string()))
+            }
+            Err(wgpu::SurfaceError::Timeout) => {
+                Err(AnvilKitError::render("获取表面纹理超时".to_string()))
+            }
+        }
+    }
     
     /// 获取表面配置
     /// 
@@ -272,7 +318,7 @@ impl<'w> RenderSurface<'w> {
     /// 
     /// ```rust,no_run
     /// # use anvilkit_render::renderer::RenderSurface;
-    /// # async fn example(surface: &RenderSurface<'_>) {
+    /// # async fn example(surface: &RenderSurface) {
     /// let config = surface.config();
     /// println!("表面大小: {}x{}", config.width, config.height);
     /// # }
@@ -291,7 +337,7 @@ impl<'w> RenderSurface<'w> {
     /// 
     /// ```rust,no_run
     /// # use anvilkit_render::renderer::RenderSurface;
-    /// # async fn example(surface: &RenderSurface<'_>) {
+    /// # async fn example(surface: &RenderSurface) {
     /// let format = surface.format();
     /// println!("纹理格式: {:?}", format);
     /// # }
@@ -310,7 +356,7 @@ impl<'w> RenderSurface<'w> {
     /// 
     /// ```rust,no_run
     /// # use anvilkit_render::renderer::RenderSurface;
-    /// # async fn example(surface: &RenderSurface<'_>) {
+    /// # async fn example(surface: &RenderSurface) {
     /// let (width, height) = surface.size();
     /// println!("表面大小: {}x{}", width, height);
     /// # }
@@ -329,12 +375,12 @@ impl<'w> RenderSurface<'w> {
     /// 
     /// ```rust,no_run
     /// # use anvilkit_render::renderer::RenderSurface;
-    /// # async fn example(surface: &RenderSurface<'_>) {
+    /// # async fn example(surface: &RenderSurface) {
     /// let wgpu_surface = surface.surface();
     /// // 使用原始表面进行高级操作
     /// # }
     /// ```
-    pub fn surface(&self) -> &Surface<'w> {
+    pub fn surface(&self) -> &Surface<'static> {
         &self.surface
     }
 }

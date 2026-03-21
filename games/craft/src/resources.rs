@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use bevy_ecs::prelude::*;
 
 use crate::block::BlockType;
@@ -8,6 +8,7 @@ use crate::chunk::{ChunkData, CHUNK_SIZE, CHUNK_HEIGHT};
 #[derive(Resource, Default)]
 pub struct VoxelWorld {
     pub chunks: HashMap<(i32, i32), ChunkData>,
+    pub modified_chunks: HashSet<(i32, i32)>,
 }
 
 impl VoxelWorld {
@@ -38,6 +39,7 @@ impl VoxelWorld {
         match self.chunks.get_mut(&(cx, cz)) {
             Some(chunk) => {
                 chunk.set(lx, y as usize, lz, block);
+                self.modified_chunks.insert((cx, cz));
                 true
             }
             None => false,
@@ -45,51 +47,46 @@ impl VoxelWorld {
     }
 }
 
-/// Player state for FPS camera.
+/// Player physics state (camera orientation is now in CameraController).
 #[derive(Debug, Resource)]
 pub struct PlayerState {
-    pub yaw: f32,
-    pub pitch: f32,
     pub flying: bool,
     pub move_speed: f32,
-    pub mouse_sensitivity: f32,
     pub velocity: glam::Vec3,
     pub on_ground: bool,
     pub jump_requested: bool,
+    /// True if player was on_ground last frame (used for landing detection).
+    pub was_on_ground: bool,
+    /// True if player is sprinting (Ctrl held).
+    pub sprinting: bool,
 }
 
 impl Default for PlayerState {
     fn default() -> Self {
         Self {
-            yaw: 0.0,
-            pitch: 0.0,
             flying: true,
             move_speed: 10.0,
-            mouse_sensitivity: 0.003,
             velocity: glam::Vec3::ZERO,
             on_ground: false,
             jump_requested: false,
+            was_on_ground: false,
+            sprinting: false,
         }
     }
-}
-
-/// Accumulated mouse delta per frame (set in window_event, consumed in system).
-#[derive(Debug, Default, Resource)]
-pub struct MouseDelta {
-    pub dx: f32,
-    pub dy: f32,
 }
 
 /// Currently selected block type for placement.
 #[derive(Debug, Resource)]
 pub struct SelectedBlock {
     pub block_type: BlockType,
+    pub index: usize,
 }
 
 impl Default for SelectedBlock {
     fn default() -> Self {
         Self {
             block_type: BlockType::Grass,
+            index: 0,
         }
     }
 }
@@ -209,4 +206,14 @@ fn lerp3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
         a[1] * (1.0 - t) + b[1] * t,
         a[2] * (1.0 - t) + b[2] * t,
     ]
+}
+
+/// World seed resource — single source of truth for all generation.
+#[derive(Debug, Resource)]
+pub struct WorldSeed(pub u32);
+
+impl Default for WorldSeed {
+    fn default() -> Self {
+        Self(42)
+    }
 }

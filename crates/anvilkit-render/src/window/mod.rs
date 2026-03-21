@@ -32,7 +32,7 @@ pub mod events;
 
 // 重新导出主要类型
 pub use window::{WindowConfig, WindowState};
-pub use events::RenderApp;
+pub use events::{RenderApp, pack_lights, compute_light_space_matrix};
 
 #[cfg(test)]
 mod tests {

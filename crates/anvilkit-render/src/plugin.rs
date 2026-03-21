@@ -234,9 +234,10 @@ fn render_extract_system(
     let frustum = Frustum::from_view_proj(&active_camera.view_proj);
 
     for (mesh, material, transform, mat_params, aabb) in query.iter() {
+        let model = transform.compute_matrix();
+
         // Frustum culling: if entity has an Aabb, test visibility
         if let Some(aabb) = aabb {
-            let model = transform.compute_matrix();
             // Transform AABB center to world space
             let local_center = aabb.center();
             let world_center = model.transform_point3(local_center);
@@ -255,7 +256,7 @@ fn render_extract_system(
         draw_list.push(DrawCommand {
             mesh: *mesh,
             material: *material,
-            model_matrix: transform.compute_matrix(),
+            model_matrix: model,
             metallic: p.metallic,
             roughness: p.roughness,
             normal_scale: p.normal_scale,

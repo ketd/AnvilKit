@@ -34,14 +34,17 @@ pub fn run() -> Result<()> {
         Ok(root) => {
             println!("  Root: {}", style(root.display()).cyan());
 
-            // Count workspace members
+            // Count workspace members using TOML parsing
             let cargo_path = root.join("Cargo.toml");
             if let Ok(content) = std::fs::read_to_string(&cargo_path) {
-                let member_count = content
-                    .lines()
-                    .filter(|l| l.trim().starts_with('"') && l.contains('/'))
-                    .count();
-                println!("  Members: {}", style(member_count).cyan());
+                if let Ok(doc) = content.parse::<toml::Value>() {
+                    let member_count = doc.get("workspace")
+                        .and_then(|w| w.get("members"))
+                        .and_then(|m| m.as_array())
+                        .map(|a| a.len())
+                        .unwrap_or(0);
+                    println!("  Members: {}", style(member_count).cyan());
+                }
             }
 
             // List game projects

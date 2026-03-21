@@ -47,110 +47,81 @@ anvilkit/
 
 ## 🚀 快速开始
 
-### 安装依赖
+### 依赖配置
+
+AnvilKit 使用 Cargo workspace，各模块独立引用：
 
 ```toml
 [dependencies]
-anvilkit = { version = "0.1", features = ["default"] }
-
-# 可选特性
-# anvilkit = { version = "0.1", features = ["2d", "3d", "physics-2d", "audio"] }
+anvilkit-core = { path = "crates/anvilkit-core", features = ["bevy_ecs"] }
+anvilkit-ecs = { path = "crates/anvilkit-ecs" }
+anvilkit-render = { path = "crates/anvilkit-render" }
+anvilkit-input = { path = "crates/anvilkit-input" }
 ```
 
 ### 基础示例
 
 ```rust
-use anvilkit::prelude::*;
+use anvilkit_render::prelude::*;
+use anvilkit_ecs::prelude::*;
+use anvilkit_ecs::schedule::AnvilKitSchedule;
 
 fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .add_systems(Startup, setup_scene)
-        .add_systems(Update, movement_system)
-        .run();
+    let mut app = App::new();
+    app.add_plugins(RenderPlugin::default());
+    app.add_systems(AnvilKitSchedule::Update, my_system);
+
+    // 通过 RenderApp 驱动 winit 事件循环
+    RenderApp::run(app);
 }
 
-fn setup_scene(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    // 3D 相机
-    commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(0.0, 2.0, 5.0)
-            .looking_at(Vec3::ZERO, Vec3::Y),
-        ..default()
-    });
-
-    // 3D 立方体
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
-        material: materials.add(StandardMaterial {
-            base_color: Color::rgb(0.8, 0.7, 0.6),
-            ..default()
-        }),
-        ..default()
-    });
-
-    // 光源
-    commands.spawn(DirectionalLightBundle::default());
-}
-
-fn movement_system(mut query: Query<&mut Transform, With<Handle<Mesh>>>) {
-    for mut transform in &mut query {
-        transform.rotate_y(0.01);
-    }
+fn my_system() {
+    // 游戏逻辑
 }
 ```
 
-## 🎮 特性配置
-
-AnvilKit 支持通过 Cargo features 进行模块化编译：
-
-```toml
-[features]
-default = ["2d", "audio", "input"]
-full = ["2d", "3d", "physics-2d", "physics-3d", "audio", "devtools"]
-
-# 渲染特性
-2d = ["anvilkit-render/2d", "anvilkit-render/sprite-batching"]
-3d = ["anvilkit-render/3d", "anvilkit-render/pbr"]
-advanced-3d = ["3d", "shadows", "post-processing", "hdr"]
-
-# 物理特性
-physics-2d = ["anvilkit-physics/rapier2d"]
-physics-3d = ["anvilkit-physics/rapier3d"]
-
-# 开发工具
-devtools = ["anvilkit-devtools", "hot-reload"]
-```
+完整 PBR 渲染示例参见 `examples/showcase.rs`。
 
 ## 📋 开发路线图
 
-### 当前状态：🚧 开发中
+### 当前状态：Phase G 完成 (M12c)
 
-- [x] **项目规划** - 完成技术研究和架构设计
-- [x] **PRD 文档** - 完整的产品需求文档
-- [ ] **M1: 核心地基** - ECS 系统 + 窗口管理
-- [ ] **M2: 你好，三角形！** - 3D 渲染验证
-- [ ] **M3: 旋转的猴头** - 3D 资源与 PBR
-- [ ] **M4: 屏幕上的精灵** - 2D 渲染系统
-- [ ] **M5: 滚动的球体** - 物理引擎集成
-- [ ] **M6: 开发者工具** - 调试与性能分析
+**已完成的里程碑：**
+- **M0-M1**: 核心地基 — ECS + 数学/时间系统
+- **M2-M3**: 渲染系统 — wgpu 管线 + 3D 渲染验证
+- **M4a-M4d**: 资源系统 — glTF 加载 + 纹理 + Blinn-Phong + PBR
+- **M5-M6**: ECS 多物体架构 + PBR 统一 + 法线贴图 + HDR + IBL
+- **M7**: 多光源 + 阴影 + 完整材质 + MSAA
+- **M8**: Frustum Culling + GPU Instancing + 多 Submesh
+- **M9**: 场景图 + 资产管线 + 2D 渲染栈
+- **M10**: 输入系统 + 物理集成 + 音频集成
+- **M11**: 骨骼动画 + UI 系统 + 粒子系统
+- **M12**: 调试工具 + 性能分析 + 文档
+
+**示例游戏：**
+- `games/craft` — Minecraft 风格体素沙盒（地形生成、方块交互、昼夜循环）
+- `games/billiards` — 台球模拟（2D 物理、碰撞、开球规则）
 
 ### 性能目标
 
 - **ECS 性能**: >1M entities @ 60FPS
-- **渲染性能**: 60FPS @ 1080p (基础场景)
-- **物理性能**: 1000+ 刚体 @ 60FPS
+- **渲染性能**: 60FPS @ 1080p (PBR 场景)
 - **编译时间**: <30s 增量编译
 
 ## 📚 文档和示例
 
-- 📖 **[产品需求文档](prd.md)** - 完整的项目愿景和技术规范
-- 🔬 **[技术研究报告](memory-bank/technical-research.md)** - 深度技术分析
-- 📋 **[详细开发计划](memory-bank/detailed-plan.md)** - 具体的实施路线图
-- 🚀 **[优化实施计划](memory-bank/optimized-implementation-plan.md)** - 基于研究的优化策略
+- 📖 **[在线文档](docs/)** — 完整的中英双语文档站点（基于 Fumadocs）
+- 🎮 **[Showcase 示例](examples/showcase.rs)** - PBR 全功能演示（DamagedHelmet）
+- 🏗️ **[AnvilKit CLI](tools/anvilkit-cli/)** - 项目脚手架工具
+
+### 本地运行文档
+
+```bash
+cd docs
+pnpm install
+pnpm dev
+# 访问 http://localhost:3000
+```
 
 ## 🤝 贡献指南
 

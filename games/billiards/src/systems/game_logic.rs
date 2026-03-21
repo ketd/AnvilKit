@@ -10,7 +10,7 @@ use crate::resources::{BilliardConfig, GameState, GamePhase, BallTracker};
 pub fn game_logic_system(
     config: Res<BilliardConfig>,
     mut game_state: ResMut<GameState>,
-    tracker: Res<BallTracker>,
+    mut tracker: ResMut<BallTracker>,
     mut cue_query: Query<(&mut Transform, &mut Velocity), With<CueBall>>,
     ball_query: Query<&Velocity, (With<NumberedBall>, Without<CueBall>)>,
 ) {
@@ -65,6 +65,8 @@ pub fn game_logic_system(
             t.translation = Vec3::new(0.0, config.ball_radius, -config.table_half_depth * 0.5);
             v.linear = Vec3::ZERO;
         }
+        // Restore cue ball tracking state
+        tracker.on_table[0] = true;
     }
 
     // Switch player if no balls potted (or scratch)

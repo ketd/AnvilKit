@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
-
+use std::sync::mpsc;
+use std::thread;
+use std::time::Instant;
 
 use anvilkit_render::prelude::*;
 use anvilkit_render::renderer::{
@@ -15,25 +17,40 @@ use anvilkit_render::renderer::{
 use anvilkit_render::plugin::CameraComponent;
 use anvilkit_input::prelude::{InputState, MouseButton};
 use anvilkit_ecs::physics::DeltaTime;
+use anvilkit_camera::prelude::*;
+use anvilkit_camera::systems::MouseDelta;
 
 use craft::block::BlockType;
-use craft::chunk::CHUNK_SIZE;
+use craft::chunk::{ChunkData, CHUNK_SIZE};
 use craft::world_gen::WorldGenerator;
-use craft::mesh;
+use craft::mesh::{self, ChunkMesh, ChunkNeighbors};
 use craft::raycast::{self, VoxelHit};
 use craft::render::setup::{self, VoxelGpu, VoxelSceneUniform, SkyUniform};
+use craft::render::filters::{ActiveFilter, FilterUniform};
 use craft::components::*;
 use craft::resources::*;
 use craft::systems::input as input_sys;
 use craft::systems::physics as physics_sys;
+use craft::persistence;
 
 /// Per-chunk GPU buffers (not managed by RenderAssets since we do custom draw).
 struct ChunkGpuMesh {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     index_count: u32,
+    water_vertex_buffer: Option<wgpu::Buffer>,
+    water_index_buffer: Option<wgpu::Buffer>,
+    water_index_count: u32,
     /// Chunk center for frustum culling (world space).
     center: glam::Vec3,
+}
+
+/// Result of async chunk generation: chunk data + mesh, ready for GPU upload.
+struct ChunkGenResult {
+    cx: i32,
+    cz: i32,
+    chunk_data: ChunkData,
+    mesh: ChunkMesh,
 }
 
 /// Block types selectable with number keys 1-9.
@@ -54,7 +71,8 @@ fn main() {
     println!("Craft — powered by AnvilKit");
     println!("  WASD = move, Mouse = look, Space = jump/up, Shift = down");
     println!("  Tab = toggle flying, LMB = break, RMB = place");
-    println!("  1-9 = select block, ESC = quit");
+    println!("  1-9 = select block, Ctrl+S = save, ESC = quit");
+    println!("  F5 = toggle 1st/3rd person, F1 = cycle filter, Ctrl+W = sprint");
 
     let mut app = App::new();
     app.add_plugins(RenderPlugin::new().with_window_config(
@@ -64,14 +82,17 @@ fn main() {
     ));
 
     app.insert_resource(InputState::new());
-    app.insert_resource(DeltaTime(1.0 / 60.0));
+    app.insert_resource(DeltaTime(1.0 / 60.0)); // updated each frame in CraftApp::about_to_wait
+    app.insert_resource(WorldSeed::default());
     app.insert_resource(PlayerState::default());
     app.insert_resource(MouseDelta::default());
     app.insert_resource(VoxelWorld::default());
     app.insert_resource(SelectedBlock::default());
     app.insert_resource(DayNightCycle::default());
+    app.insert_resource(ActiveFilter::default());
 
-    app.add_systems(AnvilKitSchedule::Update, input_sys::fps_camera_system);
+    app.add_systems(AnvilKitSchedule::Update, camera_controller_system);
+    app.add_systems(AnvilKitSchedule::Update, input_sys::player_movement_system);
     app.add_systems(AnvilKitSchedule::Update, physics_sys::player_physics_system);
 
     // FPS Camera — spawn at a reasonable height above terrain
@@ -89,8 +110,44 @@ fn main() {
             is_active: true,
             aspect_ratio: 1280.0 / 720.0,
         },
+        {
+            let mut cc = CameraController::default();
+            cc.pitch_limits = (-1.5, 1.5);
+            cc.mouse_sensitivity = 0.003;
+            cc.move_speed = 10.0;
+            cc
+        },
+        {
+            let mut fx = CameraEffects::default();
+            fx.head_bob_enabled = true;
+            fx
+        },
         Transform::from_xyz(spawn_pos.x, spawn_pos.y, spawn_pos.z),
     ));
+
+    let seed = app.world.resource::<WorldSeed>().0;
+
+    // Async chunk generation channels
+    let (request_tx, request_rx) = mpsc::channel::<(i32, i32)>();
+    let (result_tx, result_rx) = mpsc::channel::<ChunkGenResult>();
+
+    // Spawn worker thread for chunk generation
+    thread::spawn(move || {
+        let gen = WorldGenerator::new(seed);
+        while let Ok((cx, cz)) = request_rx.recv() {
+            let chunk_data = gen.generate_chunk(cx, cz);
+            let ox = (cx * CHUNK_SIZE as i32) as f32;
+            let oz = (cz * CHUNK_SIZE as i32) as f32;
+            // Mesh without neighbors for now (neighbors added on main thread remesh)
+            let mesh_result = mesh::mesh_chunk(&chunk_data, &[None; 4], ox, oz);
+            let _ = result_tx.send(ChunkGenResult {
+                cx,
+                cz,
+                chunk_data,
+                mesh: mesh_result,
+            });
+        }
+    });
 
     let event_loop = EventLoop::new().unwrap();
     let wconfig = WindowConfig::new().with_title("Craft").with_size(1280, 720);
@@ -101,7 +158,7 @@ fn main() {
             initialized: false,
             voxel_gpu: None,
             chunk_meshes: HashMap::new(),
-            world_gen: WorldGenerator::new(42),
+            world_gen: WorldGenerator::new(seed),
             load_radius: 7,
             last_chunk_pos: (i32::MAX, i32::MAX),
             line_renderer: None,
@@ -109,6 +166,10 @@ fn main() {
             dirty_chunks: HashSet::new(),
             current_hit: None,
             frame_count: 0,
+            chunk_request_tx: request_tx,
+            chunk_result_rx: result_rx,
+            pending_chunks: HashSet::new(),
+            last_frame_time: Instant::now(),
         })
         .unwrap();
 }
@@ -131,6 +192,25 @@ struct CraftApp {
     current_hit: Option<VoxelHit>,
     // Debug frame counter
     frame_count: u64,
+    // Async chunk generation
+    chunk_request_tx: mpsc::Sender<(i32, i32)>,
+    chunk_result_rx: mpsc::Receiver<ChunkGenResult>,
+    pending_chunks: HashSet<(i32, i32)>,
+    // Frame timing for DeltaTime
+    last_frame_time: Instant,
+}
+
+/// Mark a block's chunk and its boundary neighbors as dirty for remeshing.
+fn mark_dirty_with_neighbors(dirty: &mut HashSet<(i32, i32)>, bx: i32, bz: i32) {
+    let chunk_cx = bx.div_euclid(CHUNK_SIZE as i32);
+    let chunk_cz = bz.div_euclid(CHUNK_SIZE as i32);
+    dirty.insert((chunk_cx, chunk_cz));
+    let lx = bx.rem_euclid(CHUNK_SIZE as i32);
+    let lz = bz.rem_euclid(CHUNK_SIZE as i32);
+    if lx == 0 { dirty.insert((chunk_cx - 1, chunk_cz)); }
+    if lx == CHUNK_SIZE as i32 - 1 { dirty.insert((chunk_cx + 1, chunk_cz)); }
+    if lz == 0 { dirty.insert((chunk_cx, chunk_cz - 1)); }
+    if lz == CHUNK_SIZE as i32 - 1 { dirty.insert((chunk_cx, chunk_cz + 1)); }
 }
 
 fn generate_chunks(
@@ -175,7 +255,7 @@ fn mesh_and_upload_chunk(
     cz: i32,
 ) {
     let Some(chunk) = world.chunks.get(&(cx, cz)) else { return };
-    let neighbors = [
+    let neighbors: ChunkNeighbors = [
         world.chunks.get(&(cx + 1, cz)),
         world.chunks.get(&(cx - 1, cz)),
         world.chunks.get(&(cx, cz + 1)),
@@ -184,14 +264,35 @@ fn mesh_and_upload_chunk(
     let ox = (cx * CHUNK_SIZE as i32) as f32;
     let oz = (cz * CHUNK_SIZE as i32) as f32;
     let cm = mesh::mesh_chunk(chunk, &neighbors, ox, oz);
+    upload_chunk_mesh(chunk_meshes, device, cx, cz, cm);
+}
 
-    if cm.indices.is_empty() {
+fn upload_chunk_mesh(
+    chunk_meshes: &mut HashMap<(i32, i32), ChunkGpuMesh>,
+    device: &RenderDevice,
+    cx: i32,
+    cz: i32,
+    cm: ChunkMesh,
+) {
+    if cm.indices.is_empty() && cm.water_indices.is_empty() {
         chunk_meshes.remove(&(cx, cz));
         return;
     }
 
+    let ox = (cx * CHUNK_SIZE as i32) as f32;
+    let oz = (cz * CHUNK_SIZE as i32) as f32;
+
     let vb = create_vertex_buffer(device, &format!("Chunk({},{}) VB", cx, cz), &cm.vertices);
     let ib = create_index_buffer_u32(device, &format!("Chunk({},{}) IB", cx, cz), &cm.indices);
+
+    let (wvb, wib, wic) = if !cm.water_indices.is_empty() {
+        let wvb = create_vertex_buffer(device, &format!("Chunk({},{}) Water VB", cx, cz), &cm.water_vertices);
+        let wib = create_index_buffer_u32(device, &format!("Chunk({},{}) Water IB", cx, cz), &cm.water_indices);
+        (Some(wvb), Some(wib), cm.water_indices.len() as u32)
+    } else {
+        (None, None, 0)
+    };
+
     let center = glam::Vec3::new(
         ox + CHUNK_SIZE as f32 * 0.5,
         128.0,
@@ -204,6 +305,9 @@ fn mesh_and_upload_chunk(
             vertex_buffer: vb,
             index_buffer: ib,
             index_count: cm.indices.len() as u32,
+            water_vertex_buffer: wvb,
+            water_index_buffer: wib,
+            water_index_count: wic,
             center,
         },
     );
@@ -215,7 +319,21 @@ impl CraftApp {
             return;
         }
 
-        // Generate chunks first (doesn't need GPU)
+        // Try loading saved world first
+        {
+            let mut world = self.app.world.resource_mut::<VoxelWorld>();
+            match persistence::load_world(&mut world) {
+                Ok((seed, loaded)) if !loaded.is_empty() => {
+                    println!("Loaded {} modified chunks from save (seed={})", loaded.len(), seed);
+                }
+                Err(e) => {
+                    println!("Could not load save: {}", e);
+                }
+                _ => {}
+            }
+        }
+
+        // Generate chunks (doesn't need GPU) — fill any not loaded from save
         {
             let mut world = self.app.world.resource_mut::<VoxelWorld>();
             generate_chunks(&mut world, &self.world_gen, 0, 0, self.load_radius);
@@ -232,9 +350,22 @@ impl CraftApp {
 
         // Load texture atlas — convert magenta color key (255,0,255) to transparent
         let atlas_path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/textures/texture.png");
-        let mut atlas_img = image::open(atlas_path)
-            .expect("Failed to load texture.png")
-            .to_rgba8();
+        let mut atlas_img = match image::open(atlas_path) {
+            Ok(img) => img.to_rgba8(),
+            Err(e) => {
+                log::error!("Failed to load texture.png: {}. Using fallback.", e);
+                // Generate a 256x256 magenta/black checkerboard as fallback
+                let mut fallback = image::RgbaImage::new(256, 256);
+                for (x, y, pixel) in fallback.enumerate_pixels_mut() {
+                    if (x / 16 + y / 16) % 2 == 0 {
+                        *pixel = image::Rgba([255, 0, 255, 255]);
+                    } else {
+                        *pixel = image::Rgba([0, 0, 0, 255]);
+                    }
+                }
+                fallback
+            }
+        };
         for pixel in atlas_img.pixels_mut() {
             if pixel[0] == 255 && pixel[1] == 0 && pixel[2] == 255 {
                 pixel[0] = 0;
@@ -285,40 +416,75 @@ impl CraftApp {
         let cx = (cam_pos.x / CHUNK_SIZE as f32).floor() as i32;
         let cz = (cam_pos.z / CHUNK_SIZE as f32).floor() as i32;
 
-        if (cx, cz) == self.last_chunk_pos {
-            return;
-        }
-        self.last_chunk_pos = (cx, cz);
-
-        // Generate new chunks (no GPU needed)
-        {
-            let mut world = self.app.world.resource_mut::<VoxelWorld>();
-            generate_chunks(&mut world, &self.world_gen, cx, cz, self.load_radius);
+        let pos_changed = (cx, cz) != self.last_chunk_pos;
+        if pos_changed {
+            self.last_chunk_pos = (cx, cz);
         }
 
-        // Upload new meshes (needs GPU)
-        {
-            let Some(device) = self.render_app.render_device() else {
-                return;
-            };
+        // Send async requests for chunks not yet loaded or pending
+        if pos_changed {
             let world = self.app.world.resource::<VoxelWorld>();
-            upload_new_chunks(&world, &mut self.chunk_meshes, device);
+            for dcx in -self.load_radius..=self.load_radius {
+                for dcz in -self.load_radius..=self.load_radius {
+                    let key = (cx + dcx, cz + dcz);
+                    if !world.chunks.contains_key(&key) && !self.pending_chunks.contains(&key) {
+                        let _ = self.chunk_request_tx.send(key);
+                        self.pending_chunks.insert(key);
+                    }
+                }
+            }
+        }
+
+        // Poll completed chunks (process up to 4 per frame to avoid GPU stalls)
+        let device = self.render_app.render_device();
+        if let Some(device) = device {
+            let mut received = 0;
+            while let Ok(result) = self.chunk_result_rx.try_recv() {
+                self.pending_chunks.remove(&(result.cx, result.cz));
+
+                // Store chunk data
+                {
+                    let mut world = self.app.world.resource_mut::<VoxelWorld>();
+                    world.chunks.insert((result.cx, result.cz), result.chunk_data);
+                }
+
+                // Upload mesh to GPU
+                upload_chunk_mesh(
+                    &mut self.chunk_meshes, device,
+                    result.cx, result.cz, result.mesh,
+                );
+
+                // Mark new chunk + four neighbors dirty for re-mesh with proper neighbor data
+                self.dirty_chunks.insert((result.cx, result.cz));
+                self.dirty_chunks.insert((result.cx + 1, result.cz));
+                self.dirty_chunks.insert((result.cx - 1, result.cz));
+                self.dirty_chunks.insert((result.cx, result.cz + 1));
+                self.dirty_chunks.insert((result.cx, result.cz - 1));
+
+                received += 1;
+                if received >= 4 {
+                    break;
+                }
+            }
         }
 
         // Unload far chunks
-        let r = self.load_radius + 2;
-        let far_keys: Vec<(i32, i32)> = self
-            .chunk_meshes
-            .keys()
-            .copied()
-            .filter(|&(kx, kz)| (kx - cx).abs() > r || (kz - cz).abs() > r)
-            .collect();
-        for key in &far_keys {
-            self.chunk_meshes.remove(key);
-        }
-        let mut world = self.app.world.resource_mut::<VoxelWorld>();
-        for key in far_keys {
-            world.chunks.remove(&key);
+        if pos_changed {
+            let r = self.load_radius + 2;
+            let far_keys: Vec<(i32, i32)> = self
+                .chunk_meshes
+                .keys()
+                .copied()
+                .filter(|&(kx, kz)| (kx - cx).abs() > r || (kz - cz).abs() > r)
+                .collect();
+            for key in &far_keys {
+                self.chunk_meshes.remove(key);
+                self.pending_chunks.remove(key);
+            }
+            let mut world = self.app.world.resource_mut::<VoxelWorld>();
+            for key in far_keys {
+                world.chunks.remove(&key);
+            }
         }
     }
 
@@ -370,16 +536,7 @@ impl CraftApp {
                 let [bx, by, bz] = hit.block_pos;
                 let mut world = self.app.world.resource_mut::<VoxelWorld>();
                 world.set_block(bx, by, bz, BlockType::Air);
-                let chunk_cx = bx.div_euclid(CHUNK_SIZE as i32);
-                let chunk_cz = bz.div_euclid(CHUNK_SIZE as i32);
-                self.dirty_chunks.insert((chunk_cx, chunk_cz));
-                // Mark neighbor chunks dirty if on boundary
-                let lx = bx.rem_euclid(CHUNK_SIZE as i32);
-                let lz = bz.rem_euclid(CHUNK_SIZE as i32);
-                if lx == 0 { self.dirty_chunks.insert((chunk_cx - 1, chunk_cz)); }
-                if lx == CHUNK_SIZE as i32 - 1 { self.dirty_chunks.insert((chunk_cx + 1, chunk_cz)); }
-                if lz == 0 { self.dirty_chunks.insert((chunk_cx, chunk_cz - 1)); }
-                if lz == CHUNK_SIZE as i32 - 1 { self.dirty_chunks.insert((chunk_cx, chunk_cz + 1)); }
+                mark_dirty_with_neighbors(&mut self.dirty_chunks, bx, bz);
             } else if right_just {
                 // Place block adjacent to hit face
                 let [bx, by, bz] = hit.block_pos;
@@ -402,15 +559,7 @@ impl CraftApp {
                     let selected = self.app.world.resource::<SelectedBlock>().block_type;
                     let mut world = self.app.world.resource_mut::<VoxelWorld>();
                     world.set_block(px, py, pz, selected);
-                    let chunk_cx = px.div_euclid(CHUNK_SIZE as i32);
-                    let chunk_cz = pz.div_euclid(CHUNK_SIZE as i32);
-                    self.dirty_chunks.insert((chunk_cx, chunk_cz));
-                    let lx = px.rem_euclid(CHUNK_SIZE as i32);
-                    let lz = pz.rem_euclid(CHUNK_SIZE as i32);
-                    if lx == 0 { self.dirty_chunks.insert((chunk_cx - 1, chunk_cz)); }
-                    if lx == CHUNK_SIZE as i32 - 1 { self.dirty_chunks.insert((chunk_cx + 1, chunk_cz)); }
-                    if lz == 0 { self.dirty_chunks.insert((chunk_cx, chunk_cz - 1)); }
-                    if lz == CHUNK_SIZE as i32 - 1 { self.dirty_chunks.insert((chunk_cx, chunk_cz + 1)); }
+                    mark_dirty_with_neighbors(&mut self.dirty_chunks, px, pz);
                 }
             }
         }
@@ -474,128 +623,173 @@ impl CraftApp {
         // Frustum culling
         let frustum_planes = extract_frustum_planes(&cam_vp);
 
-        // --- Pass 1: Sky (HDR RT, Clear) ---
+        // --- Update filter uniform (before tonemap pass) ---
         {
-            let mut enc = device
-                .device()
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Sky Enc"),
-                });
-            {
-                let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Sky Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &gpu.hdr_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: fog_color[0] as f64,
-                                g: fog_color[1] as f64,
-                                b: fog_color[2] as f64,
-                                a: 1.0,
-                            }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-                rp.set_pipeline(&gpu.sky_pipeline);
-                rp.set_bind_group(0, &gpu.sky_bg, &[]);
-                rp.draw(0..3, 0..1);
-            }
-            device.queue().submit(std::iter::once(enc.finish()));
+            let active_filter = self.app.world.resource::<ActiveFilter>();
+            let cycle = self.app.world.resource::<DayNightCycle>();
+            let is_srgb = self.render_app.surface_format()
+                .map(|f| f.is_srgb())
+                .unwrap_or(false);
+            let filter_uniform = FilterUniform {
+                filter_type: active_filter.filter as u32,
+                intensity: 1.0,
+                time: cycle.time * 600.0,
+                apply_gamma: if is_srgb { 0.0 } else { 1.0 },
+            };
+            device.queue().write_buffer(&gpu.filter_ub, 0, bytemuck::bytes_of(&filter_uniform));
         }
 
-        // --- Pass 2: Voxel scene (HDR RT, Load, depth test) ---
+        // --- Batched: single encoder for Sky → Voxel → Water → Tonemap ---
+        let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Craft Frame Enc"),
+        });
+
+        // Pass 1: Sky (HDR RT, Clear)
         {
-            let mut enc = device
-                .device()
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Voxel Scene Enc"),
-                });
-            {
-                let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Voxel Scene Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &gpu.hdr_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &gpu.depth_view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(1.0),
-                            store: wgpu::StoreOp::Store,
+            let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Sky Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &gpu.hdr_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: fog_color[0] as f64,
+                            g: fog_color[1] as f64,
+                            b: fog_color[2] as f64,
+                            a: 1.0,
                         }),
-                        stencil_ops: None,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            rp.set_pipeline(&gpu.sky_pipeline);
+            rp.set_bind_group(0, &gpu.sky_bg, &[]);
+            rp.draw(0..3, 0..1);
+        }
+
+        // Pass 2: Voxel scene (HDR RT, Load, depth test)
+        {
+            let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Voxel Scene Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &gpu.hdr_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &gpu.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
                     }),
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
 
-                rp.set_pipeline(&gpu.voxel_pipeline);
-                rp.set_bind_group(0, &gpu.scene_bg, &[]);
-                rp.set_bind_group(1, &gpu.atlas_bg, &[]);
+            rp.set_pipeline(&gpu.voxel_pipeline);
+            rp.set_bind_group(0, &gpu.scene_bg, &[]);
+            rp.set_bind_group(1, &gpu.atlas_bg, &[]);
 
-                for (_key, cm) in &self.chunk_meshes {
-                    if !sphere_in_frustum(&frustum_planes, cm.center, 130.0) {
-                        continue;
-                    }
-                    rp.set_vertex_buffer(0, cm.vertex_buffer.slice(..));
-                    rp.set_index_buffer(cm.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    rp.draw_indexed(0..cm.index_count, 0, 0..1);
+            for (_key, cm) in &self.chunk_meshes {
+                if !sphere_in_frustum(&frustum_planes, cm.center, 130.0) {
+                    continue;
+                }
+                rp.set_vertex_buffer(0, cm.vertex_buffer.slice(..));
+                rp.set_index_buffer(cm.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                rp.draw_indexed(0..cm.index_count, 0, 0..1);
+            }
+        }
+
+        // Pass 3: Water (HDR RT, Load, depth read-only, alpha blend)
+        {
+            let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Water Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &gpu.hdr_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &gpu.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            rp.set_pipeline(&gpu.water_pipeline);
+            rp.set_bind_group(0, &gpu.scene_bg, &[]);
+            rp.set_bind_group(1, &gpu.atlas_bg, &[]);
+
+            for (_key, cm) in &self.chunk_meshes {
+                if cm.water_index_count == 0 {
+                    continue;
+                }
+                if !sphere_in_frustum(&frustum_planes, cm.center, 130.0) {
+                    continue;
+                }
+                if let (Some(ref wvb), Some(ref wib)) = (&cm.water_vertex_buffer, &cm.water_index_buffer) {
+                    rp.set_vertex_buffer(0, wvb.slice(..));
+                    rp.set_index_buffer(wib.slice(..), wgpu::IndexFormat::Uint32);
+                    rp.draw_indexed(0..cm.water_index_count, 0, 0..1);
                 }
             }
-            device.queue().submit(std::iter::once(enc.finish()));
         }
 
-        // --- Pass 3: Tonemap (HDR → swapchain) ---
+        // Pass 4: Tonemap (HDR → swapchain)
         {
-            let mut enc = device
-                .device()
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Tonemap Enc"),
-                });
-            {
-                let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Tonemap"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &swapchain,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-                rp.set_pipeline(&gpu.tonemap_pipeline);
-                rp.set_bind_group(0, &gpu.tonemap_bg, &[]);
-                rp.draw(0..3, 0..1);
-            }
-            device.queue().submit(std::iter::once(enc.finish()));
+            let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Tonemap"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &swapchain,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            rp.set_pipeline(&gpu.tonemap_pipeline);
+            rp.set_bind_group(0, &gpu.tonemap_bg, &[]);
+            rp.draw(0..3, 0..1);
         }
 
-        // --- Pass 4: HUD (crosshair, coordinates, block highlight) ---
-        self.render_hud(device, &swapchain, &cam_vp, cam_pos);
+        // Single submit for all 4 passes
+        device.queue().submit(std::iter::once(enc.finish()));
+
+        // --- Pass 5: HUD (crosshair, coordinates, block highlight) ---
+        // Re-acquire device ref to avoid borrow conflict with &mut self
+        let _ = gpu; // end immutable borrow on self.voxel_gpu
+        self.render_hud(&swapchain, &cam_vp, cam_pos);
 
         frame.present();
     }
 
     fn render_hud(
-        &self,
-        device: &RenderDevice,
+        &mut self,
         swapchain: &wgpu::TextureView,
         cam_vp: &glam::Mat4,
         cam_pos: glam::Vec3,
     ) {
+        let Some(device) = self.render_app.render_device() else { return };
         let (sw, sh) = self.render_app.window_state().size();
         let sw = sw as f32;
         let sh = sh as f32;
@@ -615,7 +809,7 @@ impl CraftApp {
         ];
 
         // Render crosshair
-        if let Some(ref lr) = self.line_renderer {
+        if let Some(ref mut lr) = self.line_renderer {
             let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("HUD Lines Enc"),
             });
@@ -625,7 +819,7 @@ impl CraftApp {
 
         // Block highlight wireframe (3D)
         if let Some(ref hit) = self.current_hit {
-            if let Some(ref lr) = self.line_renderer {
+            if let Some(ref mut lr) = self.line_renderer {
                 let wireframe_lines = block_wireframe(hit.block_pos, glam::Vec3::new(0.2, 0.2, 0.2));
                 let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Block Highlight Enc"),
@@ -636,11 +830,12 @@ impl CraftApp {
         }
 
         // Text: coordinates and selected block
-        if let Some(ref tr) = self.text_renderer {
-            let selected = self.app.world.resource::<SelectedBlock>();
-            let player = self.app.world.resource::<PlayerState>();
-            let cycle = self.app.world.resource::<DayNightCycle>();
+        let selected = self.app.world.resource::<SelectedBlock>();
+        let player = self.app.world.resource::<PlayerState>();
+        let cycle = self.app.world.resource::<DayNightCycle>();
+        let selected_index = selected.index;
 
+        if let Some(ref mut tr) = self.text_renderer {
             let coord_text = format!(
                 "XYZ: {:.1} {:.1} {:.1}  {}  Time: {:.0}%",
                 cam_pos.x, cam_pos.y, cam_pos.z,
@@ -655,6 +850,57 @@ impl CraftApp {
             tr.draw_text(device, &mut enc, swapchain, &coord_text, 8.0, 8.0, 16.0, white, sw, sh);
             tr.draw_text(device, &mut enc, swapchain, &block_text, 8.0, 28.0, 16.0, white, sw, sh);
             device.queue().submit(std::iter::once(enc.finish()));
+        }
+
+        // Hotbar: 9-slot block selection bar at bottom center
+        if let Some(ref mut lr) = self.line_renderer {
+            let slot_size = 36.0_f32;
+            let slot_gap = 4.0_f32;
+            let total_w = 9.0 * slot_size + 8.0 * slot_gap;
+            let bar_x = (sw - total_w) * 0.5;
+            let bar_y = sh - slot_size - 16.0;
+
+            let mut hotbar_lines = Vec::new();
+            let gray = glam::Vec3::new(0.5, 0.5, 0.5);
+            let highlight = glam::Vec3::new(1.0, 1.0, 0.0);
+
+            for i in 0..9usize {
+                let sx = bar_x + i as f32 * (slot_size + slot_gap);
+                let sy = bar_y;
+                let color = if i == selected_index { highlight } else { gray };
+
+                // Box corners
+                let tl = glam::Vec3::new(sx, sy, 0.0);
+                let tr = glam::Vec3::new(sx + slot_size, sy, 0.0);
+                let br = glam::Vec3::new(sx + slot_size, sy + slot_size, 0.0);
+                let bl = glam::Vec3::new(sx, sy + slot_size, 0.0);
+
+                hotbar_lines.push((tl, tr, color));
+                hotbar_lines.push((tr, br, color));
+                hotbar_lines.push((br, bl, color));
+                hotbar_lines.push((bl, tl, color));
+            }
+
+            let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Hotbar Lines Enc"),
+            });
+            lr.render(device, &mut enc, swapchain, &hotbar_lines, &ortho);
+            device.queue().submit(std::iter::once(enc.finish()));
+
+            // Draw block name initials in each slot
+            if let Some(ref mut tr) = self.text_renderer {
+                let labels = ["G", "D", "S", "Sa", "B", "W", "Gl", "C", "P"];
+                let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Hotbar Text Enc"),
+                });
+                for i in 0..9usize {
+                    let sx = bar_x + i as f32 * (slot_size + slot_gap) + slot_size * 0.25;
+                    let sy = bar_y + slot_size * 0.2;
+                    let color = if i == selected_index { highlight } else { white };
+                    tr.draw_text(device, &mut enc, swapchain, labels[i], sx, sy, 14.0, color, sw, sh);
+                }
+                device.queue().submit(std::iter::once(enc.finish()));
+            }
         }
     }
 }
@@ -706,41 +952,13 @@ impl ApplicationHandler for CraftApp {
                         let (_, hv) =
                             create_hdr_render_target(device, s.width, s.height, "Voxel HDR RT");
                         let samp = create_sampler(device, "Tonemap Sampler");
-                        // Recreate tonemap bind group
+                        // Recreate tonemap bind group (with filter uniform)
                         gpu.tonemap_bg =
                             device
                                 .device()
                                 .create_bind_group(&wgpu::BindGroupDescriptor {
                                     label: Some("Tonemap BG"),
-                                    layout: &device.device().create_bind_group_layout(
-                                        &wgpu::BindGroupLayoutDescriptor {
-                                            label: Some("Tonemap BGL"),
-                                            entries: &[
-                                                wgpu::BindGroupLayoutEntry {
-                                                    binding: 0,
-                                                    visibility: wgpu::ShaderStages::FRAGMENT,
-                                                    ty: wgpu::BindingType::Texture {
-                                                        sample_type:
-                                                            wgpu::TextureSampleType::Float {
-                                                                filterable: true,
-                                                            },
-                                                        view_dimension:
-                                                            wgpu::TextureViewDimension::D2,
-                                                        multisampled: false,
-                                                    },
-                                                    count: None,
-                                                },
-                                                wgpu::BindGroupLayoutEntry {
-                                                    binding: 1,
-                                                    visibility: wgpu::ShaderStages::FRAGMENT,
-                                                    ty: wgpu::BindingType::Sampler(
-                                                        wgpu::SamplerBindingType::Filtering,
-                                                    ),
-                                                    count: None,
-                                                },
-                                            ],
-                                        },
-                                    ),
+                                    layout: &gpu.tonemap_bgl,
                                     entries: &[
                                         wgpu::BindGroupEntry {
                                             binding: 0,
@@ -749,6 +967,10 @@ impl ApplicationHandler for CraftApp {
                                         wgpu::BindGroupEntry {
                                             binding: 1,
                                             resource: wgpu::BindingResource::Sampler(&samp),
+                                        },
+                                        wgpu::BindGroupEntry {
+                                            binding: 2,
+                                            resource: gpu.filter_ub.as_entire_binding(),
                                         },
                                     ],
                                 });
@@ -769,6 +991,21 @@ impl ApplicationHandler for CraftApp {
                         }
                     }
                     if event.state.is_pressed() {
+                        // Ctrl+S: save world
+                        if code == WK::KeyS && (event.repeat == false) {
+                            let input = self.app.world.resource::<InputState>();
+                            if input.is_key_pressed(anvilkit_input::prelude::KeyCode::LControl)
+                                || input.is_key_pressed(anvilkit_input::prelude::KeyCode::RControl)
+                            {
+                                let save_seed = self.app.world.resource::<WorldSeed>().0;
+                                let world = self.app.world.resource::<VoxelWorld>();
+                                match persistence::save_world(&world, &world.modified_chunks, save_seed) {
+                                    Ok(n) => println!("Saved {} modified chunks to {:?}", n, persistence::save_path()),
+                                    Err(e) => println!("Save failed: {}", e),
+                                }
+                                return;
+                            }
+                        }
                         match code {
                             WK::Escape => {
                                 el.exit();
@@ -783,6 +1020,29 @@ impl ApplicationHandler for CraftApp {
                                         "Flying: {}",
                                         if ps.flying { "ON" } else { "OFF" }
                                     );
+                                }
+                            }
+                            // F1: Cycle post-processing filter
+                            WK::F1 => {
+                                if let Some(mut af) = self.app.world.get_resource_mut::<ActiveFilter>() {
+                                    af.filter = af.filter.cycle();
+                                    println!("Filter: {}", af.filter.name());
+                                }
+                            }
+                            // F5: Toggle first-person / third-person
+                            WK::F5 => {
+                                let pos = self.app.world.get_resource::<ActiveCamera>()
+                                    .map(|c| c.camera_pos)
+                                    .unwrap_or(glam::Vec3::ZERO);
+                                let mut q = self.app.world.query::<&mut CameraController>();
+                                for mut ctrl in q.iter_mut(&mut self.app.world) {
+                                    ctrl.toggle_perspective(pos);
+                                    let mode_name = match &ctrl.mode {
+                                        CameraMode::FirstPerson => "First Person",
+                                        CameraMode::ThirdPerson { .. } => "Third Person",
+                                        CameraMode::Free => "Free",
+                                    };
+                                    println!("Camera: {}", mode_name);
                                 }
                             }
                             // Block selection: number keys 1-9
@@ -846,6 +1106,15 @@ impl ApplicationHandler for CraftApp {
     fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
         self.frame_count += 1;
 
+        // Update DeltaTime from actual wall-clock elapsed time
+        {
+            let now = Instant::now();
+            let raw_dt = now.duration_since(self.last_frame_time).as_secs_f32();
+            let clamped_dt = raw_dt.clamp(0.001, 0.1); // prevent physics explosions
+            self.last_frame_time = now;
+            self.app.world.insert_resource(DeltaTime(clamped_dt));
+        }
+
         // Advance day/night cycle
         {
             let dt = self.app.world.resource::<DeltaTime>().0;
@@ -853,23 +1122,57 @@ impl ApplicationHandler for CraftApp {
             cycle.advance(dt);
         }
 
+        // Update third-person camera target to player position
+        {
+            let cam_pos = self.app.world.get_resource::<ActiveCamera>()
+                .map(|c| c.camera_pos)
+                .unwrap_or(glam::Vec3::ZERO);
+            let mut q = self.app.world.query::<&mut CameraController>();
+            for mut ctrl in q.iter_mut(&mut self.app.world) {
+                if let CameraMode::ThirdPerson { ref mut target, .. } = &mut ctrl.mode {
+                    *target = cam_pos;
+                }
+            }
+        }
+
+        // Camera effects: landing shake, sprint FOV
+        {
+            let (was_on_ground, on_ground, sprinting, vel_y_before) = {
+                let player = self.app.world.resource::<PlayerState>();
+                (player.was_on_ground, player.on_ground, player.sprinting, player.velocity.y)
+            };
+
+            let mut q = self.app.world.query::<&mut CameraEffects>();
+            for mut fx in q.iter_mut(&mut self.app.world) {
+                // Landing shake
+                if on_ground && !was_on_ground {
+                    let impact = (-vel_y_before * 0.02).clamp(0.0, 0.3);
+                    if impact > 0.02 {
+                        fx.add_shake(impact);
+                    }
+                }
+                // Sprint FOV
+                fx.fov_target = if sprinting { 10.0 } else { 0.0 };
+            }
+
+            // Update was_on_ground
+            let mut player = self.app.world.resource_mut::<PlayerState>();
+            player.was_on_ground = on_ground;
+        }
+
         self.app.update();
 
         // Periodic debug log (every 120 frames ~ 2 sec)
         if self.frame_count % 120 == 0 {
             let player = self.app.world.resource::<PlayerState>();
-            let input = self.app.world.resource::<InputState>();
-            let md = self.app.world.resource::<MouseDelta>();
             if let Some(cam) = self.app.world.get_resource::<ActiveCamera>() {
                 let p = cam.camera_pos;
                 println!(
-                    "[F{}] pos=({:.1},{:.1},{:.1}) vel=({:.1},{:.1},{:.1}) fly={} gnd={} W={} dx={:.0} dy={:.0}",
+                    "[F{}] pos=({:.1},{:.1},{:.1}) vel=({:.1},{:.1},{:.1}) fly={} gnd={}",
                     self.frame_count,
                     p.x, p.y, p.z,
                     player.velocity.x, player.velocity.y, player.velocity.z,
                     player.flying, player.on_ground,
-                    input.is_key_pressed(anvilkit_input::prelude::KeyCode::W),
-                    md.dx, md.dy,
                 );
             }
         }
@@ -903,6 +1206,7 @@ impl CraftApp {
         if index < BLOCK_PALETTE.len() {
             if let Some(mut sb) = self.app.world.get_resource_mut::<SelectedBlock>() {
                 sb.block_type = BLOCK_PALETTE[index];
+                sb.index = index;
                 println!("Selected: {:?}", sb.block_type);
             }
         }

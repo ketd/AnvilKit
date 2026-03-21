@@ -1,18 +1,19 @@
 [package]
 name = "anvilkit-ecs"
-version = "0.1.0"
-edition = "2021"
-authors = ["AnvilKit Contributors"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "AnvilKit ECS 模块 - 基于 Bevy ECS 的高性能实体组件系统"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/ketd/AnvilKit"
-keywords = ["gamedev", "ecs", "bevy", "entity", "component"]
-categories = ["game-development", "data-structures"]
 
 [dependencies]
 # 核心依赖
 anvilkit-core = { path = "../anvilkit-core", features = ["bevy_ecs"] }
-bevy_ecs = "0.14"
+bevy_ecs = { workspace = true }
+
+# 日志
+log = "0.4"
 
 # 数学库
 glam = { workspace = true }

@@ -30,6 +30,8 @@
 //!    .run();
 //! ```
 
+#![warn(missing_docs)]
+
 pub mod window;
 pub mod renderer;
 pub mod plugin;

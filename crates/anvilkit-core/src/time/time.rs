@@ -430,16 +430,22 @@ impl ScaledTime {
     }
 
     /// 获取缩放后的 delta time
+    ///
+    /// **注意**: `Duration` 不能为负，因此当 `scale < 0`（时间倒流）时返回 `Duration::ZERO`。
+    /// 如果需要支持负时间，请使用 [`delta_seconds()`](Self::delta_seconds) 代替。
     pub fn delta(&self) -> Duration {
         if self.scale >= 0.0 {
             Duration::from_secs_f32(self.inner.delta_seconds() * self.scale)
         } else {
-            // 负缩放因子表示时间倒流
+            // Duration 不支持负值，返回 ZERO
             Duration::ZERO
         }
     }
 
     /// 获取缩放后的 delta time（秒）
+    ///
+    /// 当 `scale < 0` 时返回负值（表示时间倒流），
+    /// 与 [`delta()`](Self::delta) 不同（后者因 `Duration` 限制返回 ZERO）。
     pub fn delta_seconds(&self) -> f32 {
         self.inner.delta_seconds() * self.scale
     }

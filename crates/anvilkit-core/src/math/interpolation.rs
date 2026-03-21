@@ -199,7 +199,12 @@ pub fn smootherstep(t: f32) -> f32 {
 /// assert_eq!(normalized, 0.5);
 /// ```
 pub fn remap(value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
-    let t = (value - from_min) / (from_max - from_min);
+    let range = from_max - from_min;
+    if range.abs() < f32::EPSILON {
+        // Degenerate range: return midpoint of target range to avoid division by zero
+        return (to_min + to_max) * 0.5;
+    }
+    let t = (value - from_min) / range;
     to_min + t * (to_max - to_min)
 }
 

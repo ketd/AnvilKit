@@ -29,6 +29,8 @@
 //! - `serde`: 启用序列化支持
 //! - `debug`: 启用调试功能和额外的验证
 
+#![warn(missing_docs)]
+
 pub mod math;
 pub mod time;
 pub mod error;

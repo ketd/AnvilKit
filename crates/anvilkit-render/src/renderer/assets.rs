@@ -163,4 +163,37 @@ impl RenderAssets {
     pub fn get_pipeline(&self, handle: &PipelineHandle) -> Option<&RenderPipeline> {
         self.pipelines.get(handle)
     }
+
+    /// 移除 GPU 网格资源，释放顶点和索引缓冲区
+    pub fn remove_mesh(&mut self, handle: &MeshHandle) -> bool {
+        self.meshes.remove(handle).is_some()
+    }
+
+    /// 移除 GPU 材质资源，释放绑定组
+    pub fn remove_material(&mut self, handle: &MaterialHandle) -> bool {
+        self.materials.remove(handle).is_some()
+    }
+
+    /// 移除渲染管线
+    ///
+    /// 注意：如果仍有材质引用此管线，那些材质的渲染将失败。
+    /// 调用者应确保先移除所有引用此管线的材质。
+    pub fn remove_pipeline(&mut self, handle: &PipelineHandle) -> bool {
+        self.pipelines.remove(handle).is_some()
+    }
+
+    /// 已注册的网格数量
+    pub fn mesh_count(&self) -> usize {
+        self.meshes.len()
+    }
+
+    /// 已注册的材质数量
+    pub fn material_count(&self) -> usize {
+        self.materials.len()
+    }
+
+    /// 已注册的管线数量
+    pub fn pipeline_count(&self) -> usize {
+        self.pipelines.len()
+    }
 }

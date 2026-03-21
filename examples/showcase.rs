@@ -15,6 +15,7 @@
 //! Run: `cargo run -p anvilkit-render --example showcase`
 
 use anvilkit_render::prelude::*;
+use anvilkit_render::window::pack_lights;
 use anvilkit_render::renderer::{
     RenderPipelineBuilder, DEPTH_FORMAT, HDR_FORMAT,
     buffer::{PbrVertex, Vertex, create_uniform_buffer,
@@ -32,33 +33,6 @@ use anvilkit_assets::gltf_loader::load_gltf_scene;
 const SHADER_SOURCE: &str = include_str!("../shaders/pbr.wgsl");
 const TONEMAP_SHADER: &str = include_str!("../shaders/tonemap.wgsl");
 
-
-// ---------------------------------------------------------------------------
-//  Light packing helper
-// ---------------------------------------------------------------------------
-fn pack_scene_lights(lights: &SceneLights) -> ([GpuLight; 8], u32) {
-    let mut gpu = [GpuLight::default(); 8];
-    let mut n = 0u32;
-    let d = &lights.directional;
-    gpu[0] = GpuLight {
-        position_type: [0.0, 0.0, 0.0, 0.0],
-        direction_range: [d.direction.x, d.direction.y, d.direction.z, 0.0],
-        color_intensity: [d.color.x, d.color.y, d.color.z, d.intensity],
-        params: [0.0; 4],
-    };
-    n += 1;
-    for pl in &lights.point_lights {
-        if n >= 8 { break; }
-        gpu[n as usize] = GpuLight {
-            position_type: [pl.position.x, pl.position.y, pl.position.z, 1.0],
-            direction_range: [0.0, 0.0, 0.0, pl.range],
-            color_intensity: [pl.color.x, pl.color.y, pl.color.z, pl.intensity],
-            params: [0.0; 4],
-        };
-        n += 1;
-    }
-    (gpu, n)
-}
 
 // ---------------------------------------------------------------------------
 //  Application
@@ -358,14 +332,14 @@ impl ShowcaseApp {
 
         let def_lights = SceneLights::default();
         let lights = self.app.world.get_resource::<SceneLights>().unwrap_or(&def_lights);
-        let (gpu_lights, lc) = pack_scene_lights(lights);
+        let (gpu_lights, lc) = pack_lights(lights);
         let ld = lights.directional.direction.normalize();
         let lp = -ld * 15.0;
         let lv = glam::Mat4::look_at_lh(lp, glam::Vec3::ZERO, glam::Vec3::Y);
         let lproj = glam::Mat4::orthographic_lh(-10.0, 10.0, -10.0, 10.0, 0.1, 30.0);
         let svp = lproj * lv;
 
-        // Scene pass → HDR MSAA
+        // Scene pass -> HDR MSAA
         for (i, cmd) in dl.commands.iter().enumerate() {
             let Some(gm) = ra.get_mesh(&cmd.mesh) else { continue };
             let Some(gmat) = ra.get_material(&cmd.material) else { continue };
@@ -413,7 +387,7 @@ impl ShowcaseApp {
             device.queue().submit(std::iter::once(enc.finish()));
         }
 
-        // Tonemap → swapchain
+        // Tonemap -> swapchain
         {
             let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Tonemap Enc") });
             { let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {

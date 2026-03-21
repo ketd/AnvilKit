@@ -45,7 +45,7 @@
 use bevy_ecs::prelude::*;
 use anvilkit_core::time::Time;
 use crate::component::{Name, Visibility, Layer};
-use crate::transform::Transform;
+use crate::transform::{Transform, Parent};
 
 /// 系统工具集合
 /// 
@@ -111,6 +111,7 @@ impl SystemUtils {
     /// let mut app = App::new();
     /// // 注意：这需要一个定时器资源来实现
     /// ```
+    #[deprecated(since = "0.2.0", note = "不提供定时功能，请使用 Time resource + Local<Timer> 实现")]
     pub fn timed_system<M, S>(
         _interval: f32,
         system: S,
@@ -118,7 +119,6 @@ impl SystemUtils {
     where
         S: IntoSystemConfigs<M>,
     {
-        // 这里需要实现定时逻辑，暂时返回原系统
         system
     }
 }
@@ -145,7 +145,7 @@ impl DebugSystems {
     pub fn entity_count_system(query: Query<Entity>) {
         let count = query.iter().count();
         if count > 0 {
-            println!("当前实体数量: {}", count);
+            log::debug!("当前实体数量: {}", count);
         }
     }
 
@@ -164,7 +164,7 @@ impl DebugSystems {
     /// ```
     pub fn named_entities_system(query: Query<(Entity, &Name)>) {
         for (entity, name) in &query {
-            println!("实体 {:?}: {}", entity, name.as_str());
+            log::debug!("实体 {:?}: {}", entity, name.as_str());
         }
     }
 
@@ -183,7 +183,7 @@ impl DebugSystems {
     /// ```
     pub fn transform_debug_system(query: Query<(Entity, &Transform), With<Name>>) {
         for (entity, transform) in &query {
-            println!(
+            log::debug!(
                 "实体 {:?} 位置: ({:.2}, {:.2}, {:.2})",
                 entity,
                 transform.translation.x,
@@ -207,12 +207,17 @@ impl DebugSystems {
     /// app.add_systems(AnvilKitSchedule::Update, DebugSystems::performance_monitor_system);
     /// ```
     pub fn performance_monitor_system(time: Res<Time>) {
+        let dt = time.delta_seconds();
+        if dt <= 0.0 {
+            return; // 首帧 delta 为零，跳过避免除零
+        }
         // 每秒报告一次性能信息
-        if time.elapsed_seconds() as u32 % 1 == 0 {
-            println!(
+        let elapsed = time.elapsed_seconds();
+        if elapsed > 0.0 && (elapsed % 1.0) < dt {
+            log::info!(
                 "FPS: {:.1}, 帧时间: {:.3}ms",
-                1.0 / time.delta_seconds(),
-                time.delta_seconds() * 1000.0
+                1.0 / dt,
+                dt * 1000.0
             );
         }
     }
@@ -258,14 +263,27 @@ impl UtilitySystems {
     /// }
     /// ```
     pub fn visibility_filter_system(
-        mut query: Query<&mut Visibility, (With<Transform>, Changed<Visibility>)>,
+        mut query: Query<(Entity, &mut Visibility, Option<&Parent>), (With<Transform>, Changed<Visibility>)>,
     ) {
-        for mut visibility in &mut query {
-            // 这里可以添加可见性计算逻辑
-            // 例如基于距离、视锥体等的可见性判断
-            if visibility.is_inherited() {
-                // 处理继承的可见性
-                *visibility = Visibility::Visible; // 简化处理
+        // Collect inherited entities first to avoid borrow conflicts
+        let to_resolve: Vec<(Entity, Option<Entity>)> = query.iter()
+            .filter(|(_, vis, _)| vis.is_inherited())
+            .map(|(e, _, parent)| (e, parent.map(|p| p.get())))
+            .collect();
+
+        for (entity, parent_entity) in to_resolve {
+            // Look up parent's visibility from the same query (if parent also has Transform)
+            let parent_visible = parent_entity
+                .and_then(|pe| query.get(pe).ok())
+                .map(|(_, vis, _)| vis.is_visible())
+                .unwrap_or(true);
+
+            if let Ok((_, mut vis, _)) = query.get_mut(entity) {
+                *vis = if parent_visible {
+                    Visibility::Visible
+                } else {
+                    Visibility::Hidden
+                };
             }
         }
     }
@@ -286,11 +304,11 @@ impl UtilitySystems {
     pub fn layer_sorting_system(query: Query<(Entity, &Layer), Changed<Layer>>) {
         let mut entities: Vec<_> = query.iter().collect();
         entities.sort_by_key(|(_, layer)| layer.value());
-        
+
         // 这里可以添加基于排序结果的处理逻辑
         for (entity, layer) in entities {
             // 处理排序后的实体
-            println!("实体 {:?} 在层级 {}", entity, layer.value());
+            log::debug!("实体 {:?} 在层级 {}", entity, layer.value());
         }
     }
 
@@ -347,16 +365,17 @@ impl SystemCombinator {
     ///     system_c.after(system_b),
     /// ));
     /// ```
+    #[deprecated(since = "0.2.0", note = "不提供链式调度功能，请直接使用 bevy_ecs 的 .before()/.after() 排序")]
     pub fn chain<M>(systems: impl IntoSystemConfigs<M>) -> impl IntoSystemConfigs<M> {
         systems
     }
 
     /// 创建并行系统组
-    /// 
+    ///
     /// 将多个系统组合为可并行执行的组。
-    /// 
+    ///
     /// # 示例
-    /// 
+    ///
     /// ```rust
     /// use anvilkit_ecs::prelude::*;
     /// use anvilkit_ecs::schedule::AnvilKitSchedule;
@@ -372,6 +391,7 @@ impl SystemCombinator {
     ///     input_system,
     /// ));
     /// ```
+    #[deprecated(since = "0.2.0", note = "不提供并行调度功能，bevy_ecs 系统默认并行执行")]
     pub fn parallel<M>(systems: impl IntoSystemConfigs<M>) -> impl IntoSystemConfigs<M> {
         systems
     }
