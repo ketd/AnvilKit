@@ -44,9 +44,13 @@ pub struct PipelineHandle(pub u64);
 
 /// GPU 端网格数据
 pub struct GpuMesh {
+    /// GPU vertex buffer containing mesh vertex data.
     pub vertex_buffer: Buffer,
+    /// GPU index buffer containing triangle indices.
     pub index_buffer: Buffer,
+    /// Number of indices in the index buffer.
     pub index_count: u32,
+    /// Index element format (Uint16 or Uint32).
     pub index_format: IndexFormat,
 }
 
@@ -54,7 +58,9 @@ pub struct GpuMesh {
 ///
 /// 材质通过 [`PipelineHandle`] 引用共享管线，而非直接持有 `RenderPipeline`。
 pub struct GpuMaterial {
+    /// Handle to the shared render pipeline used by this material.
     pub pipeline_handle: PipelineHandle,
+    /// Material-specific bind group (textures, uniforms).
     pub bind_group: BindGroup,
 }
 

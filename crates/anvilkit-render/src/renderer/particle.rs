@@ -27,15 +27,22 @@ use wgpu::util::DeviceExt;
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Particle {
+    /// World-space position of the particle.
     pub position: Vec3,
+    /// Current velocity vector.
     pub velocity: Vec3,
+    /// Particle color [R, G, B, A].
     pub color: [f32; 4],
+    /// Visual size of the particle in world units.
     pub size: f32,
+    /// Elapsed time since the particle was spawned (seconds).
     pub age: f32,
+    /// Total lifespan of the particle (seconds).
     pub lifetime: f32,
 }
 
 impl Particle {
+    /// Creates a new particle with the given position, velocity, and lifetime.
     pub fn new(position: Vec3, velocity: Vec3, lifetime: f32) -> Self {
         Self {
             position,
@@ -80,11 +87,22 @@ pub enum EmitShape {
     /// 从一个点发射
     Point,
     /// 从球体表面发射
-    Sphere { radius: f32 },
+    Sphere {
+        /// Sphere radius in world units.
+        radius: f32,
+    },
     /// 从圆锥体发射（角度弧度）
-    Cone { angle: f32, radius: f32 },
+    Cone {
+        /// Half-angle of the cone in radians.
+        angle: f32,
+        /// Base radius of the cone.
+        radius: f32,
+    },
     /// 从长方体区域发射
-    Box { half_extents: Vec3 },
+    Box {
+        /// Half-size of the box along each axis.
+        half_extents: Vec3,
+    },
 }
 
 impl Default for EmitShape {
@@ -177,6 +195,7 @@ pub struct ParticleSystem {
 }
 
 impl ParticleSystem {
+    /// Creates a new particle system with the given maximum capacity.
     pub fn new(capacity: usize) -> Self {
         Self {
             particles: Vec::with_capacity(capacity),
@@ -230,18 +249,22 @@ impl ParticleSystem {
 //  ParticleRenderer — GPU pipeline for particle point-sprite rendering
 // ---------------------------------------------------------------------------
 
-const PARTICLE_SHADER: &str = include_str!("../../../../shaders/particle.wgsl");
+const PARTICLE_SHADER: &str = include_str!("../shaders/particle.wgsl");
 
 /// 粒子 GPU 顶点 (32 bytes)
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct ParticleVertex {
+    /// World-space position (x, y, z).
     pub position: [f32; 3],
+    /// Vertex color [R, G, B, A].
     pub color: [f32; 4],
+    /// Billboard size in world units.
     pub size: f32,
 }
 
 impl ParticleVertex {
+    /// Returns the GPU vertex buffer layout for particle instances.
     pub fn layout() -> wgpu::VertexBufferLayout<'static> {
         const ATTRIBUTES: &[wgpu::VertexAttribute] = &[
             wgpu::VertexAttribute {
@@ -273,19 +296,24 @@ impl ParticleVertex {
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct ParticleSceneUniform {
+    /// Combined view-projection matrix for the particle camera.
     pub view_proj: [[f32; 4]; 4],
 }
 
 /// GPU 粒子渲染器
 pub struct ParticleRenderer {
+    /// The wgpu render pipeline for particle point-sprites.
     pub pipeline: wgpu::RenderPipeline,
+    /// Uniform buffer holding the scene view-projection matrix.
     pub scene_buffer: wgpu::Buffer,
+    /// Bind group for the scene uniform buffer.
     pub scene_bind_group: wgpu::BindGroup,
-    /// Cached instance buffer for per-frame reuse
+    /// Cached instance buffer for per-frame reuse.
     cached_instance_buf: Option<(wgpu::Buffer, u64)>,
 }
 
 impl ParticleRenderer {
+    /// Creates the particle render pipeline, uniform buffer, and bind group.
     pub fn new(device: &super::RenderDevice, format: wgpu::TextureFormat) -> Self {
         let shader = device.device().create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Particle Shader"),

@@ -16,9 +16,13 @@ use bevy_ecs::prelude::*;
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GpuLight {
+    /// xyz = world position, w = light type (0=directional, 1=point, 2=spot).
     pub position_type: [f32; 4],
+    /// xyz = light direction, w = attenuation range.
     pub direction_range: [f32; 4],
+    /// rgb = linear color, w = intensity.
     pub color_intensity: [f32; 4],
+    /// x = inner cone cosine, y = outer cone cosine, zw = reserved.
     pub params: [f32; 4],
 }
 
@@ -43,19 +47,26 @@ pub const MAX_LIGHTS: usize = 8;
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PbrSceneUniform {
-    pub model: [[f32; 4]; 4],           // 64 bytes
-    pub view_proj: [[f32; 4]; 4],       // 64 bytes
-    pub normal_matrix: [[f32; 4]; 4],   // 64 bytes
-    pub camera_pos: [f32; 4],           // 16 bytes
-    pub light_dir: [f32; 4],            // 16 bytes (legacy / lights[0] shortcut)
-    pub light_color: [f32; 4],          // 16 bytes (legacy / lights[0] shortcut)
-    pub material_params: [f32; 4],      // 16 bytes (metallic, roughness, normal_scale, light_count)
-    // Multi-light array
-    pub lights: [GpuLight; MAX_LIGHTS], // 512 bytes (8 * 64)
-    // Shadow mapping
-    pub shadow_view_proj: [[f32; 4]; 4], // 64 bytes
-    // Emissive
-    pub emissive_factor: [f32; 4],       // 16 bytes (rgb + 0)
+    /// Object-to-world model transform (64 bytes).
+    pub model: [[f32; 4]; 4],
+    /// Combined view-projection matrix (64 bytes).
+    pub view_proj: [[f32; 4]; 4],
+    /// Inverse-transpose of the model matrix for normal transforms (64 bytes).
+    pub normal_matrix: [[f32; 4]; 4],
+    /// Camera world-space position, w unused (16 bytes).
+    pub camera_pos: [f32; 4],
+    /// Legacy primary light direction, xyz = direction, w unused (16 bytes).
+    pub light_dir: [f32; 4],
+    /// Legacy primary light color, rgb = color, w = intensity (16 bytes).
+    pub light_color: [f32; 4],
+    /// Material parameters: [metallic, roughness, normal_scale, light_count] (16 bytes).
+    pub material_params: [f32; 4],
+    /// Multi-light array, up to `MAX_LIGHTS` entries (512 bytes).
+    pub lights: [GpuLight; MAX_LIGHTS],
+    /// Light-space view-projection for shadow mapping (64 bytes).
+    pub shadow_view_proj: [[f32; 4]; 4],
+    /// Emissive factor rgb, w unused (16 bytes).
+    pub emissive_factor: [f32; 4],
 }
 
 impl Default for PbrSceneUniform {
@@ -81,24 +92,35 @@ impl Default for PbrSceneUniform {
 /// RenderApp 在 GPU 初始化后将其插入 World。
 #[derive(Resource)]
 pub struct RenderState {
+    /// Swapchain surface texture format.
     pub surface_format: wgpu::TextureFormat,
+    /// Current surface dimensions (width, height) in pixels.
     pub surface_size: (u32, u32),
+    /// GPU buffer holding the PBR scene uniform data.
     pub scene_uniform_buffer: wgpu::Buffer,
+    /// Bind group exposing the scene uniform buffer to shaders.
     pub scene_bind_group: wgpu::BindGroup,
+    /// Layout for the scene uniform bind group.
     pub scene_bind_group_layout: wgpu::BindGroupLayout,
+    /// Depth buffer texture view for the main pass.
     pub depth_texture_view: wgpu::TextureView,
-    // HDR multi-pass rendering
+    /// HDR off-screen render target texture view.
     pub hdr_texture_view: wgpu::TextureView,
+    /// Tone-mapping post-process render pipeline.
     pub tonemap_pipeline: wgpu::RenderPipeline,
+    /// Bind group for the tone-mapping pass inputs.
     pub tonemap_bind_group: wgpu::BindGroup,
+    /// Layout for the tone-mapping bind group.
     pub tonemap_bind_group_layout: wgpu::BindGroupLayout,
-    // IBL + Shadow (group 2)
+    /// Bind group for IBL environment and shadow map sampling (group 2).
     pub ibl_shadow_bind_group: wgpu::BindGroup,
+    /// Layout for the IBL and shadow bind group.
     pub ibl_shadow_bind_group_layout: wgpu::BindGroupLayout,
-    // Shadow pass
+    /// Shadow-only depth render pipeline.
     pub shadow_pipeline: wgpu::RenderPipeline,
+    /// Shadow map depth texture view.
     pub shadow_map_view: wgpu::TextureView,
-    // MSAA
+    /// MSAA multi-sampled HDR color attachment texture view.
     pub hdr_msaa_texture_view: wgpu::TextureView,
 }
 

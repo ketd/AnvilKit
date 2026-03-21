@@ -172,10 +172,10 @@ impl DayNightCycle {
             [0.25, 0.47, 0.85]
         } else if sun_h > -0.05 {
             let t = (sun_h + 0.05) / 0.20;
-            lerp3([0.15, 0.15, 0.35], [0.25, 0.47, 0.85], t)
+            glam::Vec3::new(0.15, 0.15, 0.35).lerp(glam::Vec3::new(0.25, 0.47, 0.85), t).to_array()
         } else {
             let t = ((-sun_h - 0.05) / 0.3).min(1.0);
-            lerp3([0.15, 0.15, 0.35], [0.02, 0.02, 0.08], t)
+            glam::Vec3::new(0.15, 0.15, 0.35).lerp(glam::Vec3::new(0.02, 0.02, 0.08), t).to_array()
         }
     }
 
@@ -186,10 +186,10 @@ impl DayNightCycle {
             [0.55, 0.73, 0.94]
         } else if sun_h > -0.05 {
             let t = (sun_h + 0.05) / 0.20;
-            lerp3([0.90, 0.50, 0.25], [0.55, 0.73, 0.94], t)
+            glam::Vec3::new(0.90, 0.50, 0.25).lerp(glam::Vec3::new(0.55, 0.73, 0.94), t).to_array()
         } else {
             let t = ((-sun_h - 0.05) / 0.3).min(1.0);
-            lerp3([0.90, 0.50, 0.25], [0.05, 0.05, 0.12], t)
+            glam::Vec3::new(0.90, 0.50, 0.25).lerp(glam::Vec3::new(0.05, 0.05, 0.12), t).to_array()
         }
     }
 
@@ -198,14 +198,6 @@ impl DayNightCycle {
         let fc = self.fog_color();
         [fc[0] * 0.7, fc[1] * 0.7, fc[2] * 0.7]
     }
-}
-
-fn lerp3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
-    [
-        a[0] * (1.0 - t) + b[0] * t,
-        a[1] * (1.0 - t) + b[1] * t,
-        a[2] * (1.0 - t) + b[2] * t,
-    ]
 }
 
 /// World seed resource — single source of truth for all generation.

@@ -91,10 +91,16 @@ impl App {
     /// ```
     pub fn new() -> Self {
         let mut world = World::new();
-        
+
         // 初始化基础调度器
         world.init_resource::<Schedules>();
-        
+
+        // Pre-register all engine schedules so try_run_schedule doesn't fail
+        world.add_schedule(Schedule::new(AnvilKitSchedule::Startup));
+        world.add_schedule(Schedule::new(AnvilKitSchedule::PreUpdate));
+        world.add_schedule(Schedule::new(AnvilKitSchedule::Update));
+        world.add_schedule(Schedule::new(AnvilKitSchedule::PostUpdate));
+
         Self {
             world,
             should_exit: false,

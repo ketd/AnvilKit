@@ -10,7 +10,8 @@ documentation.workspace = true
 keywords.workspace = true
 categories.workspace = true
 rust-version.workspace = true
-description = "AnvilKit 游戏引擎的核心类型、数学库和时间系统"
+description = "Core types, math library, and time system for AnvilKit game engine"
+readme = "../../README.md"
 
 [dependencies]
 glam = { workspace = true }

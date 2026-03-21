@@ -27,6 +27,7 @@ pub enum BlockType {
     RedFlower = 19,
     Purple = 20,
     Sun = 21,
+    Water = 22,
 }
 
 impl BlockType {
@@ -53,6 +54,7 @@ impl BlockType {
             19 => Self::RedFlower,
             20 => Self::Purple,
             21 => Self::Sun,
+            22 => Self::Water,
             _ => Self::Air,
         }
     }
@@ -67,6 +69,7 @@ impl BlockType {
                 | Self::YellowFlower
                 | Self::RedFlower
                 | Self::Cloud
+                | Self::Water
         )
     }
 
@@ -74,10 +77,14 @@ impl BlockType {
         matches!(self, Self::TallGrass | Self::YellowFlower | Self::RedFlower)
     }
 
+    pub fn is_water(self) -> bool {
+        matches!(self, Self::Water)
+    }
+
     pub fn is_obstacle(self) -> bool {
         !matches!(
             self,
-            Self::Air | Self::TallGrass | Self::YellowFlower | Self::RedFlower | Self::Cloud
+            Self::Air | Self::TallGrass | Self::YellowFlower | Self::RedFlower | Self::Cloud | Self::Water
         )
     }
 
@@ -116,6 +123,7 @@ impl BlockType {
             Self::RedFlower    => [194; 6],
             Self::Purple       => [195; 6],
             Self::Sun          => [196; 6],
+            Self::Water        => [205; 6],
             Self::Air => [0; 6],
         };
         let idx = match face {
@@ -171,7 +179,7 @@ mod tests {
 
     #[test]
     fn block_type_roundtrip() {
-        for i in 0..=21u8 {
+        for i in 0..=22u8 {
             let b = BlockType::from_u8(i);
             assert_eq!(b as u8, i);
         }

@@ -85,13 +85,18 @@ pub fn player_physics_system(
     for (mut transform, _cam) in query.iter_mut() {
         let pos = transform.translation;
 
-        // Safety: push out if embedded in a block
+        // Safety: push out if embedded in a block (iterative, up to 5 blocks)
         if collides_aabb(&world, pos) {
             log::warn!(
                 "Player embedded at ({:.2}, {:.2}, {:.2})! Pushing up.",
                 pos.x, pos.y, pos.z
             );
-            transform.translation.y += 1.0;
+            for _ in 0..5 {
+                transform.translation.y += 1.0;
+                if !collides_aabb(&world, transform.translation) {
+                    break;
+                }
+            }
             player.velocity.y = 0.0;
             player.on_ground = false;
             continue;

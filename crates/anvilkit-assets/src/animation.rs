@@ -54,10 +54,12 @@ pub struct Joint {
 /// ```
 #[derive(Debug, Clone)]
 pub struct Skeleton {
+    /// Ordered list of joints forming the skeleton hierarchy.
     pub joints: Vec<Joint>,
 }
 
 impl Skeleton {
+    /// Returns the number of joints in the skeleton.
     pub fn joint_count(&self) -> usize {
         self.joints.len()
     }
@@ -92,6 +94,7 @@ pub struct SkinData {
 }
 
 impl SkinData {
+    /// Returns the number of vertices that have skin data.
     pub fn vertex_count(&self) -> usize {
         self.joint_indices.len()
     }
@@ -111,8 +114,11 @@ pub enum Interpolation {
 /// 动画通道目标属性
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnimationProperty {
+    /// Translation (position) property.
     Translation,
+    /// Rotation (orientation) property.
     Rotation,
+    /// Scale property.
     Scale,
 }
 
@@ -273,6 +279,7 @@ pub struct AnimationPlayer {
 }
 
 impl AnimationPlayer {
+    /// Creates a new animation player for the given clip, initially stopped.
     pub fn new(clip: AnimationClip) -> Self {
         Self {
             clip,

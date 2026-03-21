@@ -28,8 +28,11 @@ use bevy_ecs::prelude::*;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaybackState {
+    /// Audio is stopped (not playing).
     Stopped,
+    /// Audio is currently playing.
     Playing,
+    /// Audio is paused and can be resumed.
     Paused,
 }
 
@@ -66,6 +69,7 @@ pub struct AudioSource {
 }
 
 impl AudioSource {
+    /// Creates a new audio source with the given file path and default settings.
     pub fn new(path: &str) -> Self {
         Self {
             path: path.to_string(),

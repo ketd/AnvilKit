@@ -5,7 +5,12 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "AnvilKit 输入系统 - 键盘/鼠标/手柄抽象和 action mapping"
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Keyboard, mouse, and gamepad input abstraction for AnvilKit game engine"
+readme = "../../README.md"
 
 [dependencies]
 bevy_ecs = { workspace = true }

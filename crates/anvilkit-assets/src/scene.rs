@@ -60,6 +60,7 @@ pub struct Submesh {
 /// ```
 #[derive(Debug, Clone)]
 pub struct MultiMeshScene {
+    /// List of submeshes composing the scene.
     pub submeshes: Vec<Submesh>,
 }
 

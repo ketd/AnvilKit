@@ -21,17 +21,137 @@ use glam::Vec2;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyCode {
     // Letters
-    A, B, C, D, E, F, G, H, I, J, K, L, M,
-    N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+    /// The A key.
+    A,
+    /// The B key.
+    B,
+    /// The C key.
+    C,
+    /// The D key.
+    D,
+    /// The E key.
+    E,
+    /// The F key.
+    F,
+    /// The G key.
+    G,
+    /// The H key.
+    H,
+    /// The I key.
+    I,
+    /// The J key.
+    J,
+    /// The K key.
+    K,
+    /// The L key.
+    L,
+    /// The M key.
+    M,
+    /// The N key.
+    N,
+    /// The O key.
+    O,
+    /// The P key.
+    P,
+    /// The Q key.
+    Q,
+    /// The R key.
+    R,
+    /// The S key.
+    S,
+    /// The T key.
+    T,
+    /// The U key.
+    U,
+    /// The V key.
+    V,
+    /// The W key.
+    W,
+    /// The X key.
+    X,
+    /// The Y key.
+    Y,
+    /// The Z key.
+    Z,
     // Numbers
-    Key0, Key1, Key2, Key3, Key4,
-    Key5, Key6, Key7, Key8, Key9,
+    /// The 0 key.
+    Key0,
+    /// The 1 key.
+    Key1,
+    /// The 2 key.
+    Key2,
+    /// The 3 key.
+    Key3,
+    /// The 4 key.
+    Key4,
+    /// The 5 key.
+    Key5,
+    /// The 6 key.
+    Key6,
+    /// The 7 key.
+    Key7,
+    /// The 8 key.
+    Key8,
+    /// The 9 key.
+    Key9,
     // Function keys
-    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+    /// The F1 key.
+    F1,
+    /// The F2 key.
+    F2,
+    /// The F3 key.
+    F3,
+    /// The F4 key.
+    F4,
+    /// The F5 key.
+    F5,
+    /// The F6 key.
+    F6,
+    /// The F7 key.
+    F7,
+    /// The F8 key.
+    F8,
+    /// The F9 key.
+    F9,
+    /// The F10 key.
+    F10,
+    /// The F11 key.
+    F11,
+    /// The F12 key.
+    F12,
     // Special keys
-    Space, Enter, Escape, Tab, Backspace, Delete,
-    Left, Right, Up, Down,
-    LShift, RShift, LControl, RControl, LAlt, RAlt,
+    /// The Space key.
+    Space,
+    /// The Enter key.
+    Enter,
+    /// The Escape key.
+    Escape,
+    /// The Tab key.
+    Tab,
+    /// The Backspace key.
+    Backspace,
+    /// The Delete key.
+    Delete,
+    /// The Left arrow key.
+    Left,
+    /// The Right arrow key.
+    Right,
+    /// The Up arrow key.
+    Up,
+    /// The Down arrow key.
+    Down,
+    /// The left Shift key.
+    LShift,
+    /// The right Shift key.
+    RShift,
+    /// The left Control key.
+    LControl,
+    /// The right Control key.
+    RControl,
+    /// The left Alt key.
+    LAlt,
+    /// The right Alt key.
+    RAlt,
 }
 
 impl KeyCode {
@@ -87,8 +207,11 @@ impl KeyCode {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MouseButton {
+    /// Left mouse button.
     Left,
+    /// Right mouse button.
     Right,
+    /// Middle mouse button.
     Middle,
 }
 

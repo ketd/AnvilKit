@@ -28,7 +28,7 @@ use crate::renderer::buffer::{ColorVertex, Vertex, create_uniform_buffer};
 use crate::renderer::pipeline::RenderPipelineBuilder;
 
 /// Line shader source
-const LINE_SHADER: &str = include_str!("../../../../shaders/line.wgsl");
+const LINE_SHADER: &str = include_str!("../shaders/line.wgsl");
 
 /// 线段渲染器
 ///

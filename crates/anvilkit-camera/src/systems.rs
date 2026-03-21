@@ -12,7 +12,9 @@ use crate::effects::CameraEffects;
 /// Games should populate this each frame from raw device events.
 #[derive(Debug, Default, Resource)]
 pub struct MouseDelta {
+    /// Horizontal mouse movement in pixels since last frame.
     pub dx: f32,
+    /// Vertical mouse movement in pixels since last frame.
     pub dy: f32,
 }
 

@@ -5,10 +5,15 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "AnvilKit 音频系统 - 基于 rodio 的跨平台音频播放"
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Cross-platform audio playback built on rodio for AnvilKit game engine"
+readme = "../../README.md"
 
 [dependencies]
-anvilkit-ecs = { path = "../anvilkit-ecs" }
+anvilkit-ecs = { version = "0.1.0", path = "../anvilkit-ecs" }
 bevy_ecs = { workspace = true }
 rodio = { version = "0.19", default-features = false, features = ["wav", "vorbis", "mp3"] }
 log = "0.4"

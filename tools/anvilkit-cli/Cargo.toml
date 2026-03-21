@@ -3,6 +3,7 @@ name = "anvilkit-cli"
 version = "0.1.0"
 edition = "2021"
 description = "AnvilKit game engine CLI tool"
+publish = false
 
 [[bin]]
 name = "anvil"

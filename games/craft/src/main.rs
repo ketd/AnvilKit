@@ -1,15 +1,12 @@
-use std::collections::{HashMap, HashSet};
-use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
 
 use anvilkit_render::prelude::*;
 use anvilkit_render::renderer::{
     buffer::{
-        create_vertex_buffer, create_index_buffer_u32,
         create_depth_texture, create_hdr_render_target, create_sampler,
     },
-    draw::ActiveCamera,
+    draw::{ActiveCamera, Frustum},
     line::LineRenderer,
     text::TextRenderer,
     raycast::screen_to_ray,
@@ -21,9 +18,9 @@ use anvilkit_camera::prelude::*;
 use anvilkit_camera::systems::MouseDelta;
 
 use craft::block::BlockType;
-use craft::chunk::{ChunkData, CHUNK_SIZE};
+use craft::chunk::CHUNK_SIZE;
+use craft::chunk_manager::{ChunkManager, ChunkGenResult};
 use craft::world_gen::WorldGenerator;
-use craft::mesh::{self, ChunkMesh, ChunkNeighbors};
 use craft::raycast::{self, VoxelHit};
 use craft::render::setup::{self, VoxelGpu, VoxelSceneUniform, SkyUniform};
 use craft::render::filters::{ActiveFilter, FilterUniform};
@@ -31,27 +28,8 @@ use craft::components::*;
 use craft::resources::*;
 use craft::systems::input as input_sys;
 use craft::systems::physics as physics_sys;
+use craft::config;
 use craft::persistence;
-
-/// Per-chunk GPU buffers (not managed by RenderAssets since we do custom draw).
-struct ChunkGpuMesh {
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    index_count: u32,
-    water_vertex_buffer: Option<wgpu::Buffer>,
-    water_index_buffer: Option<wgpu::Buffer>,
-    water_index_count: u32,
-    /// Chunk center for frustum culling (world space).
-    center: glam::Vec3,
-}
-
-/// Result of async chunk generation: chunk data + mesh, ready for GPU upload.
-struct ChunkGenResult {
-    cx: i32,
-    cz: i32,
-    chunk_data: ChunkData,
-    mesh: ChunkMesh,
-}
 
 /// Block types selectable with number keys 1-9.
 const BLOCK_PALETTE: [BlockType; 9] = [
@@ -91,9 +69,12 @@ fn main() {
     app.insert_resource(DayNightCycle::default());
     app.insert_resource(ActiveFilter::default());
 
-    app.add_systems(AnvilKitSchedule::Update, camera_controller_system);
-    app.add_systems(AnvilKitSchedule::Update, input_sys::player_movement_system);
-    app.add_systems(AnvilKitSchedule::Update, physics_sys::player_physics_system);
+    // Explicit ordering: Input → Physics → Camera
+    app.add_systems(AnvilKitSchedule::Update, (
+        input_sys::player_movement_system,
+        physics_sys::player_physics_system.after(input_sys::player_movement_system),
+        camera_controller_system.after(physics_sys::player_physics_system),
+    ));
 
     // FPS Camera — spawn at a reasonable height above terrain
     let spawn_pos = glam::Vec3::new(
@@ -104,9 +85,9 @@ fn main() {
     app.world.spawn((
         FpsCamera,
         CameraComponent {
-            fov: 70.0,
-            near: 0.1,
-            far: 500.0,
+            fov: config::FOV,
+            near: config::NEAR_PLANE,
+            far: config::FAR_PLANE,
             is_active: true,
             aspect_ratio: 1280.0 / 720.0,
         },
@@ -127,27 +108,29 @@ fn main() {
 
     let seed = app.world.resource::<WorldSeed>().0;
 
-    // Async chunk generation channels
-    let (request_tx, request_rx) = mpsc::channel::<(i32, i32)>();
-    let (result_tx, result_rx) = mpsc::channel::<ChunkGenResult>();
+    // Async chunk generation channels (crossbeam for multi-consumer request channel)
+    let (request_tx, request_rx) = crossbeam_channel::unbounded::<(i32, i32)>();
+    let (result_tx, result_rx) = crossbeam_channel::unbounded::<ChunkGenResult>();
 
-    // Spawn worker thread for chunk generation
-    thread::spawn(move || {
-        let gen = WorldGenerator::new(seed);
-        while let Ok((cx, cz)) = request_rx.recv() {
-            let chunk_data = gen.generate_chunk(cx, cz);
-            let ox = (cx * CHUNK_SIZE as i32) as f32;
-            let oz = (cz * CHUNK_SIZE as i32) as f32;
-            // Mesh without neighbors for now (neighbors added on main thread remesh)
-            let mesh_result = mesh::mesh_chunk(&chunk_data, &[None; 4], ox, oz);
-            let _ = result_tx.send(ChunkGenResult {
-                cx,
-                cz,
-                chunk_data,
-                mesh: mesh_result,
-            });
-        }
-    });
+    // Spawn worker thread pool for chunk generation
+    let num_workers = thread::available_parallelism()
+        .map(|n| n.get().saturating_sub(1).clamp(1, 8))
+        .unwrap_or(2);
+    for _ in 0..num_workers {
+        let rx = request_rx.clone();
+        let tx = result_tx.clone();
+        let worker_seed = seed;
+        thread::spawn(move || {
+            let gen = WorldGenerator::new(worker_seed);
+            while let Ok((cx, cz)) = rx.recv() {
+                let chunk_data = gen.generate_chunk(cx, cz);
+                let _ = tx.send(ChunkGenResult { cx, cz, chunk_data });
+            }
+        });
+    }
+    // Drop the extra sender/receiver clones so channels close when all workers exit
+    drop(request_rx);
+    drop(result_tx);
 
     let event_loop = EventLoop::new().unwrap();
     let wconfig = WindowConfig::new().with_title("Craft").with_size(1280, 720);
@@ -157,18 +140,12 @@ fn main() {
             app,
             initialized: false,
             voxel_gpu: None,
-            chunk_meshes: HashMap::new(),
             world_gen: WorldGenerator::new(seed),
-            load_radius: 7,
-            last_chunk_pos: (i32::MAX, i32::MAX),
+            chunks: ChunkManager::new(request_tx, result_rx),
             line_renderer: None,
             text_renderer: None,
-            dirty_chunks: HashSet::new(),
             current_hit: None,
             frame_count: 0,
-            chunk_request_tx: request_tx,
-            chunk_result_rx: result_rx,
-            pending_chunks: HashSet::new(),
             last_frame_time: Instant::now(),
         })
         .unwrap();
@@ -179,139 +156,19 @@ struct CraftApp {
     app: App,
     initialized: bool,
     voxel_gpu: Option<VoxelGpu>,
-    chunk_meshes: HashMap<(i32, i32), ChunkGpuMesh>,
     world_gen: WorldGenerator,
-    load_radius: i32,
-    last_chunk_pos: (i32, i32),
+    chunks: ChunkManager,
     // HUD renderers
     line_renderer: Option<LineRenderer>,
     text_renderer: Option<TextRenderer>,
-    // Dirty chunks needing remesh
-    dirty_chunks: HashSet<(i32, i32)>,
     // Current raycast hit (updated each frame)
     current_hit: Option<VoxelHit>,
     // Debug frame counter
     frame_count: u64,
-    // Async chunk generation
-    chunk_request_tx: mpsc::Sender<(i32, i32)>,
-    chunk_result_rx: mpsc::Receiver<ChunkGenResult>,
-    pending_chunks: HashSet<(i32, i32)>,
     // Frame timing for DeltaTime
     last_frame_time: Instant,
 }
 
-/// Mark a block's chunk and its boundary neighbors as dirty for remeshing.
-fn mark_dirty_with_neighbors(dirty: &mut HashSet<(i32, i32)>, bx: i32, bz: i32) {
-    let chunk_cx = bx.div_euclid(CHUNK_SIZE as i32);
-    let chunk_cz = bz.div_euclid(CHUNK_SIZE as i32);
-    dirty.insert((chunk_cx, chunk_cz));
-    let lx = bx.rem_euclid(CHUNK_SIZE as i32);
-    let lz = bz.rem_euclid(CHUNK_SIZE as i32);
-    if lx == 0 { dirty.insert((chunk_cx - 1, chunk_cz)); }
-    if lx == CHUNK_SIZE as i32 - 1 { dirty.insert((chunk_cx + 1, chunk_cz)); }
-    if lz == 0 { dirty.insert((chunk_cx, chunk_cz - 1)); }
-    if lz == CHUNK_SIZE as i32 - 1 { dirty.insert((chunk_cx, chunk_cz + 1)); }
-}
-
-fn generate_chunks(
-    world: &mut VoxelWorld,
-    world_gen: &WorldGenerator,
-    center_cx: i32,
-    center_cz: i32,
-    radius: i32,
-) {
-    for cx in (center_cx - radius)..=(center_cx + radius) {
-        for cz in (center_cz - radius)..=(center_cz + radius) {
-            if !world.chunks.contains_key(&(cx, cz)) {
-                let chunk = world_gen.generate_chunk(cx, cz);
-                world.chunks.insert((cx, cz), chunk);
-            }
-        }
-    }
-}
-
-fn upload_new_chunks(
-    world: &VoxelWorld,
-    chunk_meshes: &mut HashMap<(i32, i32), ChunkGpuMesh>,
-    device: &RenderDevice,
-) {
-    let keys: Vec<(i32, i32)> = world
-        .chunks
-        .keys()
-        .copied()
-        .filter(|k| !chunk_meshes.contains_key(k))
-        .collect();
-
-    for (cx, cz) in keys {
-        mesh_and_upload_chunk(world, chunk_meshes, device, cx, cz);
-    }
-}
-
-fn mesh_and_upload_chunk(
-    world: &VoxelWorld,
-    chunk_meshes: &mut HashMap<(i32, i32), ChunkGpuMesh>,
-    device: &RenderDevice,
-    cx: i32,
-    cz: i32,
-) {
-    let Some(chunk) = world.chunks.get(&(cx, cz)) else { return };
-    let neighbors: ChunkNeighbors = [
-        world.chunks.get(&(cx + 1, cz)),
-        world.chunks.get(&(cx - 1, cz)),
-        world.chunks.get(&(cx, cz + 1)),
-        world.chunks.get(&(cx, cz - 1)),
-    ];
-    let ox = (cx * CHUNK_SIZE as i32) as f32;
-    let oz = (cz * CHUNK_SIZE as i32) as f32;
-    let cm = mesh::mesh_chunk(chunk, &neighbors, ox, oz);
-    upload_chunk_mesh(chunk_meshes, device, cx, cz, cm);
-}
-
-fn upload_chunk_mesh(
-    chunk_meshes: &mut HashMap<(i32, i32), ChunkGpuMesh>,
-    device: &RenderDevice,
-    cx: i32,
-    cz: i32,
-    cm: ChunkMesh,
-) {
-    if cm.indices.is_empty() && cm.water_indices.is_empty() {
-        chunk_meshes.remove(&(cx, cz));
-        return;
-    }
-
-    let ox = (cx * CHUNK_SIZE as i32) as f32;
-    let oz = (cz * CHUNK_SIZE as i32) as f32;
-
-    let vb = create_vertex_buffer(device, &format!("Chunk({},{}) VB", cx, cz), &cm.vertices);
-    let ib = create_index_buffer_u32(device, &format!("Chunk({},{}) IB", cx, cz), &cm.indices);
-
-    let (wvb, wib, wic) = if !cm.water_indices.is_empty() {
-        let wvb = create_vertex_buffer(device, &format!("Chunk({},{}) Water VB", cx, cz), &cm.water_vertices);
-        let wib = create_index_buffer_u32(device, &format!("Chunk({},{}) Water IB", cx, cz), &cm.water_indices);
-        (Some(wvb), Some(wib), cm.water_indices.len() as u32)
-    } else {
-        (None, None, 0)
-    };
-
-    let center = glam::Vec3::new(
-        ox + CHUNK_SIZE as f32 * 0.5,
-        128.0,
-        oz + CHUNK_SIZE as f32 * 0.5,
-    );
-
-    chunk_meshes.insert(
-        (cx, cz),
-        ChunkGpuMesh {
-            vertex_buffer: vb,
-            index_buffer: ib,
-            index_count: cm.indices.len() as u32,
-            water_vertex_buffer: wvb,
-            water_index_buffer: wib,
-            water_index_count: wic,
-            center,
-        },
-    );
-}
 
 impl CraftApp {
     fn init_scene(&mut self) {
@@ -336,7 +193,7 @@ impl CraftApp {
         // Generate chunks (doesn't need GPU) — fill any not loaded from save
         {
             let mut world = self.app.world.resource_mut::<VoxelWorld>();
-            generate_chunks(&mut world, &self.world_gen, 0, 0, self.load_radius);
+            ChunkManager::generate_initial_chunks(&mut world, &self.world_gen, 0, 0, self.chunks.load_radius);
         }
 
         // Now init GPU and upload
@@ -381,7 +238,7 @@ impl CraftApp {
         // Upload chunk meshes
         {
             let world = self.app.world.resource::<VoxelWorld>();
-            upload_new_chunks(&world, &mut self.chunk_meshes, device);
+            self.chunks.upload_all(&world, device);
         }
 
         // Init HUD renderers
@@ -400,12 +257,11 @@ impl CraftApp {
 
         println!(
             "Craft initialized: {} chunks loaded",
-            self.chunk_meshes.len()
+            self.chunks.chunk_meshes.len()
         );
     }
 
     fn update_chunks(&mut self) {
-        // Determine which chunk the camera is in
         let cam_pos = {
             let cam = self.app.world.get_resource::<ActiveCamera>();
             match cam {
@@ -413,91 +269,14 @@ impl CraftApp {
                 None => return,
             }
         };
-        let cx = (cam_pos.x / CHUNK_SIZE as f32).floor() as i32;
-        let cz = (cam_pos.z / CHUNK_SIZE as f32).floor() as i32;
-
-        let pos_changed = (cx, cz) != self.last_chunk_pos;
-        if pos_changed {
-            self.last_chunk_pos = (cx, cz);
-        }
-
-        // Send async requests for chunks not yet loaded or pending
-        if pos_changed {
-            let world = self.app.world.resource::<VoxelWorld>();
-            for dcx in -self.load_radius..=self.load_radius {
-                for dcz in -self.load_radius..=self.load_radius {
-                    let key = (cx + dcx, cz + dcz);
-                    if !world.chunks.contains_key(&key) && !self.pending_chunks.contains(&key) {
-                        let _ = self.chunk_request_tx.send(key);
-                        self.pending_chunks.insert(key);
-                    }
-                }
-            }
-        }
-
-        // Poll completed chunks (process up to 4 per frame to avoid GPU stalls)
-        let device = self.render_app.render_device();
-        if let Some(device) = device {
-            let mut received = 0;
-            while let Ok(result) = self.chunk_result_rx.try_recv() {
-                self.pending_chunks.remove(&(result.cx, result.cz));
-
-                // Store chunk data
-                {
-                    let mut world = self.app.world.resource_mut::<VoxelWorld>();
-                    world.chunks.insert((result.cx, result.cz), result.chunk_data);
-                }
-
-                // Upload mesh to GPU
-                upload_chunk_mesh(
-                    &mut self.chunk_meshes, device,
-                    result.cx, result.cz, result.mesh,
-                );
-
-                // Mark new chunk + four neighbors dirty for re-mesh with proper neighbor data
-                self.dirty_chunks.insert((result.cx, result.cz));
-                self.dirty_chunks.insert((result.cx + 1, result.cz));
-                self.dirty_chunks.insert((result.cx - 1, result.cz));
-                self.dirty_chunks.insert((result.cx, result.cz + 1));
-                self.dirty_chunks.insert((result.cx, result.cz - 1));
-
-                received += 1;
-                if received >= 4 {
-                    break;
-                }
-            }
-        }
-
-        // Unload far chunks
-        if pos_changed {
-            let r = self.load_radius + 2;
-            let far_keys: Vec<(i32, i32)> = self
-                .chunk_meshes
-                .keys()
-                .copied()
-                .filter(|&(kx, kz)| (kx - cx).abs() > r || (kz - cz).abs() > r)
-                .collect();
-            for key in &far_keys {
-                self.chunk_meshes.remove(key);
-                self.pending_chunks.remove(key);
-            }
-            let mut world = self.app.world.resource_mut::<VoxelWorld>();
-            for key in far_keys {
-                world.chunks.remove(&key);
-            }
-        }
+        let mut world = self.app.world.resource_mut::<VoxelWorld>();
+        self.chunks.update(&mut world, cam_pos);
     }
 
     fn remesh_dirty_chunks(&mut self) {
-        if self.dirty_chunks.is_empty() {
-            return;
-        }
         let Some(device) = self.render_app.render_device() else { return };
-        let dirty: Vec<(i32, i32)> = self.dirty_chunks.drain().collect();
         let world = self.app.world.resource::<VoxelWorld>();
-        for (cx, cz) in dirty {
-            mesh_and_upload_chunk(&world, &mut self.chunk_meshes, device, cx, cz);
-        }
+        self.chunks.remesh_dirty(&world, device);
     }
 
     fn handle_block_interaction(&mut self) {
@@ -518,7 +297,7 @@ impl CraftApp {
             &world,
             [ray_origin.x, ray_origin.y, ray_origin.z],
             [ray_dir.x, ray_dir.y, ray_dir.z],
-            10.0,
+            config::RAYCAST_MAX_DIST,
         );
 
         // Check mouse buttons
@@ -536,7 +315,7 @@ impl CraftApp {
                 let [bx, by, bz] = hit.block_pos;
                 let mut world = self.app.world.resource_mut::<VoxelWorld>();
                 world.set_block(bx, by, bz, BlockType::Air);
-                mark_dirty_with_neighbors(&mut self.dirty_chunks, bx, bz);
+                self.chunks.mark_dirty_with_neighbors(bx, bz);
             } else if right_just {
                 // Place block adjacent to hit face
                 let [bx, by, bz] = hit.block_pos;
@@ -559,7 +338,7 @@ impl CraftApp {
                     let selected = self.app.world.resource::<SelectedBlock>().block_type;
                     let mut world = self.app.world.resource_mut::<VoxelWorld>();
                     world.set_block(px, py, pz, selected);
-                    mark_dirty_with_neighbors(&mut self.dirty_chunks, px, pz);
+                    self.chunks.mark_dirty_with_neighbors(px, pz);
                 }
             }
         }
@@ -621,7 +400,7 @@ impl CraftApp {
             .write_buffer(&gpu.sky_ub, 0, bytemuck::bytes_of(&sky_uniform));
 
         // Frustum culling
-        let frustum_planes = extract_frustum_planes(&cam_vp);
+        let frustum = Frustum::from_view_proj(&cam_vp);
 
         // --- Update filter uniform (before tonemap pass) ---
         {
@@ -698,8 +477,8 @@ impl CraftApp {
             rp.set_bind_group(0, &gpu.scene_bg, &[]);
             rp.set_bind_group(1, &gpu.atlas_bg, &[]);
 
-            for (_key, cm) in &self.chunk_meshes {
-                if !sphere_in_frustum(&frustum_planes, cm.center, 130.0) {
+            for (_key, cm) in &self.chunks.chunk_meshes {
+                if !ChunkManager::is_visible(cm, &frustum) {
                     continue;
                 }
                 rp.set_vertex_buffer(0, cm.vertex_buffer.slice(..));
@@ -736,11 +515,11 @@ impl CraftApp {
             rp.set_bind_group(0, &gpu.scene_bg, &[]);
             rp.set_bind_group(1, &gpu.atlas_bg, &[]);
 
-            for (_key, cm) in &self.chunk_meshes {
+            for (_key, cm) in &self.chunks.chunk_meshes {
                 if cm.water_index_count == 0 {
                     continue;
                 }
-                if !sphere_in_frustum(&frustum_planes, cm.center, 130.0) {
+                if !ChunkManager::is_visible(cm, &frustum) {
                     continue;
                 }
                 if let (Some(ref wvb), Some(ref wib)) = (&cm.water_vertex_buffer, &cm.water_index_buffer) {
@@ -794,6 +573,11 @@ impl CraftApp {
         let sw = sw as f32;
         let sh = sh as f32;
 
+        // Single command encoder for all HUD draws
+        let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("HUD Enc"),
+        });
+
         // Crosshair: use orthographic projection for screen-space lines
         let ortho = glam::Mat4::orthographic_rh(0.0, sw, sh, 0.0, -1.0, 1.0);
         let cx = sw * 0.5;
@@ -810,22 +594,14 @@ impl CraftApp {
 
         // Render crosshair
         if let Some(ref mut lr) = self.line_renderer {
-            let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("HUD Lines Enc"),
-            });
             lr.render(device, &mut enc, swapchain, &lines, &ortho);
-            device.queue().submit(std::iter::once(enc.finish()));
         }
 
         // Block highlight wireframe (3D)
         if let Some(ref hit) = self.current_hit {
             if let Some(ref mut lr) = self.line_renderer {
                 let wireframe_lines = block_wireframe(hit.block_pos, glam::Vec3::new(0.2, 0.2, 0.2));
-                let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Block Highlight Enc"),
-                });
                 lr.render(device, &mut enc, swapchain, &wireframe_lines, cam_vp);
-                device.queue().submit(std::iter::once(enc.finish()));
             }
         }
 
@@ -844,16 +620,12 @@ impl CraftApp {
             );
             let block_text = format!("Block: {:?}", selected.block_type);
 
-            let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("HUD Text Enc"),
-            });
             tr.draw_text(device, &mut enc, swapchain, &coord_text, 8.0, 8.0, 16.0, white, sw, sh);
             tr.draw_text(device, &mut enc, swapchain, &block_text, 8.0, 28.0, 16.0, white, sw, sh);
-            device.queue().submit(std::iter::once(enc.finish()));
         }
 
         // Hotbar: 9-slot block selection bar at bottom center
-        if let Some(ref mut lr) = self.line_renderer {
+        {
             let slot_size = 36.0_f32;
             let slot_gap = 4.0_f32;
             let total_w = 9.0 * slot_size + 8.0 * slot_gap;
@@ -871,37 +643,33 @@ impl CraftApp {
 
                 // Box corners
                 let tl = glam::Vec3::new(sx, sy, 0.0);
-                let tr = glam::Vec3::new(sx + slot_size, sy, 0.0);
+                let tr_pt = glam::Vec3::new(sx + slot_size, sy, 0.0);
                 let br = glam::Vec3::new(sx + slot_size, sy + slot_size, 0.0);
                 let bl = glam::Vec3::new(sx, sy + slot_size, 0.0);
 
-                hotbar_lines.push((tl, tr, color));
-                hotbar_lines.push((tr, br, color));
+                hotbar_lines.push((tl, tr_pt, color));
+                hotbar_lines.push((tr_pt, br, color));
                 hotbar_lines.push((br, bl, color));
                 hotbar_lines.push((bl, tl, color));
             }
 
-            let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Hotbar Lines Enc"),
-            });
-            lr.render(device, &mut enc, swapchain, &hotbar_lines, &ortho);
-            device.queue().submit(std::iter::once(enc.finish()));
+            if let Some(ref mut lr) = self.line_renderer {
+                lr.render(device, &mut enc, swapchain, &hotbar_lines, &ortho);
+            }
 
             // Draw block name initials in each slot
             if let Some(ref mut tr) = self.text_renderer {
                 let labels = ["G", "D", "S", "Sa", "B", "W", "Gl", "C", "P"];
-                let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Hotbar Text Enc"),
-                });
                 for i in 0..9usize {
                     let sx = bar_x + i as f32 * (slot_size + slot_gap) + slot_size * 0.25;
                     let sy = bar_y + slot_size * 0.2;
                     let color = if i == selected_index { highlight } else { white };
                     tr.draw_text(device, &mut enc, swapchain, labels[i], sx, sy, 14.0, color, sw, sh);
                 }
-                device.queue().submit(std::iter::once(enc.finish()));
             }
         }
+
+        device.queue().submit(std::iter::once(enc.finish()));
     }
 }
 
@@ -1213,38 +981,3 @@ impl CraftApp {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Frustum culling helpers
-// ---------------------------------------------------------------------------
-
-type Plane = glam::Vec4;
-
-fn extract_frustum_planes(vp: &glam::Mat4) -> [Plane; 6] {
-    let m = vp.to_cols_array_2d();
-    // Rows of the transposed VP matrix
-    let row = |r: usize| glam::Vec4::new(m[0][r], m[1][r], m[2][r], m[3][r]);
-    let r0 = row(0);
-    let r1 = row(1);
-    let r2 = row(2);
-    let r3 = row(3);
-
-    [
-        r3 + r0, // left
-        r3 - r0, // right
-        r3 + r1, // bottom
-        r3 - r1, // top
-        r3 + r2, // near
-        r3 - r2, // far
-    ]
-}
-
-fn sphere_in_frustum(planes: &[Plane; 6], center: glam::Vec3, radius: f32) -> bool {
-    for p in planes {
-        let dist = p.x * center.x + p.y * center.y + p.z * center.z + p.w;
-        let len = (p.x * p.x + p.y * p.y + p.z * p.z).sqrt();
-        if dist < -radius * len {
-            return false;
-        }
-    }
-    true
-}

@@ -233,11 +233,17 @@ impl Vertex for PbrVertex {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct SkinnedVertex {
+    /// 3D 位置 (x, y, z)
     pub position: [f32; 3],
+    /// 表面法线 (x, y, z)
     pub normal: [f32; 3],
+    /// 纹理坐标 (u, v)
     pub texcoord: [f32; 2],
+    /// 切线 (x, y, z, w) — w is bitangent sign
     pub tangent: [f32; 4],
+    /// Indices of the 4 influencing skeleton joints
     pub joint_indices: [u16; 4],
+    /// Blend weights for the 4 influencing joints
     pub joint_weights: [f32; 4],
 }
 

@@ -1,6 +1,6 @@
 use anvilkit_render::prelude::*;
 use anvilkit_render::renderer::{
-    RenderPipelineBuilder, DEPTH_FORMAT, HDR_FORMAT,
+    DEPTH_FORMAT, HDR_FORMAT,
     buffer::{
         Vertex, create_uniform_buffer,
         create_depth_texture, create_hdr_render_target,
@@ -11,9 +11,11 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::vertex::BlockVertex;
 
+use crate::render::filters::FilterUniform;
+
 const VOXEL_SHADER: &str = include_str!("../../assets/voxel.wgsl");
 const SKY_SHADER: &str = include_str!("../../assets/sky.wgsl");
-const TONEMAP_SHADER: &str = include_str!("../../../../shaders/tonemap.wgsl");
+const CRAFT_TONEMAP_SHADER: &str = include_str!("../../assets/craft_tonemap.wgsl");
 
 /// GPU uniform matching VoxelSceneUniform in voxel.wgsl.
 #[repr(C)]
@@ -67,6 +69,7 @@ pub struct VoxelGpu {
     pub scene_bg: wgpu::BindGroup,
     pub atlas_bg: wgpu::BindGroup,
     pub voxel_pipeline: wgpu::RenderPipeline,
+    pub water_pipeline: wgpu::RenderPipeline,
     pub depth_view: wgpu::TextureView,
     pub hdr_view: wgpu::TextureView,
     pub tonemap_pipeline: wgpu::RenderPipeline,
@@ -77,6 +80,9 @@ pub struct VoxelGpu {
     pub sky_pipeline: wgpu::RenderPipeline,
     pub sky_ub: wgpu::Buffer,
     pub sky_bg: wgpu::BindGroup,
+    // Filter
+    pub filter_ub: wgpu::Buffer,
+    pub tonemap_bgl: wgpu::BindGroupLayout,
 }
 
 pub fn init_voxel_gpu(
@@ -116,6 +122,8 @@ pub fn init_voxel_gpu(
     });
 
     // --- Atlas texture (group 1) — NEAREST sampling for pixel art ---
+    // Note: mipmaps cause tile bleeding on packed atlases (no padding between tiles).
+    // Use nearest filtering to preserve pixel-art crispness.
     let atlas_tex = device.device().create_texture(&wgpu::TextureDescriptor {
         label: Some("Atlas Texture"),
         size: wgpu::Extent3d {
@@ -245,6 +253,55 @@ pub fn init_voxel_gpu(
         multiview: None,
     });
 
+    // --- Water pipeline: same as voxel but with alpha blend, no depth write, no backface cull ---
+    let water_pipeline = device.device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Water Pipeline"),
+        layout: Some(&voxel_layout),
+        vertex: wgpu::VertexState {
+            module: &voxel_shader,
+            entry_point: "vs_water",
+            buffers: &[BlockVertex::layout()],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &voxel_shader,
+            entry_point: "fs_water",
+            targets: &[Some(wgpu::ColorTargetState {
+                format: HDR_FORMAT,
+                blend: Some(wgpu::BlendState {
+                    color: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::SrcAlpha,
+                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                        operation: wgpu::BlendOperation::Add,
+                    },
+                    alpha: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::One,
+                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                        operation: wgpu::BlendOperation::Add,
+                    },
+                }),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: false,
+            depth_compare: wgpu::CompareFunction::LessEqual,
+            stencil: Default::default(),
+            bias: Default::default(),
+        }),
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview: None,
+    });
+
     // --- Sky pipeline (fullscreen triangle, no depth, writes to HDR) ---
     let sky_initial = SkyUniform::default();
     let sky_ub = create_uniform_buffer(device, "Sky UB", bytemuck::bytes_of(&sky_initial));
@@ -315,26 +372,39 @@ pub fn init_voxel_gpu(
     let (_, depth_view) = create_depth_texture(device, w, h, "Voxel Depth");
     let (_, hdr_view) = create_hdr_render_target(device, w, h, "Voxel HDR RT");
 
-    // --- Tonemap pipeline ---
+    // --- Filter uniform buffer ---
+    let filter_initial = FilterUniform::default();
+    let filter_ub = create_uniform_buffer(device, "Filter UB", bytemuck::bytes_of(&filter_initial));
+
+    // --- Tonemap pipeline (with filter uniform) ---
     let linear_sampler = create_sampler(device, "Tonemap Sampler");
-    let tex_entry = |b: u32| wgpu::BindGroupLayoutEntry {
-        binding: b,
-        visibility: wgpu::ShaderStages::FRAGMENT,
-        ty: wgpu::BindingType::Texture {
-            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-            view_dimension: wgpu::TextureViewDimension::D2,
-            multisampled: false,
-        },
-        count: None,
-    };
     let tm_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("Tonemap BGL"),
         entries: &[
-            tex_entry(0),
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
             wgpu::BindGroupLayoutEntry {
                 binding: 1,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
                 count: None,
             },
         ],
@@ -351,24 +421,57 @@ pub fn init_voxel_gpu(
                 binding: 1,
                 resource: wgpu::BindingResource::Sampler(&linear_sampler),
             },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: filter_ub.as_entire_binding(),
+            },
         ],
     });
-    let tonemap_pipeline = RenderPipelineBuilder::new()
-        .with_vertex_shader(TONEMAP_SHADER)
-        .with_fragment_shader(TONEMAP_SHADER)
-        .with_format(surface_format)
-        .with_vertex_layouts(vec![])
-        .with_bind_group_layouts(vec![tm_bgl])
-        .with_label("Voxel Tonemap Pipeline")
-        .build(device)
-        .expect("Failed to create tonemap pipeline")
-        .into_pipeline();
+    let tonemap_shader = device.device().create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Craft Tonemap Shader"),
+        source: wgpu::ShaderSource::Wgsl(CRAFT_TONEMAP_SHADER.into()),
+    });
+    let tonemap_layout = device.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Tonemap Pipeline Layout"),
+        bind_group_layouts: &[&tm_bgl],
+        push_constant_ranges: &[],
+    });
+    let tonemap_pipeline = device.device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Craft Tonemap Pipeline"),
+        layout: Some(&tonemap_layout),
+        vertex: wgpu::VertexState {
+            module: &tonemap_shader,
+            entry_point: "vs_main",
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &tonemap_shader,
+            entry_point: "fs_main",
+            targets: &[Some(wgpu::ColorTargetState {
+                format: surface_format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview: None,
+    });
 
     VoxelGpu {
         scene_ub,
         scene_bg,
         atlas_bg,
         voxel_pipeline,
+        water_pipeline,
         depth_view,
         hdr_view,
         tonemap_pipeline,
@@ -378,5 +481,7 @@ pub fn init_voxel_gpu(
         sky_pipeline,
         sky_ub,
         sky_bg,
+        filter_ub,
+        tonemap_bgl: tm_bgl,
     }
 }

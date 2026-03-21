@@ -19,8 +19,10 @@ pub mod scene;
 pub mod gltf_loader;
 pub mod asset_server;
 pub mod animation;
+/// Procedural mesh generation utilities (sphere, plane, box).
 pub mod procedural;
 
+/// Prelude module re-exporting the most commonly used types.
 pub mod prelude {
     pub use crate::mesh::MeshData;
     pub use crate::material::{TextureData, MaterialData};

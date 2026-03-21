@@ -94,6 +94,7 @@ pub struct RenderStats {
 }
 
 impl RenderStats {
+    /// Creates a new `RenderStats` with all counters at zero.
     pub fn new() -> Self {
         Self {
             draw_calls: 0,

@@ -64,6 +64,8 @@ pub fn raycast_voxels(
 
     let mut t_max = [t_max_x, t_max_y, t_max_z];
     let mut face_normal = [0i32; 3];
+    // Track the t-value of the last boundary crossing (entry distance of current voxel).
+    let mut last_t: f32 = 0.0;
 
     // Step through voxels
     let max_steps = (max_dist * 3.0) as usize + 1;
@@ -71,19 +73,10 @@ pub fn raycast_voxels(
         // Check current voxel
         let block = world.get_block(ix, iy, iz);
         if block != BlockType::Air && block.is_obstacle() {
-            let dist = {
-                let p = [ox + dx * t_max[0].min(t_max[1]).min(t_max[2]),
-                          oy + dy * t_max[0].min(t_max[1]).min(t_max[2]),
-                          oz + dz * t_max[0].min(t_max[1]).min(t_max[2])];
-                let ddx = p[0] - ox;
-                let ddy = p[1] - oy;
-                let ddz = p[2] - oz;
-                (ddx * ddx + ddy * ddy + ddz * ddz).sqrt()
-            };
             return Some(VoxelHit {
                 block_pos: [ix, iy, iz],
                 face_normal,
-                distance: dist,
+                distance: last_t,
             });
         }
 
@@ -91,22 +84,26 @@ pub fn raycast_voxels(
         if t_max[0] < t_max[1] {
             if t_max[0] < t_max[2] {
                 if t_max[0] > max_dist { break; }
+                last_t = t_max[0];
                 ix += step_x;
                 t_max[0] += t_delta_x;
                 face_normal = [-step_x, 0, 0];
             } else {
                 if t_max[2] > max_dist { break; }
+                last_t = t_max[2];
                 iz += step_z;
                 t_max[2] += t_delta_z;
                 face_normal = [0, 0, -step_z];
             }
         } else if t_max[1] < t_max[2] {
             if t_max[1] > max_dist { break; }
+            last_t = t_max[1];
             iy += step_y;
             t_max[1] += t_delta_y;
             face_normal = [0, -step_y, 0];
         } else {
             if t_max[2] > max_dist { break; }
+            last_t = t_max[2];
             iz += step_z;
             t_max[2] += t_delta_z;
             face_normal = [0, 0, -step_z];

@@ -2,6 +2,7 @@ use noise::{NoiseFn, SuperSimplex};
 
 use crate::block::BlockType;
 use crate::chunk::{ChunkData, CHUNK_SIZE, CHUNK_HEIGHT};
+use crate::config;
 
 pub struct WorldGenerator {
     noise_height: SuperSimplex,
@@ -9,6 +10,7 @@ pub struct WorldGenerator {
     noise_tree: SuperSimplex,
     noise_plant: SuperSimplex,
     noise_cloud: SuperSimplex,
+    noise_cave: SuperSimplex,
 }
 
 impl WorldGenerator {
@@ -19,6 +21,7 @@ impl WorldGenerator {
             noise_tree: SuperSimplex::new(seed.wrapping_add(2)),
             noise_plant: SuperSimplex::new(seed.wrapping_add(3)),
             noise_cloud: SuperSimplex::new(seed.wrapping_add(4)),
+            noise_cave: SuperSimplex::new(seed.wrapping_add(5)),
         }
     }
 
@@ -44,7 +47,7 @@ impl WorldGenerator {
             }
         }
 
-        let water_level = 28i32;
+        let water_level = config::WATER_LEVEL;
 
         // Fill terrain
         for lx in 0..CHUNK_SIZE {
@@ -69,11 +72,41 @@ impl WorldGenerator {
                         } else {
                             BlockType::Grass
                         }
+                    } else if yi <= water_level {
+                        BlockType::Water
                     } else {
                         BlockType::Air
                     };
                     if block != BlockType::Air {
                         chunk.set(lx, y, lz, block);
+                    }
+                }
+            }
+        }
+
+        // Cave carving: 3D noise removes blocks to create underground caverns
+        for lx in 0..CHUNK_SIZE {
+            for lz in 0..CHUNK_SIZE {
+                let wx = (base_x + lx as i32) as f64;
+                let wz = (base_z + lz as i32) as f64;
+                let h = height_map[lx][lz];
+
+                for y in 2..CHUNK_HEIGHT {
+                    let yi = y as i32;
+                    // Only carve below terrain surface
+                    if yi >= h {
+                        break;
+                    }
+                    // Preserve bedrock layer (y=0..1)
+                    let wy = y as f64;
+                    let cave_val = self.noise_cave.get([wx * 0.05, wy * 0.05, wz * 0.05]);
+                    if cave_val > 0.3 {
+                        // Carve cave: fill with water if below water level, else air
+                        if yi <= water_level {
+                            chunk.set(lx, y, lz, BlockType::Water);
+                        } else {
+                            chunk.set(lx, y, lz, BlockType::Air);
+                        }
                     }
                 }
             }
@@ -111,6 +144,11 @@ impl WorldGenerator {
                     if h_above < CHUNK_HEIGHT && chunk.get(lx, h_above, lz) == BlockType::Air {
                         chunk.set(lx, h_above, lz, BlockType::YellowFlower);
                     }
+                } else if plant_val > 0.65 {
+                    let h_above = (h + 1) as usize;
+                    if h_above < CHUNK_HEIGHT && chunk.get(lx, h_above, lz) == BlockType::Air {
+                        chunk.set(lx, h_above, lz, BlockType::RedFlower);
+                    }
                 } else if plant_val > 0.55 {
                     let h_above = (h + 1) as usize;
                     if h_above < CHUNK_HEIGHT && chunk.get(lx, h_above, lz) == BlockType::Air {
@@ -120,14 +158,14 @@ impl WorldGenerator {
             }
         }
 
-        // Clouds at y=64..66
+        // Clouds
         for lx in 0..CHUNK_SIZE {
             for lz in 0..CHUNK_SIZE {
                 let wx = (base_x + lx as i32) as f64;
                 let wz = (base_z + lz as i32) as f64;
                 let cloud_val = self.noise_cloud.get([wx * 0.01, wz * 0.01]);
                 if cloud_val > 0.75 {
-                    for cy in 64..67 {
+                    for cy in config::CLOUD_Y_MIN..config::CLOUD_Y_MAX {
                         chunk.set(lx, cy, lz, BlockType::Cloud);
                     }
                 }

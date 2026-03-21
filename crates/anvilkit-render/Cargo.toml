@@ -5,14 +5,19 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "AnvilKit 渲染系统 - 基于 wgpu 和 winit 的跨平台图形渲染模块"
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Cross-platform rendering system built on wgpu and winit for AnvilKit game engine"
+readme = "../../README.md"
 
 [dependencies]
 # AnvilKit 内部依赖
-anvilkit-core = { path = "../anvilkit-core", features = ["bevy_ecs"] }
-anvilkit-ecs = { path = "../anvilkit-ecs" }
-anvilkit-assets = { path = "../anvilkit-assets" }
-anvilkit-input = { path = "../anvilkit-input" }
+anvilkit-core = { version = "0.1.0", path = "../anvilkit-core", features = ["bevy_ecs"] }
+anvilkit-ecs = { version = "0.1.0", path = "../anvilkit-ecs" }
+anvilkit-assets = { version = "0.1.0", path = "../anvilkit-assets" }
+anvilkit-input = { version = "0.1.0", path = "../anvilkit-input" }
 
 # ECS 框架（derive 宏需要直接引用）
 bevy_ecs = { workspace = true }

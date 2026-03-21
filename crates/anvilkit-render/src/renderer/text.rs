@@ -33,7 +33,7 @@ use crate::renderer::pipeline::RenderPipelineBuilder;
 use crate::renderer::sprite::SpriteVertex;
 
 /// 字体图集 shader（复用 sprite shader：正交投影 + 纹理采样）
-const SPRITE_SHADER: &str = include_str!("../../../../shaders/sprite.wgsl");
+const SPRITE_SHADER: &str = include_str!("../shaders/sprite.wgsl");
 
 /// 字形宽度（像素）
 const GLYPH_W: u32 = 8;

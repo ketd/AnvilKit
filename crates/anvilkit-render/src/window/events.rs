@@ -91,10 +91,10 @@ pub fn compute_light_space_matrix(light_direction: &glam::Vec3) -> glam::Mat4 {
 }
 
 /// Shadow pass shader (depth-only, reads model + view_proj from scene uniform)
-const SHADOW_SHADER: &str = include_str!("../../../../shaders/shadow.wgsl");
+const SHADOW_SHADER: &str = include_str!("../shaders/shadow.wgsl");
 
 /// ACES Filmic tone mapping post-process shader (fullscreen triangle)
-const TONEMAP_SHADER: &str = include_str!("../../../../shaders/tonemap.wgsl");
+const TONEMAP_SHADER: &str = include_str!("../shaders/tonemap.wgsl");
 
 /// 渲染应用
 ///

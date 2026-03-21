@@ -51,10 +51,12 @@ pub enum LoadState {
 }
 
 impl LoadState {
+    /// Returns true if the asset has been successfully loaded.
     pub fn is_loaded(&self) -> bool {
         matches!(self, LoadState::Loaded)
     }
 
+    /// Returns true if the asset failed to load.
     pub fn is_failed(&self) -> bool {
         matches!(self, LoadState::Failed)
     }

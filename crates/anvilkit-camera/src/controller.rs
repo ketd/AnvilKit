@@ -7,9 +7,13 @@ pub enum CameraMode {
     FirstPerson,
     /// Third-person follow: orbit camera around a target point.
     ThirdPerson {
+        /// World-space position the camera orbits around.
         target: Vec3,
+        /// Current distance from the target.
         distance: f32,
+        /// Minimum allowed orbit distance.
         min_distance: f32,
+        /// Maximum allowed orbit distance.
         max_distance: f32,
     },
     /// Free fly: editor/debug camera.
@@ -25,13 +29,21 @@ impl Default for CameraMode {
 /// Camera controller component, attached to camera entities.
 #[derive(Component)]
 pub struct CameraController {
+    /// Current camera control mode (first-person, third-person, or free).
     pub mode: CameraMode,
+    /// Horizontal rotation angle in radians.
     pub yaw: f32,
+    /// Vertical rotation angle in radians.
     pub pitch: f32,
+    /// Minimum and maximum pitch values in radians (clamping range).
     pub pitch_limits: (f32, f32),
+    /// Mouse look sensitivity multiplier.
     pub mouse_sensitivity: f32,
+    /// Movement speed in units per second.
     pub move_speed: f32,
+    /// Zoom speed multiplier for scroll-based zooming.
     pub zoom_speed: f32,
+    /// Smoothing factor for camera interpolation (0.0 = no smoothing).
     pub smoothing: f32,
     /// Base FOV in degrees (used as the reference for effects offsets)
     pub base_fov: f32,

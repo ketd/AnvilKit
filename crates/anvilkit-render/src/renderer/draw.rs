@@ -23,7 +23,9 @@ use crate::renderer::assets::{MeshHandle, MaterialHandle};
 /// ```
 #[derive(Debug, Clone, Copy, Component)]
 pub struct Aabb {
+    /// Minimum corner of the bounding box.
     pub min: Vec3,
+    /// Maximum corner of the bounding box.
     pub max: Vec3,
 }
 
@@ -150,7 +152,9 @@ impl Frustum {
 /// 由 camera_system 每帧写入，包含当前激活相机的视图投影矩阵。
 #[derive(Resource)]
 pub struct ActiveCamera {
+    /// Combined view-projection matrix of the active camera.
     pub view_proj: Mat4,
+    /// World-space position of the active camera.
     pub camera_pos: Vec3,
 }
 
@@ -246,8 +250,11 @@ impl Default for SpotLight {
 /// 持有场景中所有灯光信息，最多 8 盏（1 方向光 + 点光/聚光组合）。
 #[derive(Resource)]
 pub struct SceneLights {
+    /// The primary directional (sun) light.
     pub directional: DirectionalLight,
+    /// All active point lights in the scene.
     pub point_lights: Vec<PointLight>,
+    /// All active spot lights in the scene.
     pub spot_lights: Vec<SpotLight>,
 }
 
@@ -267,9 +274,13 @@ impl Default for SceneLights {
 /// 如果实体没有此组件，render_extract_system 使用默认值 (metallic=0, roughness=0.5, normal_scale=1.0)。
 #[derive(Debug, Clone, Component)]
 pub struct MaterialParams {
+    /// Metalness factor (0 = dielectric, 1 = metal).
     pub metallic: f32,
+    /// Surface roughness (0 = mirror, 1 = diffuse).
     pub roughness: f32,
+    /// Normal map intensity multiplier.
     pub normal_scale: f32,
+    /// Emissive color factor [R, G, B].
     pub emissive_factor: [f32; 3],
 }
 
@@ -286,12 +297,19 @@ impl Default for MaterialParams {
 
 /// 单个绘制命令
 pub struct DrawCommand {
+    /// Handle to the GPU mesh to draw.
     pub mesh: MeshHandle,
+    /// Handle to the GPU material (pipeline + bind group).
     pub material: MaterialHandle,
+    /// Object-to-world transform matrix.
     pub model_matrix: Mat4,
+    /// PBR metalness factor for this draw.
     pub metallic: f32,
+    /// PBR roughness factor for this draw.
     pub roughness: f32,
+    /// Normal map intensity for this draw.
     pub normal_scale: f32,
+    /// Emissive color factor [R, G, B] for this draw.
     pub emissive_factor: [f32; 3],
 }
 
@@ -301,14 +319,17 @@ pub struct DrawCommand {
 /// 支持按 mesh+material 排序分组以减少管线状态切换。
 #[derive(Resource, Default)]
 pub struct DrawCommandList {
+    /// Collected draw commands for the current frame.
     pub commands: Vec<DrawCommand>,
 }
 
 impl DrawCommandList {
+    /// Removes all draw commands from the list.
     pub fn clear(&mut self) {
         self.commands.clear();
     }
 
+    /// Appends a draw command to the list.
     pub fn push(&mut self, cmd: DrawCommand) {
         self.commands.push(cmd);
     }
@@ -332,8 +353,10 @@ impl DrawCommandList {
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceData {
-    pub model: [[f32; 4]; 4],         // 64 bytes
-    pub normal_matrix: [[f32; 4]; 4], // 64 bytes
+    /// Object-to-world model matrix (64 bytes).
+    pub model: [[f32; 4]; 4],
+    /// Inverse-transpose model matrix for normals (64 bytes).
+    pub normal_matrix: [[f32; 4]; 4],
 }
 
 impl Default for InstanceData {

@@ -23,7 +23,9 @@ use crate::input_state::{InputState, KeyCode, MouseButton};
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InputBinding {
+    /// A keyboard key binding.
     Key(KeyCode),
+    /// A mouse button binding.
     Mouse(MouseButton),
 }
 

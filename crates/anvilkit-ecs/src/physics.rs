@@ -53,13 +53,29 @@ pub enum RigidBodyType {
 #[derive(Debug, Clone)]
 pub enum ColliderShape {
     /// 球体
-    Sphere { radius: f32 },
+    Sphere {
+        /// Sphere radius.
+        radius: f32,
+    },
     /// 长方体（半尺寸）
-    Cuboid { half_extents: Vec3 },
+    Cuboid {
+        /// Half-extents along each axis.
+        half_extents: Vec3,
+    },
     /// 胶囊体
-    Capsule { half_height: f32, radius: f32 },
+    Capsule {
+        /// Half the height of the cylindrical section.
+        half_height: f32,
+        /// Radius of the capsule hemispheres.
+        radius: f32,
+    },
     /// 网格碰撞体（顶点 + 三角形索引）
-    TriMesh { vertices: Vec<Vec3>, indices: Vec<[u32; 3]> },
+    TriMesh {
+        /// Mesh vertex positions.
+        vertices: Vec<Vec3>,
+        /// Triangle index triples.
+        indices: Vec<[u32; 3]>,
+    },
 }
 
 /// 刚体组件
@@ -77,15 +93,22 @@ pub enum ColliderShape {
 /// ```
 #[derive(Debug, Clone, Component)]
 pub struct RigidBody {
+    /// The type of rigid body (dynamic, fixed, or kinematic).
     pub body_type: RigidBodyType,
+    /// Mass of the rigid body in kilograms.
     pub mass: f32,
+    /// Multiplier for gravity applied to this body (1.0 = normal gravity).
     pub gravity_scale: f32,
+    /// Whether this body acts as a sensor (detects overlaps without physical response).
     pub is_sensor: bool,
+    /// Linear velocity damping factor (resistance to linear motion).
     pub linear_damping: f32,
+    /// Angular velocity damping factor (resistance to rotational motion).
     pub angular_damping: f32,
 }
 
 impl RigidBody {
+    /// Creates a new rigid body with the given type and default physical properties.
     pub fn new(body_type: RigidBodyType) -> Self {
         Self {
             body_type,
@@ -97,8 +120,11 @@ impl RigidBody {
         }
     }
 
+    /// Creates a new dynamic rigid body.
     pub fn dynamic() -> Self { Self::new(RigidBodyType::Dynamic) }
+    /// Creates a new fixed rigid body.
     pub fn fixed() -> Self { Self::new(RigidBodyType::Fixed) }
+    /// Creates a new kinematic rigid body.
     pub fn kinematic() -> Self { Self::new(RigidBodyType::Kinematic) }
 }
 
@@ -117,20 +143,26 @@ impl RigidBody {
 /// ```
 #[derive(Debug, Clone, Component)]
 pub struct Collider {
+    /// The geometric shape of this collider.
     pub shape: ColliderShape,
+    /// Surface friction coefficient (0.0 = frictionless, 1.0 = high friction).
     pub friction: f32,
+    /// Bounciness coefficient (0.0 = no bounce, 1.0 = perfectly elastic).
     pub restitution: f32,
 }
 
 impl Collider {
+    /// Creates a sphere collider with the given radius.
     pub fn sphere(radius: f32) -> Self {
         Self { shape: ColliderShape::Sphere { radius }, friction: 0.5, restitution: 0.0 }
     }
 
+    /// Creates a box collider with the given half-extents.
     pub fn cuboid(half_extents: Vec3) -> Self {
         Self { shape: ColliderShape::Cuboid { half_extents }, friction: 0.5, restitution: 0.0 }
     }
 
+    /// Creates a capsule collider with the given half-height and radius.
     pub fn capsule(half_height: f32, radius: f32) -> Self {
         Self { shape: ColliderShape::Capsule { half_height, radius }, friction: 0.5, restitution: 0.0 }
     }
@@ -150,12 +182,16 @@ impl Collider {
 /// ```
 #[derive(Debug, Clone, Copy, Component)]
 pub struct Velocity {
+    /// Linear velocity vector (units per second).
     pub linear: Vec3,
+    /// Angular velocity vector (radians per second around each axis).
     pub angular: Vec3,
 }
 
 impl Velocity {
+    /// Creates a velocity with zero linear and angular components.
     pub fn zero() -> Self { Self { linear: Vec3::ZERO, angular: Vec3::ZERO } }
+    /// Creates a velocity with the given linear component and zero angular velocity.
     pub fn linear(linear: Vec3) -> Self { Self { linear, angular: Vec3::ZERO } }
 }
 
@@ -181,31 +217,41 @@ impl Default for DeltaTime {
 /// 碰撞事件
 #[derive(Debug, Clone, Copy)]
 pub struct CollisionEvent {
+    /// First entity involved in the collision.
     pub a: Entity,
+    /// Second entity involved in the collision.
     pub b: Entity,
 }
 
 /// 碰撞事件列表资源
 #[derive(Resource, Default)]
 pub struct CollisionEvents {
+    /// List of collision events detected this frame.
     pub events: Vec<CollisionEvent>,
 }
 
 impl CollisionEvents {
+    /// Removes all collision events from the list.
     pub fn clear(&mut self) { self.events.clear(); }
+    /// Adds a collision event to the list.
     pub fn push(&mut self, event: CollisionEvent) { self.events.push(event); }
+    /// Returns an iterator over all collision events.
     pub fn iter(&self) -> impl Iterator<Item = &CollisionEvent> { self.events.iter() }
+    /// Returns true if there are no collision events.
     pub fn is_empty(&self) -> bool { self.events.is_empty() }
 }
 
 /// 简单 AABB 碰撞体组件（局部空间）
 #[derive(Debug, Clone, Copy, Component)]
 pub struct AabbCollider {
+    /// Half-extents of the axis-aligned bounding box along each axis.
     pub half_extents: Vec3,
 }
 
 impl AabbCollider {
+    /// Creates an AABB collider with the given half-extents.
     pub fn new(half_extents: Vec3) -> Self { Self { half_extents } }
+    /// Creates a cubic AABB collider with uniform half-extent.
     pub fn cube(half: f32) -> Self { Self { half_extents: Vec3::splat(half) } }
 }
 

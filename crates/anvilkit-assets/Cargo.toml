@@ -5,10 +5,15 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "AnvilKit 资源系统 - glTF 模型加载和资源管理"
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Asset system with glTF model loading for AnvilKit game engine"
+readme = "../../README.md"
 
 [dependencies]
-anvilkit-core = { path = "../anvilkit-core" }
+anvilkit-core = { version = "0.1.0", path = "../anvilkit-core" }
 gltf = { workspace = true }
 glam = { workspace = true }
 log = "0.4"

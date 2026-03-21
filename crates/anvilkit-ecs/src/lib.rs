@@ -81,8 +81,9 @@ pub mod prelude {
     pub use anvilkit_core::prelude::*;
 }
 
-// 版本信息
+/// The crate version, read from `Cargo.toml` at compile time.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The crate name, read from `Cargo.toml` at compile time.
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
 #[cfg(test)]

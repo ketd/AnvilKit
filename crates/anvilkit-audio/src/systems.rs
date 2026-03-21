@@ -13,6 +13,7 @@ use crate::engine::AudioEngine;
 /// 音频播放状态追踪组件
 #[derive(Component)]
 pub struct AudioPlaybackTracker {
+    /// The playback state observed on the previous frame.
     pub last_state: PlaybackState,
 }
 

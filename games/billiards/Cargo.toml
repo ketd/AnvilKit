@@ -2,6 +2,7 @@
 name = "billiards"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [dependencies]
 anvilkit-core = { path = "../../crates/anvilkit-core", features = ["bevy_ecs"] }

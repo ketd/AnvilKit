@@ -7,8 +7,10 @@ members = [
     "crates/anvilkit-input",
     "crates/anvilkit-audio",
     "crates/anvilkit-camera",
+    "crates/anvilkit",
     "games/billiards",
-    "tools/anvilkit-cli", "games/craft",
+    "games/craft",
+    "tools/anvilkit-cli",
 ]
 
 resolver = "2"

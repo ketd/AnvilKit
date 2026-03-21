@@ -5,11 +5,16 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "AnvilKit ECS 模块 - 基于 Bevy ECS 的高性能实体组件系统"
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "High-performance ECS module built on Bevy ECS for AnvilKit game engine"
+readme = "../../README.md"
 
 [dependencies]
 # 核心依赖
-anvilkit-core = { path = "../anvilkit-core", features = ["bevy_ecs"] }
+anvilkit-core = { version = "0.1.0", path = "../anvilkit-core", features = ["bevy_ecs"] }
 bevy_ecs = { workspace = true }
 
 # 日志

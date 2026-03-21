@@ -1,0 +1,29 @@
+[package]
+name = "anvilkit"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+description = "AnvilKit game engine — a modular, ECS-based game engine built with Rust"
+readme = "../../README.md"
+
+[dependencies]
+anvilkit-core = { version = "0.1.0", path = "../anvilkit-core" }
+anvilkit-ecs = { version = "0.1.0", path = "../anvilkit-ecs" }
+anvilkit-render = { version = "0.1.0", path = "../anvilkit-render" }
+anvilkit-assets = { version = "0.1.0", path = "../anvilkit-assets" }
+anvilkit-input = { version = "0.1.0", path = "../anvilkit-input" }
+anvilkit-audio = { version = "0.1.0", path = "../anvilkit-audio" }
+anvilkit-camera = { version = "0.1.0", path = "../anvilkit-camera" }
+
+[features]
+default = []
+serde = ["anvilkit-core/serde", "anvilkit-ecs/serde"]
+rapier = ["anvilkit-ecs/rapier"]
+debug = ["anvilkit-core/debug", "anvilkit-ecs/debug", "anvilkit-render/debug"]

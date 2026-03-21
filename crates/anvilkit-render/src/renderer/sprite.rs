@@ -40,9 +40,12 @@ use super::buffer::Vertex;
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct SpriteVertex {
-    pub position: [f32; 3],  // x, y, z-order
+    /// Screen-space position (x, y) and z-order depth.
+    pub position: [f32; 3],
+    /// Texture UV coordinates.
     pub texcoord: [f32; 2],
-    pub color: [f32; 3],     // tint
+    /// Tint color (linear RGB).
+    pub color: [f32; 3],
 }
 
 impl Vertex for SpriteVertex {
@@ -99,6 +102,7 @@ pub struct AtlasRect {
 }
 
 impl AtlasRect {
+    /// Creates a new atlas rectangle from UV min/max coordinates.
     pub fn new(u_min: f32, v_min: f32, u_max: f32, v_max: f32) -> Self {
         Self { u_min, v_min, u_max, v_max }
     }
@@ -108,7 +112,9 @@ impl AtlasRect {
         Self { u_min: 0.0, v_min: 0.0, u_max: 1.0, v_max: 1.0 }
     }
 
+    /// Returns the width of this rectangle in UV space.
     pub fn width(&self) -> f32 { self.u_max - self.u_min }
+    /// Returns the height of this rectangle in UV space.
     pub fn height(&self) -> f32 { self.v_max - self.v_min }
 }
 
@@ -142,6 +148,7 @@ pub struct TextureAtlas {
 }
 
 impl TextureAtlas {
+    /// Creates a new empty texture atlas with the given pixel dimensions.
     pub fn new(width: u32, height: u32) -> Self {
         Self {
             width,
@@ -254,10 +261,12 @@ pub struct SpriteBatch {
 }
 
 impl SpriteBatch {
+    /// Creates a new empty sprite batch.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Removes all vertices from the batch.
     pub fn clear(&mut self) {
         self.vertices.clear();
     }
@@ -311,23 +320,29 @@ impl SpriteBatch {
 //  SpriteRenderer — GPU pipeline for 2D sprite rendering
 // ---------------------------------------------------------------------------
 
-const SPRITE_SHADER: &str = include_str!("../../../../shaders/sprite.wgsl");
+const SPRITE_SHADER: &str = include_str!("../shaders/sprite.wgsl");
 
 /// 正交投影 uniform (64 bytes)
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct OrthoUniform {
+    /// Orthographic projection matrix for 2D rendering.
     pub projection: [[f32; 4]; 4],
 }
 
 /// GPU 2D 精灵渲染器
 pub struct SpriteRenderer {
+    /// The wgpu render pipeline for 2D sprites.
     pub pipeline: wgpu::RenderPipeline,
+    /// Uniform buffer holding the orthographic projection matrix.
     pub ortho_buffer: wgpu::Buffer,
+    /// Bind group for the orthographic projection uniform.
     pub ortho_bind_group: wgpu::BindGroup,
+    /// Layout for the orthographic projection bind group.
     pub ortho_bind_group_layout: wgpu::BindGroupLayout,
+    /// Layout for the sprite texture and sampler bind group.
     pub texture_bind_group_layout: wgpu::BindGroupLayout,
-    /// Cached vertex buffer for per-frame reuse (grows as needed, never shrinks)
+    /// Cached vertex buffer for per-frame reuse (grows as needed, never shrinks).
     cached_vb: Option<(wgpu::Buffer, u64)>,
 }
 

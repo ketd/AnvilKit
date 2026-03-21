@@ -21,9 +21,13 @@ use wgpu::util::DeviceExt;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlexDirection {
+    /// Items laid out horizontally from left to right.
     Row,
+    /// Items laid out horizontally from right to left.
     RowReverse,
+    /// Items laid out vertically from top to bottom.
     Column,
+    /// Items laid out vertically from bottom to top.
     ColumnReverse,
 }
 
@@ -37,11 +41,17 @@ pub enum FlexDirection {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Align {
+    /// Align items to the start of the axis.
     Start,
+    /// Align items to the center of the axis.
     Center,
+    /// Align items to the end of the axis.
     End,
+    /// Stretch items to fill the cross axis.
     Stretch,
+    /// Distribute items with equal space between them.
     SpaceBetween,
+    /// Distribute items with equal space around them.
     SpaceAround,
 }
 
@@ -57,8 +67,11 @@ pub enum Align {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Val {
+    /// Automatically determined by the layout engine.
     Auto,
+    /// Absolute size in pixels.
     Px(f32),
+    /// Relative size as a percentage of the parent.
     Percent(f32),
 }
 
@@ -86,19 +99,33 @@ impl Default for Val {
 /// ```
 #[derive(Debug, Clone)]
 pub struct UiStyle {
+    /// Main axis direction for child layout.
     pub flex_direction: FlexDirection,
+    /// Alignment of children along the main axis.
     pub justify_content: Align,
+    /// Alignment of children along the cross axis.
     pub align_items: Align,
+    /// Desired width of the element.
     pub width: Val,
+    /// Desired height of the element.
     pub height: Val,
+    /// Minimum width constraint.
     pub min_width: Val,
+    /// Minimum height constraint.
     pub min_height: Val,
+    /// Maximum width constraint.
     pub max_width: Val,
+    /// Maximum height constraint.
     pub max_height: Val,
-    pub padding: [f32; 4],  // top, right, bottom, left
+    /// Inner padding in pixels [top, right, bottom, left].
+    pub padding: [f32; 4],
+    /// Outer margin in pixels [top, right, bottom, left].
     pub margin: [f32; 4],
+    /// Spacing between child elements in pixels.
     pub gap: f32,
+    /// How much this element grows to fill available space.
     pub flex_grow: f32,
+    /// How much this element shrinks when space is insufficient.
     pub flex_shrink: f32,
 }
 
@@ -136,13 +163,18 @@ impl Default for UiStyle {
 /// ```
 #[derive(Debug, Clone)]
 pub struct UiText {
+    /// The text string to display.
     pub content: String,
+    /// Font size in pixels.
     pub font_size: f32,
+    /// Text color [R, G, B, A].
     pub color: [f32; 4],
+    /// Font family name.
     pub font_family: String,
 }
 
 impl UiText {
+    /// Creates a new `UiText` with default font size and white color.
     pub fn new(content: &str) -> Self {
         Self {
             content: content.to_string(),
@@ -152,11 +184,13 @@ impl UiText {
         }
     }
 
+    /// Sets the font size and returns self for chaining.
     pub fn with_font_size(mut self, size: f32) -> Self {
         self.font_size = size;
         self
     }
 
+    /// Sets the text color and returns self for chaining.
     pub fn with_color(mut self, color: [f32; 4]) -> Self {
         self.color = color;
         self
@@ -225,10 +259,12 @@ use taffy::prelude as tf;
 ///
 /// 将 UiNode 树转换为 taffy 布局树，计算 computed_rect。
 pub struct UiLayoutEngine {
+    /// The underlying taffy layout tree.
     taffy: tf::TaffyTree,
 }
 
 impl UiLayoutEngine {
+    /// Creates a new layout engine with an empty taffy tree.
     pub fn new() -> Self {
         Self {
             taffy: tf::TaffyTree::new(),
@@ -379,18 +415,24 @@ impl Default for UiLayoutEngine {
 //  UiRenderer — GPU pipeline for UI rectangles
 // ---------------------------------------------------------------------------
 
-const UI_SHADER: &str = include_str!("../../../../shaders/ui.wgsl");
+const UI_SHADER: &str = include_str!("../shaders/ui.wgsl");
 
 /// UI 矩形 GPU 顶点
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct UiVertex {
+    /// Normalized corner position within the quad (0..1).
     pub position: [f32; 2],
+    /// Top-left corner of the rectangle in screen pixels.
     pub rect_min: [f32; 2],
+    /// Width and height of the rectangle in screen pixels.
     pub rect_size: [f32; 2],
+    /// Background fill color [R, G, B, A].
     pub color: [f32; 4],
+    /// Border stroke color [R, G, B, A].
     pub border_color: [f32; 4],
-    pub params: [f32; 4], // border_radius, border_width, 0, 0
+    /// Packed parameters: [border_radius, border_width, 0, 0].
+    pub params: [f32; 4],
 }
 
 impl UiVertex {
@@ -413,10 +455,13 @@ impl UiVertex {
 
 /// GPU UI 渲染器
 pub struct UiRenderer {
+    /// The wgpu render pipeline for UI rectangles.
     pub pipeline: wgpu::RenderPipeline,
+    /// Uniform buffer holding the orthographic projection matrix.
     pub ortho_buffer: wgpu::Buffer,
+    /// Bind group for the orthographic projection uniform.
     pub ortho_bind_group: wgpu::BindGroup,
-    /// Cached vertex buffer for per-frame reuse
+    /// Cached vertex buffer for per-frame reuse.
     cached_vb: Option<(wgpu::Buffer, u64)>,
 }
 
@@ -427,6 +472,7 @@ struct UiOrthoUniform {
 }
 
 impl UiRenderer {
+    /// Creates the UI render pipeline, uniform buffer, and bind group.
     pub fn new(device: &super::RenderDevice, format: wgpu::TextureFormat) -> Self {
         let shader = device.device().create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("UI Shader"),

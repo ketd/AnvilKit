@@ -1,3 +1,5 @@
+pub mod config;
+pub mod chunk_manager;
 pub mod vertex;
 pub mod block;
 pub mod chunk;
@@ -8,3 +10,4 @@ pub mod resources;
 pub mod raycast;
 pub mod systems;
 pub mod render;
+pub mod persistence;
