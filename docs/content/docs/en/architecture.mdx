@@ -1,0 +1,85 @@
+---
+title: Architecture Overview
+description: AnvilKit engine architecture design
+---
+
+## Layered Architecture
+
+AnvilKit uses a layered modular design where each layer depends only on layers below it:
+
+```
+┌─────────────────────────────────────────┐
+│           Game Layer (games/)           │
+│       billiards / craft / your_game     │
+├─────────────────────────────────────────┤
+│        System Layer (High-level)        │
+│   anvilkit-camera  anvilkit-audio       │
+│   anvilkit-input   anvilkit-assets      │
+├─────────────────────────────────────────┤
+│         Core Layer (Low-level)          │
+│   anvilkit-core    anvilkit-ecs         │
+│   anvilkit-render                       │
+├─────────────────────────────────────────┤
+│         Third-party Dependencies        │
+│   bevy_ecs / wgpu / rapier / glam      │
+└─────────────────────────────────────────┘
+```
+
+## Module Overview
+
+### anvilkit-core
+
+Foundation type library: math utilities (vectors, matrices, transforms, interpolation), time system, error types.
+
+### anvilkit-ecs
+
+Application framework based on `bevy_ecs`: App lifecycle, Plugin system, Schedule dispatching, System registration.
+
+### anvilkit-render
+
+Unified 2D/3D rendering pipeline:
+- wgpu device management and window Surface
+- PBR material system (metallic/roughness workflow)
+- HDR rendering + ACES Tonemap
+- IBL (image-based lighting) and shadows
+- Sprite, Line, Particle, Text, UI renderers
+- Frustum culling and GPU instancing
+
+### anvilkit-assets
+
+Asset pipeline: glTF model loading, skeletal animation (linear/spherical/cubic spline interpolation), procedural mesh generation, scene management.
+
+### anvilkit-audio
+
+Audio system: BGM and SFX playback, spatial audio, volume control.
+
+### anvilkit-input
+
+Input abstraction layer: keyboard/mouse/gamepad input state, custom Action Map bindings.
+
+### anvilkit-camera
+
+Camera system: first/third-person controllers, FOV effects, gimbal lock protection.
+
+## Data Flow
+
+```
+Input Events → InputState → Systems → ECS World → Extract → RenderWorld → GPU
+```
+
+Typical per-frame execution flow:
+
+1. **Input Phase** — `InputState` collects keyboard/mouse events
+2. **Update Phase** — Game systems read/write ECS components (physics, AI, game logic)
+3. **Extract Phase** — Extract rendering data from main World to RenderWorld
+4. **Render Phase** — Renderers submit draw calls to GPU
+
+## Coordinate System
+
+AnvilKit uses a **left-handed coordinate system**:
+
+- +X points right
+- +Y points up
+- +Z points into the screen (forward)
+
+Projection uses `look_at_lh` and `perspective_lh`.

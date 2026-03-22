@@ -1,0 +1,15 @@
+{
+  "title": "文档",
+  "root": true,
+  "pages": [
+    "index",
+    "getting-started",
+    "architecture",
+    "---模块---",
+    "...crates",
+    "---游戏示例---",
+    "...games",
+    "---工具---",
+    "...tools"
+  ]
+}

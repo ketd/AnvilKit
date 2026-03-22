@@ -1,0 +1,75 @@
+---
+title: Getting Started
+description: Create your first AnvilKit project
+---
+
+## Prerequisites
+
+- Rust 1.70 or higher
+- GPU with Vulkan / Metal / DX12 support
+
+## Using the CLI
+
+AnvilKit provides a CLI tool for quick project scaffolding:
+
+```bash
+# Install the CLI
+cargo install --path tools/anvilkit-cli
+
+# Create a new project
+anvilkit new my_game --template 3d-basic
+```
+
+Available templates:
+
+| Template | Description |
+|----------|-------------|
+| `empty` | Empty project with basic structure only |
+| `3d-basic` | Basic 3D scene with camera and lighting |
+| `topdown` | Top-down 2D game template |
+| `first-person` | First-person 3D game template |
+
+## Manual Setup
+
+If you prefer manual setup, add dependencies in your workspace `Cargo.toml`:
+
+```toml
+[dependencies]
+anvilkit-core = { path = "../../crates/anvilkit-core" }
+anvilkit-ecs = { path = "../../crates/anvilkit-ecs" }
+anvilkit-render = { path = "../../crates/anvilkit-render" }
+```
+
+## Minimal Example
+
+```rust
+use anvilkit_ecs::prelude::*;
+use anvilkit_render::prelude::*;
+
+fn main() {
+    App::new()
+        .add_plugin(RenderPlugin::default())
+        .add_system(Update, hello_system)
+        .run();
+}
+
+fn hello_system() {
+    println!("Hello, AnvilKit!");
+}
+```
+
+## Running Your Project
+
+```bash
+# Using the CLI
+anvilkit run my_game
+
+# Or directly with Cargo
+cargo run -p my_game
+```
+
+## Next Steps
+
+- Learn about the [Architecture Overview](/en/docs/architecture)
+- Check the [Render Module](/en/docs/crates/render) documentation
+- Explore the [Billiards](/en/docs/games/billiards) and [Craft](/en/docs/games/craft) example games

@@ -1,0 +1,74 @@
+---
+title: anvilkit-render
+description: 渲染引擎 — 统一 2D/3D 渲染管线
+---
+
+`anvilkit-render` 是 AnvilKit 的核心渲染模块，基于 `wgpu` 提供统一的 2D/3D 渲染能力。
+
+## 架构
+
+渲染系统采用提取 (Extract) 架构：
+
+```
+主 World → Extract → RenderWorld → 各渲染器 → GPU
+```
+
+每帧从主 ECS World 提取渲染所需的数据（变换、材质、可见性），然后由各渲染器独立处理 draw call。
+
+## 渲染器
+
+### 3D 渲染
+
+- **PBR 材质** — 金属度/粗糙度工作流，支持 albedo、normal、metallic-roughness 贴图
+- **HDR + Tonemap** — Rgba16Float 渲染目标 + ACES Filmic 色调映射
+- **IBL** — 基于 cubemap 的环境光照（漫反射辐照度 + 镜面反射）
+- **阴影** — 方向光级联阴影贴图
+- **MSAA** — 多重采样抗锯齿
+- **视锥体剔除** — 基于 bounding sphere 的快速剔除
+- **GPU 实例化** — 相同 mesh 的批量绘制
+
+### 2D 渲染
+
+- **Sprite** — 精灵图渲染（支持图集、翻转、着色）
+- **Line** — 线段绘制（调试、辅助线）
+- **Text** — 文本渲染
+- **Particle** — 粒子效果系统
+- **UI** — 基于 `taffy` 布局的 UI 元素
+
+## RenderPlugin
+
+```rust
+use anvilkit_render::prelude::*;
+
+app.add_plugin(RenderPlugin {
+    window_title: "My Game".to_string(),
+    width: 1280,
+    height: 720,
+    vsync: true,
+    msaa_samples: 4,
+    ..Default::default()
+});
+```
+
+## 资源管理
+
+`RenderAssets` 通过 Handle 系统管理 GPU 资源：
+
+```rust
+// 上传纹理
+let handle = render_assets.upload_texture(device, queue, &texture_data);
+
+// 上传网格
+let mesh_handle = render_assets.upload_mesh(device, &mesh_data);
+
+// 查找资源
+if let Some(texture) = render_assets.get_texture(handle) {
+    // 使用纹理
+}
+```
+
+## 自定义渲染管线
+
+对于不需要 PBR 的场景（如体素游戏），可以绕过内置管线直接使用 wgpu。
+
+详见 [自定义渲染管线指南](/zh/docs/tools/cli)。

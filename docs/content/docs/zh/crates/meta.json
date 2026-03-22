@@ -1,0 +1,12 @@
+{
+  "title": "模块",
+  "pages": [
+    "core",
+    "ecs",
+    "render",
+    "assets",
+    "audio",
+    "input",
+    "camera"
+  ]
+}

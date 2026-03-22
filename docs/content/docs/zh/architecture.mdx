@@ -1,0 +1,85 @@
+---
+title: 架构概览
+description: AnvilKit 引擎的整体架构设计
+---
+
+## 分层架构
+
+AnvilKit 采用分层模块化设计，每一层只依赖下层，不会反向依赖：
+
+```
+┌─────────────────────────────────────────┐
+│              游戏层 (games/)             │
+│       billiards / craft / your_game     │
+├─────────────────────────────────────────┤
+│            系统层 (高级 Crate)           │
+│   anvilkit-camera  anvilkit-audio       │
+│   anvilkit-input   anvilkit-assets      │
+├─────────────────────────────────────────┤
+│            核心层 (底层 Crate)           │
+│   anvilkit-core    anvilkit-ecs         │
+│   anvilkit-render                       │
+├─────────────────────────────────────────┤
+│          第三方依赖                      │
+│   bevy_ecs / wgpu / rapier / glam      │
+└─────────────────────────────────────────┘
+```
+
+## 模块概览
+
+### anvilkit-core
+
+引擎基础类型库：数学工具（向量、矩阵、变换、插值）、时间系统、错误类型。
+
+### anvilkit-ecs
+
+基于 `bevy_ecs` 的应用框架：App 生命周期、Plugin 系统、Schedule 调度、System 注册。
+
+### anvilkit-render
+
+统一 2D/3D 渲染管线：
+- wgpu 设备管理和窗口 Surface
+- PBR 材质系统（金属度/粗糙度工作流）
+- HDR 渲染 + ACES Tonemap
+- IBL（环境光照）和阴影
+- Sprite、Line、Particle、Text、UI 渲染器
+- 视锥体剔除和 GPU 实例化
+
+### anvilkit-assets
+
+资产管线：glTF 模型加载、骨骼动画（线性/球面/三次样条插值）、程序化网格生成、场景管理。
+
+### anvilkit-audio
+
+音频系统：BGM 和 SFX 播放、空间音频、音量控制。
+
+### anvilkit-input
+
+输入抽象层：键盘/鼠标/手柄输入状态、自定义 Action Map 绑定。
+
+### anvilkit-camera
+
+相机系统：第一/第三人称控制器、FOV 效果、万向锁保护。
+
+## 数据流
+
+```
+输入事件 → InputState → Systems → ECS World → Extract → RenderWorld → GPU
+```
+
+每帧的典型执行流程：
+
+1. **输入阶段** — `InputState` 收集键盘/鼠标事件
+2. **更新阶段** — 游戏系统读写 ECS 组件（物理、AI、游戏逻辑）
+3. **提取阶段** — 从主 World 提取渲染所需数据到 RenderWorld
+4. **渲染阶段** — 各渲染器提交 draw call 到 GPU
+
+## 坐标系
+
+AnvilKit 使用 **左手坐标系**：
+
+- +X 向右
+- +Y 向上
+- +Z 向屏幕内（前方）
+
+投影使用 `look_at_lh` 和 `perspective_lh`。

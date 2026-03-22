@@ -1,0 +1,50 @@
+---
+title: Billiards
+description: Pool game — 2D physics and collision system example
+---
+
+Billiards is a 2D pool game demonstrating AnvilKit's ECS architecture, 2D physics integration, and game state management.
+
+## Project Structure
+
+```
+games/billiards/
+├── src/
+│   ├── main.rs          # Entry point
+│   ├── lib.rs           # Module exports
+│   ├── components.rs    # ECS component definitions
+│   ├── resources.rs     # Shared resources
+│   ├── physics/         # Physics subsystem
+│   │   ├── collision.rs # Collision detection
+│   │   ├── dynamics.rs  # Dynamics simulation
+│   │   └── pocket.rs    # Pocket detection
+│   ├── render/          # Render setup
+│   └── systems/         # Game systems
+│       ├── game_logic.rs
+│       ├── input.rs
+│       └── ui_update.rs
+```
+
+## Core Components
+
+```rust
+struct Ball {
+    number: u8,
+    ball_type: BallType, // Solid / Stripe / Cue / Eight
+}
+
+struct Velocity(Vec2);
+struct AngularVelocity(f32);
+```
+
+## Physics System
+
+- **Collision Detection** — Circle-circle and circle-boundary collisions
+- **Dynamics** — Elastic collision response with friction deceleration
+- **Pocketing** — Distance threshold detection for balls entering pockets
+
+## Running
+
+```bash
+cargo run -p billiards
+```

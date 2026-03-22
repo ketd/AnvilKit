@@ -1,0 +1,80 @@
+---
+title: AnvilKit CLI
+description: 命令行工具 — 项目脚手架、代码生成、诊断
+---
+
+`anvilkit-cli` 是 AnvilKit 的开发者命令行工具，提供项目创建、代码生成和工程诊断功能。
+
+## 安装
+
+```bash
+cargo install --path tools/anvilkit-cli
+```
+
+## 命令
+
+### new — 创建新项目
+
+```bash
+anvilkit new my_game --template 3d-basic
+```
+
+| 模板 | 说明 |
+|------|------|
+| `empty` | 空项目 |
+| `3d-basic` | 3D 基础场景 |
+| `topdown` | 俯视角 2D |
+| `first-person` | 第一人称 3D |
+
+自动执行：
+1. 在 `games/my_game/` 创建目录结构
+2. 根据模板生成 `main.rs`、`components.rs`、`resources.rs` 等
+3. 添加到 workspace members
+4. 运行 `cargo check` 验证
+
+### generate — 代码生成
+
+```bash
+# 生成组件
+anvilkit generate component PlayerHealth --fields "current:f32,max:f32"
+
+# 生成资源
+anvilkit generate resource GameSettings
+
+# 生成系统
+anvilkit generate system apply_damage
+```
+
+代码生成包含标识符验证（Rust 关键字检查、命名规范）。
+
+### run — 运行游戏
+
+```bash
+anvilkit run my_game
+# 等同于 cargo run -p my_game
+```
+
+### doctor — 工程诊断
+
+```bash
+anvilkit doctor
+```
+
+检查项目：
+- Rust 工具链版本
+- workspace 配置
+- 依赖健康状态
+- 编译检查
+
+### check — 快速检查
+
+```bash
+anvilkit check
+# 等同于 cargo check --workspace
+```
+
+### build — 构建
+
+```bash
+anvilkit build my_game --release
+```

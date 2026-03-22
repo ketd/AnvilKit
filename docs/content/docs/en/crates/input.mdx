@@ -1,0 +1,58 @@
+---
+title: anvilkit-input
+description: Input system — keyboard, mouse, Action Map
+---
+
+`anvilkit-input` provides cross-platform input abstraction with keyboard, mouse support and custom Action Maps.
+
+## InputState
+
+```rust
+use anvilkit_input::input_state::InputState;
+
+fn player_input(input: Res<InputState>) {
+    if input.is_key_pressed(KeyCode::Space) {
+        // Jump (on press)
+    }
+    if input.is_key_held(KeyCode::KeyW) {
+        // Move forward (while held)
+    }
+
+    if input.is_mouse_pressed(MouseButton::Left) {
+        // Shoot
+    }
+    let mouse_delta = input.mouse_delta();
+}
+```
+
+## Action Map
+
+Map physical keys to logical actions:
+
+```rust
+use anvilkit_input::action_map::ActionMap;
+
+let mut actions = ActionMap::new();
+
+actions.bind("move_forward", KeyCode::KeyW);
+actions.bind("move_forward", KeyCode::ArrowUp);
+actions.bind("jump", KeyCode::Space);
+actions.bind("shoot", MouseButton::Left);
+
+if actions.is_action_pressed("jump", &input) {
+    // Execute jump
+}
+```
+
+## Mouse Lock
+
+FPS games need cursor locking with raw mouse deltas:
+
+```rust
+window.set_cursor_grab(CursorGrabMode::Confined)
+    .or_else(|_| window.set_cursor_grab(CursorGrabMode::Locked));
+window.set_cursor_visible(false);
+
+// Use DeviceEvent::MouseMotion for raw deltas
+// instead of CursorMoved (limited by window bounds)
+```

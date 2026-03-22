@@ -1,0 +1,49 @@
+---
+title: anvilkit-audio
+description: 音频系统 — BGM、音效、空间音频
+---
+
+`anvilkit-audio` 提供游戏音频播放能力，支持背景音乐和音效。
+
+## AudioEngine
+
+```rust
+use anvilkit_audio::engine::AudioEngine;
+
+let mut audio = AudioEngine::new()?;
+
+// 播放背景音乐
+audio.play_bgm("assets/audio/theme.ogg", 0.8)?;
+
+// 播放音效
+audio.play_sfx("assets/audio/explosion.wav", 1.0)?;
+
+// 调节音量
+audio.set_bgm_volume(0.5);
+audio.set_sfx_volume(0.7);
+```
+
+## ECS 集成
+
+通过 System 在游戏逻辑中控制音频：
+
+```rust
+fn play_hit_sound(
+    mut audio: ResMut<AudioEngine>,
+    events: EventReader<HitEvent>,
+) {
+    for _event in events.read() {
+        audio.play_sfx("assets/audio/hit.wav", 1.0)
+            .ok(); // 忽略音频错误
+    }
+}
+```
+
+## 支持格式
+
+| 格式 | 说明 |
+|------|------|
+| `.ogg` | Ogg Vorbis — 推荐用于 BGM |
+| `.wav` | WAV — 推荐用于短音效 |
+| `.mp3` | MP3 — 兼容性格式 |
+| `.flac` | FLAC — 无损格式 |

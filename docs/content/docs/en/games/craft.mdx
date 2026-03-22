@@ -1,0 +1,65 @@
+---
+title: Craft
+description: Voxel game — 3D world generation, custom render pipeline
+---
+
+Craft is a Minecraft-style voxel game demonstrating custom rendering pipelines, chunk management, and world generation.
+
+## Project Structure
+
+```
+games/craft/
+├── src/
+│   ├── main.rs         # Entry + main loop
+│   ├── lib.rs          # Module exports
+│   ├── block.rs        # Block type definitions
+│   ├── chunk.rs        # Chunk data structure
+│   ├── components.rs   # ECS components
+│   ├── mesh.rs         # Chunk mesh generation
+│   ├── raycast.rs      # Ray picking
+│   ├── resources.rs    # Game resources
+│   ├── vertex.rs       # Custom vertex format
+│   ├── world_gen.rs    # Procedural terrain generation
+│   ├── persistence.rs  # World save/load
+│   ├── render/         # Custom wgpu pipeline
+│   └── systems/        # Game systems
+├── assets/
+│   ├── voxel.wgsl      # Voxel shader
+│   └── craft_tonemap.wgsl
+```
+
+## Core Features
+
+### Procedural World Generation
+
+Uses Perlin noise to generate heightmaps with layered block filling:
+
+- Surface: grass blocks
+- Underground: stone, dirt
+- Deep: bedrock
+- Decorations: trees, flowers
+
+### Chunk System
+
+- Chunk size: 32 x 256 x 32
+- Dynamic loading/unloading based on player position
+- Greedy mesh merging to reduce triangle count
+- Frustum culling (bounding sphere radius ~130)
+
+### Custom Render Pipeline
+
+Bypasses the PBR pipeline with a simple 2-bind-group setup:
+- Group 0: scene uniform (view-projection, camera position, light direction, fog)
+- Group 1: texture atlas + sampler
+
+### Block Operations
+
+- **Place block** — right click
+- **Break block** — left click
+- **Ray picking** — cast ray from camera, traverse using DDA algorithm
+
+## Running
+
+```bash
+cargo run -p craft
+```

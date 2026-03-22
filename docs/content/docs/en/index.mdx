@@ -1,0 +1,35 @@
+---
+title: Introduction
+description: AnvilKit modular game infrastructure framework
+---
+
+AnvilKit is a modular game infrastructure framework written in Rust, providing composable core tools for 2D and 3D game development.
+
+## Core Features
+
+- **ECS Architecture** — Entity Component System based on `bevy_ecs` for high-performance game object management
+- **Unified Rendering** — `wgpu`-based 2D/3D unified rendering pipeline with PBR, HDR, IBL, and shadows
+- **Physics System** — Integrated `rapier2d`/`rapier3d` physics engine
+- **Audio System** — Spatial audio and sound effect management based on `kira`/`rodio`
+- **Asset Pipeline** — glTF loading, skeletal animation, procedural mesh generation
+- **Input System** — Cross-platform input abstraction with custom Action Map support
+- **UI System** — Immediate-mode UI based on `taffy` layout
+- **Developer Tools** — CLI scaffolding, code generation, performance analysis
+
+## Tech Stack
+
+| Area | Dependency |
+|------|-----------|
+| ECS | `bevy_ecs` |
+| Rendering | `wgpu`, `winit` |
+| Math | `glam` |
+| Physics | `rapier2d`, `rapier3d` |
+| Audio | `kira`, `rodio` |
+| UI | `taffy`, `egui` |
+| Assets | `gltf`, `image` |
+
+## Quick Links
+
+- [Getting Started](/en/docs/getting-started) — Create your first project in 5 minutes
+- [Architecture Overview](/en/docs/architecture) — Understand the engine's overall design
+- [Crate Documentation](/en/docs/crates/core) — Module API reference

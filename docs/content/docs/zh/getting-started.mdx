@@ -1,0 +1,75 @@
+---
+title: 快速开始
+description: 创建你的第一个 AnvilKit 项目
+---
+
+## 前置条件
+
+- Rust 1.70 或更高版本
+- 支持 Vulkan / Metal / DX12 的 GPU
+
+## 使用 CLI 创建项目
+
+AnvilKit 提供 CLI 工具来快速创建项目骨架：
+
+```bash
+# 安装 CLI
+cargo install --path tools/anvilkit-cli
+
+# 创建新项目
+anvilkit new my_game --template 3d-basic
+```
+
+可用模板：
+
+| 模板 | 说明 |
+|------|------|
+| `empty` | 空项目，仅包含基础结构 |
+| `3d-basic` | 3D 基础场景，带相机和光照 |
+| `topdown` | 俯视角 2D 游戏模板 |
+| `first-person` | 第一人称 3D 游戏模板 |
+
+## 手动创建
+
+如果你更喜欢手动设置，在 workspace 的 `Cargo.toml` 中添加依赖：
+
+```toml
+[dependencies]
+anvilkit-core = { path = "../../crates/anvilkit-core" }
+anvilkit-ecs = { path = "../../crates/anvilkit-ecs" }
+anvilkit-render = { path = "../../crates/anvilkit-render" }
+```
+
+## 最小示例
+
+```rust
+use anvilkit_ecs::prelude::*;
+use anvilkit_render::prelude::*;
+
+fn main() {
+    App::new()
+        .add_plugin(RenderPlugin::default())
+        .add_system(Update, hello_system)
+        .run();
+}
+
+fn hello_system() {
+    println!("Hello, AnvilKit!");
+}
+```
+
+## 运行项目
+
+```bash
+# 使用 CLI 运行
+anvilkit run my_game
+
+# 或者直接使用 Cargo
+cargo run -p my_game
+```
+
+## 下一步
+
+- 了解 [架构概览](/zh/docs/architecture)
+- 查看 [渲染模块](/zh/docs/crates/render) 文档
+- 探索 [Billiards](/zh/docs/games/billiards) 和 [Craft](/zh/docs/games/craft) 示例游戏

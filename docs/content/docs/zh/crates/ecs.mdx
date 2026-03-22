@@ -1,0 +1,87 @@
+---
+title: anvilkit-ecs
+description: 实体组件系统 — App 框架、Plugin、Schedule
+---
+
+`anvilkit-ecs` 基于 `bevy_ecs` 提供应用生命周期管理、Plugin 系统和 System 调度。
+
+## App
+
+`App` 是应用的入口，管理整个 ECS World 的生命周期：
+
+```rust
+use anvilkit_ecs::prelude::*;
+
+let mut app = App::new();
+app.add_plugin(MyPlugin)
+   .add_system(Update, my_system)
+   .insert_resource(MyResource::default())
+   .run();
+```
+
+## Plugin
+
+Plugin 是模块化组织代码的方式：
+
+```rust
+pub struct PhysicsPlugin;
+
+impl Plugin for PhysicsPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(PhysicsWorld::default())
+           .add_system(Update, step_physics)
+           .add_system(Update, sync_transforms);
+    }
+}
+```
+
+## System
+
+System 是纯函数，通过参数声明数据访问需求：
+
+```rust
+// 查询组件
+fn move_system(
+    time: Res<Time>,
+    mut query: Query<(&Velocity, &mut Transform)>,
+) {
+    let dt = time.delta_seconds();
+    for (vel, mut transform) in &mut query {
+        transform.translation += vel.0 * dt;
+    }
+}
+
+// 事件系统
+fn collision_handler(
+    mut events: EventReader<CollisionEvent>,
+) {
+    for event in events.read() {
+        println!("碰撞: {:?} <-> {:?}", event.a, event.b);
+    }
+}
+```
+
+## Schedule
+
+系统按 Schedule 分组执行：
+
+| Schedule | 说明 |
+|----------|------|
+| `Startup` | 应用启动时执行一次 |
+| `Update` | 每帧执行 |
+| `FixedUpdate` | 固定时间步长执行（物理） |
+| `PostUpdate` | Update 之后执行 |
+
+## Bundle
+
+Bundle 是组件的集合，方便批量添加：
+
+```rust
+#[derive(Bundle)]
+struct PlayerBundle {
+    transform: Transform,
+    velocity: Velocity,
+    health: Health,
+    player: Player,
+}
+```

@@ -1,0 +1,85 @@
+---
+title: anvilkit-ecs
+description: Entity Component System — App framework, Plugins, Schedules
+---
+
+`anvilkit-ecs` provides application lifecycle management, a Plugin system, and System scheduling based on `bevy_ecs`.
+
+## App
+
+`App` is the application entry point, managing the entire ECS World lifecycle:
+
+```rust
+use anvilkit_ecs::prelude::*;
+
+let mut app = App::new();
+app.add_plugin(MyPlugin)
+   .add_system(Update, my_system)
+   .insert_resource(MyResource::default())
+   .run();
+```
+
+## Plugin
+
+Plugins are the modular way to organize code:
+
+```rust
+pub struct PhysicsPlugin;
+
+impl Plugin for PhysicsPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(PhysicsWorld::default())
+           .add_system(Update, step_physics)
+           .add_system(Update, sync_transforms);
+    }
+}
+```
+
+## System
+
+Systems are pure functions that declare data access through parameters:
+
+```rust
+fn move_system(
+    time: Res<Time>,
+    mut query: Query<(&Velocity, &mut Transform)>,
+) {
+    let dt = time.delta_seconds();
+    for (vel, mut transform) in &mut query {
+        transform.translation += vel.0 * dt;
+    }
+}
+
+fn collision_handler(
+    mut events: EventReader<CollisionEvent>,
+) {
+    for event in events.read() {
+        println!("Collision: {:?} <-> {:?}", event.a, event.b);
+    }
+}
+```
+
+## Schedule
+
+Systems are grouped by Schedule:
+
+| Schedule | Description |
+|----------|-------------|
+| `Startup` | Runs once at application start |
+| `Update` | Runs every frame |
+| `FixedUpdate` | Runs at fixed timestep (physics) |
+| `PostUpdate` | Runs after Update |
+
+## Bundle
+
+Bundles are collections of components for batch insertion:
+
+```rust
+#[derive(Bundle)]
+struct PlayerBundle {
+    transform: Transform,
+    velocity: Velocity,
+    health: Health,
+    player: Player,
+}
+```

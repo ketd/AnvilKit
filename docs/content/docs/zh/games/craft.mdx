@@ -1,0 +1,69 @@
+---
+title: Craft
+description: 体素游戏 — 3D 世界生成、自定义渲染管线
+---
+
+Craft 是一个 Minecraft 风格的体素游戏，展示了自定义渲染管线、chunk 管理和世界生成。
+
+## 项目结构
+
+```
+games/craft/
+├── src/
+│   ├── main.rs         # 入口 + 主循环
+│   ├── lib.rs          # 模块导出
+│   ├── block.rs        # 方块类型定义
+│   ├── chunk.rs        # Chunk 数据结构
+│   ├── components.rs   # ECS 组件
+│   ├── mesh.rs         # Chunk 网格生成
+│   ├── raycast.rs      # 射线拾取
+│   ├── resources.rs    # 游戏资源
+│   ├── vertex.rs       # 自定义顶点格式
+│   ├── world_gen.rs    # 程序化地形生成
+│   ├── persistence.rs  # 世界存档
+│   ├── render/         # 自定义 wgpu 管线
+│   └── systems/        # 游戏系统
+├── assets/
+│   ├── voxel.wgsl      # 体素着色器
+│   └── craft_tonemap.wgsl
+```
+
+## 核心特性
+
+### 程序化世界生成
+
+使用 Perlin 噪声生成高度图，分层填充方块类型：
+
+- 表面：草方块
+- 地下：石头、泥土
+- 深处：基岩
+- 装饰：树木、花草
+
+### Chunk 系统
+
+- Chunk 大小：32 x 256 x 32
+- 按玩家位置动态加载/卸载
+- 贪婪网格合并减少三角形数量
+- 视锥体剔除（bounding sphere 半径 ~130）
+
+### 自定义渲染管线
+
+绕过 PBR 管线，使用简单的 2 个 bind group：
+- Group 0：场景 uniform（视图投影、相机位置、光照方向、雾）
+- Group 1：贴图图集 + 采样器
+
+### 方块操作
+
+- **放置方块** — 右键点击
+- **破坏方块** — 左键点击
+- **射线拾取** — 从相机发射射线，遍历 DDA 算法找到目标方块
+
+## 运行
+
+```bash
+cargo run -p craft
+```
+
+## 相关文档
+
+- [自定义渲染管线指南](/zh/docs/crates/render) — 详细的管线开发经验

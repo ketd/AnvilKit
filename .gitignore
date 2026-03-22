@@ -68,3 +68,8 @@ memory-bank/backups/*
 !memory-bank/backups/.gitkeep
 
 .dev
+
+# Fumadocs / Next.js
+docs/.next/
+docs/out/
+docs/.source/

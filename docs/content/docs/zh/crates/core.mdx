@@ -1,0 +1,82 @@
+---
+title: anvilkit-core
+description: 核心类型库 — 数学工具、时间系统、错误处理
+---
+
+`anvilkit-core` 是引擎的基础类型库，提供所有其他 crate 共享的基础设施。
+
+## 数学模块
+
+基于 `glam` 构建的数学工具集：
+
+### 变换 (Transform)
+
+```rust
+use anvilkit_core::math::Transform;
+
+let transform = Transform {
+    translation: Vec3::new(1.0, 2.0, 3.0),
+    rotation: Quat::IDENTITY,
+    scale: Vec3::ONE,
+};
+
+// 获取模型矩阵
+let matrix = transform.to_matrix();
+```
+
+### 插值 (Interpolation)
+
+```rust
+use anvilkit_core::math::interpolation::*;
+
+// 线性插值
+let value = lerp(0.0, 10.0, 0.5); // 5.0
+
+// 值域映射
+let mapped = remap(0.5, 0.0..=1.0, 0.0..=100.0); // 50.0
+
+// 缓动函数
+let eased = ease_in_out_cubic(t);
+```
+
+### 几何工具
+
+```rust
+use anvilkit_core::math::geometry::*;
+
+// 射线
+let ray = Ray::new(origin, direction);
+
+// AABB 包围盒
+let aabb = Aabb::from_min_max(min, max);
+
+// 视锥体剔除
+let visible = frustum.contains_sphere(center, radius);
+```
+
+## 时间系统
+
+```rust
+use anvilkit_core::time::{Time, Timer};
+
+// Time 资源 — 每帧自动更新
+let dt = time.delta_seconds();
+let elapsed = time.elapsed_seconds();
+
+// 定时器
+let mut timer = Timer::from_seconds(2.0, TimerMode::Repeating);
+timer.tick(dt);
+if timer.just_finished() {
+    // 每 2 秒触发
+}
+```
+
+## 常量
+
+```rust
+use anvilkit_core::math::constants::*;
+
+PI;       // 3.14159...
+TAU;      // 6.28318...
+EPSILON;  // 浮点比较容差
+```

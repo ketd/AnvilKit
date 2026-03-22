@@ -1,0 +1,52 @@
+---
+title: Billiards
+description: 台球游戏 — 2D 物理与碰撞系统示例
+---
+
+Billiards 是一个 2D 台球游戏，展示了 AnvilKit 的 ECS 架构、2D 物理集成和游戏状态管理。
+
+## 项目结构
+
+```
+games/billiards/
+├── src/
+│   ├── main.rs          # 入口
+│   ├── lib.rs           # 模块导出
+│   ├── components.rs    # ECS 组件定义
+│   ├── resources.rs     # 共享资源
+│   ├── physics/         # 物理子系统
+│   │   ├── collision.rs # 碰撞检测
+│   │   ├── dynamics.rs  # 动力学模拟
+│   │   └── pocket.rs    # 入袋检测
+│   ├── render/          # 渲染设置
+│   └── systems/         # 游戏系统
+│       ├── game_logic.rs
+│       ├── input.rs
+│       └── ui_update.rs
+```
+
+## 核心组件
+
+```rust
+// 球
+struct Ball {
+    number: u8,
+    ball_type: BallType, // Solid / Stripe / Cue / Eight
+}
+
+// 速度与摩擦
+struct Velocity(Vec2);
+struct AngularVelocity(f32);
+```
+
+## 物理系统
+
+- **碰撞检测** — 球与球、球与边界的圆形碰撞
+- **动力学** — 弹性碰撞响应、摩擦减速
+- **入袋** — 检测球进入球袋的距离阈值
+
+## 运行
+
+```bash
+cargo run -p billiards
+```

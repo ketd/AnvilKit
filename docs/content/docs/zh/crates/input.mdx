@@ -1,0 +1,63 @@
+---
+title: anvilkit-input
+description: 输入系统 — 键盘、鼠标、Action Map
+---
+
+`anvilkit-input` 提供跨平台的输入抽象，支持键盘、鼠标输入和自定义 Action Map。
+
+## InputState
+
+```rust
+use anvilkit_input::input_state::InputState;
+
+fn player_input(input: Res<InputState>) {
+    // 键盘
+    if input.is_key_pressed(KeyCode::Space) {
+        // 跳跃（按下瞬间）
+    }
+    if input.is_key_held(KeyCode::KeyW) {
+        // 前进（持续按住）
+    }
+
+    // 鼠标
+    if input.is_mouse_pressed(MouseButton::Left) {
+        // 射击
+    }
+    let mouse_delta = input.mouse_delta();
+}
+```
+
+## Action Map
+
+将物理按键映射到逻辑动作：
+
+```rust
+use anvilkit_input::action_map::ActionMap;
+
+let mut actions = ActionMap::new();
+
+// 绑定动作
+actions.bind("move_forward", KeyCode::KeyW);
+actions.bind("move_forward", KeyCode::ArrowUp); // 多个键绑定同一动作
+actions.bind("jump", KeyCode::Space);
+actions.bind("shoot", MouseButton::Left);
+
+// 查询动作
+if actions.is_action_pressed("jump", &input) {
+    // 执行跳跃
+}
+```
+
+## 鼠标锁定
+
+FPS 游戏需要锁定光标并使用原始鼠标增量：
+
+```rust
+// 锁定光标
+window.set_cursor_grab(CursorGrabMode::Confined)
+    .or_else(|_| window.set_cursor_grab(CursorGrabMode::Locked));
+window.set_cursor_visible(false);
+
+// 使用 DeviceEvent::MouseMotion 获取原始增量
+// 而不是 CursorMoved（受窗口边界限制）
+```

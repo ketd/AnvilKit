@@ -1,0 +1,64 @@
+---
+title: anvilkit-render
+description: Rendering engine — unified 2D/3D rendering pipeline
+---
+
+`anvilkit-render` is AnvilKit's core rendering module, providing unified 2D/3D rendering capabilities based on `wgpu`.
+
+## Architecture
+
+The rendering system uses an Extract architecture:
+
+```
+Main World → Extract → RenderWorld → Renderers → GPU
+```
+
+Each frame, rendering data (transforms, materials, visibility) is extracted from the main ECS World, then processed by individual renderers for draw calls.
+
+## Renderers
+
+### 3D Rendering
+
+- **PBR Materials** — Metallic/roughness workflow with albedo, normal, and metallic-roughness textures
+- **HDR + Tonemap** — Rgba16Float render target + ACES Filmic tone mapping
+- **IBL** — Cubemap-based environment lighting (diffuse irradiance + specular reflection)
+- **Shadows** — Directional light cascaded shadow maps
+- **MSAA** — Multi-sample anti-aliasing
+- **Frustum Culling** — Fast bounding sphere-based culling
+- **GPU Instancing** — Batch drawing of identical meshes
+
+### 2D Rendering
+
+- **Sprite** — Sprite rendering (atlas, flip, tint support)
+- **Line** — Line drawing (debug, guides)
+- **Text** — Text rendering
+- **Particle** — Particle effect system
+- **UI** — UI elements based on `taffy` layout
+
+## RenderPlugin
+
+```rust
+use anvilkit_render::prelude::*;
+
+app.add_plugin(RenderPlugin {
+    window_title: "My Game".to_string(),
+    width: 1280,
+    height: 720,
+    vsync: true,
+    msaa_samples: 4,
+    ..Default::default()
+});
+```
+
+## Resource Management
+
+`RenderAssets` manages GPU resources through a Handle system:
+
+```rust
+let handle = render_assets.upload_texture(device, queue, &texture_data);
+let mesh_handle = render_assets.upload_mesh(device, &mesh_data);
+
+if let Some(texture) = render_assets.get_texture(handle) {
+    // Use texture
+}
+```
