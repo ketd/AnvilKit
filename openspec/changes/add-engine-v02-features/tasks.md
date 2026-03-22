@@ -36,17 +36,27 @@
 - [ ] 2.2.3 添加 `Serializable` marker component
 - [ ] 2.2.4 迁移 Craft 的 persistence.rs 到通用方案
 
-### 2.3 异步资源加载
-- [ ] 2.3.1 添加后台线程池到 AssetServer
-- [ ] 2.3.2 实现 `load_async()` 返回 Handle + LoadState
-- [ ] 2.3.3 完成回调机制（LoadState 变更事件）
-- [ ] 2.3.4 实现资源依赖追踪和级联卸载
+### 2.3 持久化系统
+- [ ] 2.3.1 实现 `SaveManager`（存档槽位、元数据、list/save/load/delete）
+- [ ] 2.3.2 实现自动存档（定时器 + `_autosave` 槽位）
+- [ ] 2.3.3 实现存档版本迁移框架（`SaveMigration` trait）
+- [ ] 2.3.4 实现 `Settings` 资源（RON 格式、类型化分区、default fallback）
+- [ ] 2.3.5 实现 `WorldStorage` KV 后端（SQLite 或自定义 append-only 格式）
+- [ ] 2.3.6 实现 batch 事务写入和 crash safety
+- [ ] 2.3.7 实现 `AssetCache`（内容 hash → 编译产物，LRU 逐出）
+- [ ] 2.3.8 迁移 Craft 的 persistence.rs 到引擎 SaveManager + WorldStorage
 
-### 2.4 资源热重载
-- [ ] 2.4.1 集成 `notify` crate 文件监视
-- [ ] 2.4.2 实现 shader 热重载（检测 .wgsl 变更 → 重建 pipeline）
-- [ ] 2.4.3 实现纹理热重载（检测 .png/.jpg 变更 → 重新上传 GPU）
-- [ ] 2.4.4 通过 feature flag 控制（debug 默认开启，release 默认关闭）
+### 2.4 异步资源加载
+- [ ] 2.4.1 添加后台线程池到 AssetServer
+- [ ] 2.4.2 实现 `load_async()` 返回 Handle + LoadState
+- [ ] 2.4.3 完成回调机制（LoadState 变更事件）
+- [ ] 2.4.4 实现资源依赖追踪和级联卸载
+
+### 2.5 资源热重载
+- [ ] 2.5.1 集成 `notify` crate 文件监视
+- [ ] 2.5.2 实现 shader 热重载（检测 .wgsl 变更 → 重建 pipeline）
+- [ ] 2.5.3 实现纹理热重载（检测 .png/.jpg 变更 → 重新上传 GPU）
+- [ ] 2.5.4 通过 feature flag 控制（debug 默认开启，release 默认关闭）
 
 ## Tier 3: 游戏性核心
 
