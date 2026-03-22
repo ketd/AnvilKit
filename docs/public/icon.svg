@@ -1,29 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="220 130 360 200" width="64" height="64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
   <defs>
-    <linearGradient id="hornGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="h" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#FF5D00"/>
       <stop offset="100%" stop-color="#FF0055"/>
     </linearGradient>
-    <linearGradient id="coreGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+    <linearGradient id="c" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#FF0055"/>
       <stop offset="100%" stop-color="#9D00FF"/>
     </linearGradient>
-    <linearGradient id="waistGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+    <linearGradient id="w" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" stop-color="#9D00FF"/>
       <stop offset="100%" stop-color="#0055FF"/>
     </linearGradient>
-    <linearGradient id="baseGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+    <linearGradient id="b" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#0055FF"/>
       <stop offset="50%" stop-color="#00E5FF"/>
       <stop offset="100%" stop-color="#0055FF"/>
     </linearGradient>
   </defs>
-  <!-- Horn -->
-  <path d="M 240,150 L 330,150 L 330,190 L 300,190 Z" fill="url(#hornGrad)"/>
-  <!-- Core -->
-  <path d="M 340,150 L 560,150 L 560,190 L 460,190 L 340,190 Z" fill="url(#coreGrad)"/>
-  <!-- Waist with A cutout -->
-  <path d="M 340,200 L 460,200 L 440,260 L 360,260 Z M 400,215 L 380,245 L 420,245 Z" fill="url(#waistGrad)" fill-rule="evenodd"/>
-  <!-- Base -->
-  <path d="M 320,270 L 480,270 L 520,310 L 280,310 Z" fill="url(#baseGrad)"/>
+  <!-- Anvil scaled and centered into 128x128 square -->
+  <!-- Original bounds: x[240,560] y[150,310] = 320x160, centered at (400,230) -->
+  <!-- Scale to fit 108px with 10px padding: scale=108/320=0.3375, offset to center -->
+  <g transform="translate(64,64) scale(0.3375) translate(-400,-230)">
+    <path d="M 240,150 L 330,150 L 330,190 L 300,190 Z" fill="url(#h)"/>
+    <path d="M 340,150 L 560,150 L 560,190 L 460,190 L 340,190 Z" fill="url(#c)"/>
+    <path d="M 340,200 L 460,200 L 440,260 L 360,260 Z M 400,215 L 380,245 L 420,245 Z" fill="url(#w)" fill-rule="evenodd"/>
+    <path d="M 320,270 L 480,270 L 520,310 L 280,310 Z" fill="url(#b)"/>
+  </g>
 </svg>
