@@ -10,7 +10,15 @@ export const metadata: Metadata = {
     template: '%s | AnvilKit',
     default: 'AnvilKit',
   },
-  description: 'AnvilKit - 模块化游戏基础设施框架',
+  description: 'AnvilKit - Modular Game Infrastructure',
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/favicon-16.png', sizes: '16x16', type: 'image/png' },
+    ],
+    apple: '/apple-touch-icon.png',
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

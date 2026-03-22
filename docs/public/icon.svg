@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="220 130 360 200" width="64" height="64">
+  <defs>
+    <linearGradient id="hornGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF5D00"/>
+      <stop offset="100%" stop-color="#FF0055"/>
+    </linearGradient>
+    <linearGradient id="coreGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FF0055"/>
+      <stop offset="100%" stop-color="#9D00FF"/>
+    </linearGradient>
+    <linearGradient id="waistGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#9D00FF"/>
+      <stop offset="100%" stop-color="#0055FF"/>
+    </linearGradient>
+    <linearGradient id="baseGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0055FF"/>
+      <stop offset="50%" stop-color="#00E5FF"/>
+      <stop offset="100%" stop-color="#0055FF"/>
+    </linearGradient>
+  </defs>
+  <!-- Horn -->
+  <path d="M 240,150 L 330,150 L 330,190 L 300,190 Z" fill="url(#hornGrad)"/>
+  <!-- Core -->
+  <path d="M 340,150 L 560,150 L 560,190 L 460,190 L 340,190 Z" fill="url(#coreGrad)"/>
+  <!-- Waist with A cutout -->
+  <path d="M 340,200 L 460,200 L 440,260 L 360,260 Z M 400,215 L 380,245 L 420,245 Z" fill="url(#waistGrad)" fill-rule="evenodd"/>
+  <!-- Base -->
+  <path d="M 320,270 L 480,270 L 520,310 L 280,310 Z" fill="url(#baseGrad)"/>
+</svg>

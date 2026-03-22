@@ -4,31 +4,31 @@
 
 <br/><br/>
 
-A modular game engine built with Rust — forging games from composable crates.
+模块化游戏引擎 — 用可组合的 Rust crate 锻造游戏。
 
 [![crates.io](https://img.shields.io/crates/v/anvilkit.svg?style=flat-square&color=00E5FF)](https://crates.io/crates/anvilkit)
 [![docs.rs](https://img.shields.io/docsrs/anvilkit?style=flat-square&color=9D00FF)](https://docs.rs/anvilkit)
 [![license](https://img.shields.io/crates/l/anvilkit?style=flat-square&color=FF0055)](LICENSE-MIT)
 [![CI](https://img.shields.io/github/actions/workflow/status/ketd/AnvilKit/ci.yml?style=flat-square&label=CI)](https://github.com/ketd/AnvilKit/actions)
 
-[Docs](https://anvilkit.io) · [Quick Start](https://anvilkit.io/en/docs/getting-started) · [Games](https://anvilkit.io/en/docs/games/craft) · [crates.io](https://crates.io/crates/anvilkit)
+[文档](https://anvilkit.io) · [快速开始](https://anvilkit.io/zh/docs/getting-started) · [示例游戏](https://anvilkit.io/zh/docs/games/craft) · [crates.io](https://crates.io/crates/anvilkit)
 
-English | **[中文](README_ZH.md)**
+**[English](README.md)** | 中文
 
 </div>
 
 ---
 
-## What is AnvilKit?
+## AnvilKit 是什么？
 
-AnvilKit is a **modular game infrastructure** — not a monolithic engine, but a set of focused crates you compose to build exactly the game you need.
+AnvilKit 是一套**模块化游戏基础设施** — 不是单体引擎，而是一组专注的 crate，你可以自由组合来构建你需要的游戏。
 
 ```toml
-# Use the facade crate for everything:
+# 使用 facade crate 一键引入全部：
 [dependencies]
 anvilkit = "0.1"
 
-# Or pick individual crates:
+# 或按需选取单个 crate：
 [dependencies]
 anvilkit-core = "0.1"
 anvilkit-ecs = "0.1"
@@ -50,11 +50,11 @@ fn hello() {
 }
 ```
 
-## Crate Map
+## 模块地图
 
 ```
                         ┌──────────┐
-                        │ anvilkit │  ← facade, re-exports everything
+                        │ anvilkit │  ← 门面 crate，统一导出
                         └────┬─────┘
           ┌──────┬──────┬────┼────┬───────┬────────┐
           ▼      ▼      ▼    ▼    ▼       ▼        ▼
@@ -65,17 +65,17 @@ fn hello() {
             bevy_ecs   wgpu + winit
 ```
 
-| Crate | What it does | Key deps |
-|-------|-------------|----------|
-| **anvilkit-core** | Math (glam), transforms, time, errors | `glam` |
-| **anvilkit-ecs** | ECS world, schedules, plugins, physics | `bevy_ecs` |
-| **anvilkit-render** | Window, GPU pipelines, sprites, particles, UI, text | `wgpu`, `winit` |
-| **anvilkit-assets** | glTF loader, asset server, procedural meshes | `gltf` |
-| **anvilkit-input** | Keyboard/mouse/gamepad state, action mapping | `winit` |
-| **anvilkit-audio** | Spatial audio, playback, mixing | `rodio` |
-| **anvilkit-camera** | FPS/third-person controllers, effects, shake | — |
+| Crate | 功能 | 核心依赖 |
+|-------|------|----------|
+| **anvilkit-core** | 数学库 (glam)、变换、时间、错误处理 | `glam` |
+| **anvilkit-ecs** | ECS 世界、调度器、插件、物理系统 | `bevy_ecs` |
+| **anvilkit-render** | 窗口管理、GPU 管线、精灵、粒子、UI、文本 | `wgpu`, `winit` |
+| **anvilkit-assets** | glTF 加载、资源服务器、程序化网格生成 | `gltf` |
+| **anvilkit-input** | 键盘/鼠标/手柄状态、动作映射 | `winit` |
+| **anvilkit-audio** | 空间音频、播放控制、混音 | `rodio` |
+| **anvilkit-camera** | 第一/第三人称控制器、特效、震动 | — |
 
-## Games
+## 示例游戏
 
 <table>
 <tr>
@@ -83,7 +83,7 @@ fn hello() {
 
 ### Craft
 
-Minecraft-style voxel sandbox with terrain generation, block building, water, day/night cycle, and greedy meshing.
+Minecraft 风格体素沙盒 — 地形生成、方块建造、水体渲染、昼夜循环、贪心网格化。
 
 ```bash
 cargo run -p craft
@@ -94,7 +94,7 @@ cargo run -p craft
 
 ### Billiards
 
-2D pool simulation with AABB physics, ball-to-ball collision, break shots, and rule enforcement.
+2D 台球模拟 — AABB 物理、球与球碰撞、开球规则、得分系统。
 
 ```bash
 cargo run -p billiards
@@ -104,9 +104,9 @@ cargo run -p billiards
 </tr>
 </table>
 
-## CLI
+## CLI 工具
 
-The `anvil` CLI scaffolds new projects from templates:
+`anvil` 命令行工具可以从模板快速创建新项目：
 
 ```bash
 cargo install anvilkit-cli
@@ -114,9 +114,9 @@ anvil new my-game --template first_person
 cd my-game && cargo run
 ```
 
-Templates: `3d_basic`, `first_person`, `topdown`
+内置模板：`3d_basic`、`first_person`、`topdown`
 
-## Building from Source
+## 从源码构建
 
 ```bash
 git clone https://github.com/ketd/AnvilKit.git
@@ -125,24 +125,24 @@ cargo build --workspace
 cargo test --workspace
 ```
 
-Run the docs site locally:
+本地运行文档站：
 
 ```bash
 cd docs && pnpm install && pnpm dev
 ```
 
-## License
+## 许可证
 
-Dual-licensed under [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE), at your option.
+双许可：[MIT](LICENSE-MIT) 或 [Apache 2.0](LICENSE-APACHE)，任选其一。
 
-## Acknowledgments
+## 致谢
 
-Built on the shoulders of [Bevy ECS](https://bevyengine.org/) · [wgpu](https://wgpu.rs/) · [winit](https://github.com/rust-windowing/winit) · [glam](https://github.com/bitshifter/glam-rs) · [rodio](https://github.com/RustAudio/rodio)
+构建于 [Bevy ECS](https://bevyengine.org/) · [wgpu](https://wgpu.rs/) · [winit](https://github.com/rust-windowing/winit) · [glam](https://github.com/bitshifter/glam-rs) · [rodio](https://github.com/RustAudio/rodio) 之上。
 
 <div align="center">
 
 ---
 
-**Forging games with Rust 🔨**
+**用 Rust 锻造游戏的未来 🔨**
 
 </div>
