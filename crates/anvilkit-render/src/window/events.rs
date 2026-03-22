@@ -743,6 +743,91 @@ impl RenderApp {
             self.render_ecs();
         }
     }
+
+    // --- Public helpers for games with custom ApplicationHandler ---
+
+    /// Forward a window event to [`InputState`] (keyboard, mouse, cursor, scroll).
+    ///
+    /// Call this from your own [`ApplicationHandler::window_event`] implementation
+    /// so the engine handles input state bookkeeping while you handle game-specific events.
+    pub fn forward_input(app: &mut App, event: &WindowEvent) {
+        match event {
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let winit::keyboard::PhysicalKey::Code(code) = event.physical_key {
+                    if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+                        if let Some(key) = KeyCode::from_winit(code) {
+                            if event.state.is_pressed() {
+                                input.press_key(key);
+                            } else {
+                                input.release_key(key);
+                            }
+                        }
+                    }
+                }
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+                    if let Some(btn) = MouseButton::from_winit(*button) {
+                        if state.is_pressed() {
+                            input.press_mouse(btn);
+                        } else {
+                            input.release_mouse(btn);
+                        }
+                    }
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+                    input.set_mouse_position(glam::Vec2::new(position.x as f32, position.y as f32));
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+                    let scroll = match delta {
+                        winit::event::MouseScrollDelta::LineDelta(_, y) => *y,
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 120.0,
+                    };
+                    input.add_scroll_delta(scroll);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Forward a device event to [`InputState`] (raw mouse motion delta).
+    ///
+    /// Call this from your own [`ApplicationHandler::device_event`] implementation.
+    /// The accumulated delta is cleared automatically by [`InputState::end_frame`].
+    pub fn forward_device_input(app: &mut App, event: &DeviceEvent) {
+        if let DeviceEvent::MouseMotion { delta } = event {
+            if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+                input.add_mouse_delta(glam::Vec2::new(delta.0 as f32, delta.1 as f32));
+            }
+        }
+    }
+
+    /// Run a single frame tick: update DeltaTime, run `app.update()`, clear input state.
+    ///
+    /// Call this from your own [`ApplicationHandler::about_to_wait`] implementation.
+    /// Handles the standard per-frame lifecycle so your game only needs to add
+    /// pre-update and post-update logic around it.
+    pub fn tick(&mut self, app: &mut App) {
+        let now = Instant::now();
+        let raw_dt = now.duration_since(self.last_frame_time).as_secs_f32();
+        self.last_frame_time = now;
+        let dt = raw_dt.clamp(0.001, 0.1);
+        app.world.insert_resource(DeltaTime(dt));
+
+        app.update();
+
+        if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+            input.end_frame();
+        }
+
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
 }
 
 impl ApplicationHandler for RenderApp {
@@ -792,53 +877,12 @@ impl ApplicationHandler for RenderApp {
                 self.handle_scale_factor_changed(scale_factor);
             }
 
-            WindowEvent::KeyboardInput { event, .. } => {
-                if let winit::keyboard::PhysicalKey::Code(code) = event.physical_key {
-                    if let Some(app) = &mut self.app {
-                        if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
-                            if let Some(key) = KeyCode::from_winit(code) {
-                                if event.state.is_pressed() {
-                                    input.press_key(key);
-                                } else {
-                                    input.release_key(key);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            WindowEvent::MouseInput { state, button, .. } => {
+            WindowEvent::KeyboardInput { .. }
+            | WindowEvent::MouseInput { .. }
+            | WindowEvent::CursorMoved { .. }
+            | WindowEvent::MouseWheel { .. } => {
                 if let Some(app) = &mut self.app {
-                    if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
-                        if let Some(btn) = MouseButton::from_winit(button) {
-                            if state.is_pressed() {
-                                input.press_mouse(btn);
-                            } else {
-                                input.release_mouse(btn);
-                            }
-                        }
-                    }
-                }
-            }
-
-            WindowEvent::CursorMoved { position, .. } => {
-                if let Some(app) = &mut self.app {
-                    if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
-                        input.set_mouse_position(glam::Vec2::new(position.x as f32, position.y as f32));
-                    }
-                }
-            }
-
-            WindowEvent::MouseWheel { delta, .. } => {
-                if let Some(app) = &mut self.app {
-                    if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
-                        let scroll = match delta {
-                            winit::event::MouseScrollDelta::LineDelta(_, y) => y,
-                            winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 120.0,
-                        };
-                        input.add_scroll_delta(scroll);
-                    }
+                    Self::forward_input(app, &event);
                 }
             }
 
@@ -865,33 +909,20 @@ impl ApplicationHandler for RenderApp {
         &mut self,
         _event_loop: &ActiveEventLoop,
         _device_id: DeviceId,
-        _event: DeviceEvent,
+        event: DeviceEvent,
     ) {
-        // 后续可以添加输入处理
+        if let Some(app) = &mut self.app {
+            Self::forward_device_input(app, &event);
+        }
     }
 
     /// 即将等待事件
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        // 如果持有 ECS App，每帧调用 update() 运行 ECS 系统
-        if let Some(app) = &mut self.app {
-            // 计算真实帧时间并写入 ECS DeltaTime 资源
-            let now = Instant::now();
-            let raw_dt = now.duration_since(self.last_frame_time).as_secs_f32();
-            self.last_frame_time = now;
-            // Clamp dt to [0.001, 0.1] to prevent physics explosions
-            let dt = raw_dt.clamp(0.001, 0.1);
-            app.world.insert_resource(DeltaTime(dt));
-
-            app.update();
-
-            // 帧结束，清除 just_pressed / just_released 状态
-            if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
-                input.end_frame();
-            }
-        }
-
-        if let Some(window) = &self.window {
-            window.request_redraw();
+        // 使用 tick() 统一处理：DeltaTime → app.update() → end_frame → request_redraw
+        // 注意：需要临时取出 app 以满足借用检查（tick 需要 &mut self 和 &mut App）
+        if let Some(mut app) = self.app.take() {
+            self.tick(&mut app);
+            self.app = Some(app);
         }
     }
 }

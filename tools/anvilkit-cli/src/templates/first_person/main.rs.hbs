@@ -59,7 +59,6 @@ fn main() {
     app.insert_resource(GameConfig::default());
     app.insert_resource(CameraLook::default());
     app.insert_resource(input_sys::WindowSize::default());
-    app.insert_resource(input_sys::MouseDelta::default());
 
     // Systems
     app.add_systems(AnvilKitSchedule::Update, input_sys::fps_camera_system);
@@ -92,7 +91,6 @@ fn main() {
         app,
         initialized: false,
         scene_gpu: None,
-        last_mouse_pos: None,
     }).unwrap();
 }
 
@@ -101,7 +99,6 @@ struct GameApp {
     app: App,
     initialized: bool,
     scene_gpu: Option<setup::SceneGpu>,
-    last_mouse_pos: Option<(f32, f32)>,
 }
 
 impl GameApp {
@@ -273,53 +270,22 @@ impl ApplicationHandler for GameApp {
             WindowEvent::KeyboardInput { event, .. } => {
                 use winit::keyboard::{KeyCode as WK, PhysicalKey};
                 if let PhysicalKey::Code(code) = event.physical_key {
-                    if let Some(key) = anvilkit_input::prelude::KeyCode::from_winit(code) {
-                        if let Some(mut input) = self.app.world.get_resource_mut::<InputState>() {
-                            if event.state.is_pressed() { input.press_key(key); } else { input.release_key(key); }
-                        }
-                    }
                     if event.state.is_pressed() && code == WK::Escape { el.exit(); return; }
                 }
-                return;
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                let (mx, my) = (position.x as f32, position.y as f32);
-                if let Some((lx, ly)) = self.last_mouse_pos {
-                    if let Some(mut md) = self.app.world.get_resource_mut::<input_sys::MouseDelta>() {
-                        md.dx = mx - lx;
-                        md.dy = my - ly;
-                    }
-                }
-                self.last_mouse_pos = Some((mx, my));
-                if let Some(mut input) = self.app.world.get_resource_mut::<InputState>() {
-                    input.set_mouse_position(glam::Vec2::new(mx, my));
-                }
-                return;
-            }
-            WindowEvent::MouseInput { state, button, .. } => {
-                if let Some(mb) = anvilkit_input::prelude::MouseButton::from_winit(*button) {
-                    if let Some(mut input) = self.app.world.get_resource_mut::<InputState>() {
-                        if state.is_pressed() { input.press_mouse(mb); } else { input.release_mouse(mb); }
-                    }
-                }
-                return;
             }
             WindowEvent::RedrawRequested if self.initialized => { self.render_frame(); return; }
             _ => {}
         }
+        // Engine handles input forwarding (keyboard, mouse, cursor, scroll)
+        RenderApp::forward_input(&mut self.app, &ev);
         self.render_app.window_event(el, wid, ev);
     }
     fn device_event(&mut self, el: &ActiveEventLoop, did: winit::event::DeviceId, ev: winit::event::DeviceEvent) {
+        RenderApp::forward_device_input(&mut self.app, &ev);
         self.render_app.device_event(el, did, ev);
     }
     fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
-        self.app.update();
-        // Clear mouse delta each frame
-        if let Some(mut md) = self.app.world.get_resource_mut::<input_sys::MouseDelta>() {
-            md.dx = 0.0;
-            md.dy = 0.0;
-        }
-        if let Some(mut input) = self.app.world.get_resource_mut::<InputState>() { input.end_frame(); }
-        if let Some(w) = self.render_app.window() { w.request_redraw(); }
+        // Engine tick: DeltaTime → app.update() → InputState.end_frame() → request_redraw
+        self.render_app.tick(&mut self.app);
     }
 }

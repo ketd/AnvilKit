@@ -13,11 +13,13 @@ use anvilkit_camera::controller::CameraController;
 let controller = CameraController {
     mode: CameraMode::FirstPerson,
     move_speed: 10.0,
-    look_sensitivity: 0.003,
+    mouse_sensitivity: 0.003,
     base_fov: 70.0, // 基准视场角（度）
     ..Default::default()
 };
 ```
+
+内置的 `camera_controller_system` 自动从 `InputState::mouse_delta()` 读取鼠标移动量，引擎会自动将 `DeviceEvent::MouseMotion` 转发到该字段，无需手动管理。
 
 ## 相机模式
 
@@ -25,24 +27,19 @@ let controller = CameraController {
 |------|------|
 | `FirstPerson` | 第一人称——相机跟随玩家视角 |
 | `ThirdPerson` | 第三人称——相机跟随目标，带偏移 |
-| `Orbit` | 轨道模式——围绕目标旋转 |
+| `Free` | 自由飞行——无约束 6DOF 移动 |
 
-## FOV 效果
+## 相机特效
+
+`CameraEffects` 提供头部摇晃、屏幕震动和 FOV 渐变：
 
 ```rust
-use anvilkit_camera::effects::*;
+use anvilkit_camera::effects::CameraEffects;
 
-// 冲刺时增加 FOV
-fn sprint_fov(
-    mut camera: ResMut<CameraController>,
-    input: Res<InputState>,
-) {
-    if input.is_key_held(KeyCode::ShiftLeft) {
-        camera.fov_offset = 10.0; // 基于 base_fov 的偏移
-    } else {
-        camera.fov_offset = 0.0;
-    }
-}
+let mut fx = CameraEffects::default();
+fx.head_bob_enabled = true;
+fx.add_shake(0.2);          // 落地冲击
+fx.fov_target = 10.0;       // 冲刺 FOV 偏移（平滑插值）
 ```
 
 ## 万向锁保护

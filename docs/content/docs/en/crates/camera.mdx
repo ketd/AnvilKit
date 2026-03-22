@@ -13,11 +13,13 @@ use anvilkit_camera::controller::CameraController;
 let controller = CameraController {
     mode: CameraMode::FirstPerson,
     move_speed: 10.0,
-    look_sensitivity: 0.003,
+    mouse_sensitivity: 0.003,
     base_fov: 70.0, // Base field of view (degrees)
     ..Default::default()
 };
 ```
+
+The built-in `camera_controller_system` reads mouse delta from `InputState::mouse_delta()`, which the engine populates automatically from `DeviceEvent::MouseMotion`. No manual mouse delta management is needed.
 
 ## Camera Modes
 
@@ -25,23 +27,19 @@ let controller = CameraController {
 |------|-------------|
 | `FirstPerson` | First-person — camera follows player's viewpoint |
 | `ThirdPerson` | Third-person — camera follows target with offset |
-| `Orbit` | Orbit mode — rotates around a target |
+| `Free` | Free fly — unconstrained 6DOF movement |
 
-## FOV Effects
+## Camera Effects
+
+`CameraEffects` provides head bob, screen shake, and FOV transitions:
 
 ```rust
-use anvilkit_camera::effects::*;
+use anvilkit_camera::effects::CameraEffects;
 
-fn sprint_fov(
-    mut camera: ResMut<CameraController>,
-    input: Res<InputState>,
-) {
-    if input.is_key_held(KeyCode::ShiftLeft) {
-        camera.fov_offset = 10.0; // Offset from base_fov
-    } else {
-        camera.fov_offset = 0.0;
-    }
-}
+let mut fx = CameraEffects::default();
+fx.head_bob_enabled = true;
+fx.add_shake(0.2);          // Landing impact
+fx.fov_target = 10.0;       // Sprint FOV offset (smoothly interpolated)
 ```
 
 ## Gimbal Lock Protection

@@ -1,5 +1,4 @@
 use std::thread;
-use std::time::Instant;
 
 use anvilkit_render::prelude::*;
 use anvilkit_render::renderer::{
@@ -15,7 +14,6 @@ use anvilkit_render::plugin::CameraComponent;
 use anvilkit_input::prelude::{InputState, MouseButton};
 use anvilkit_ecs::physics::DeltaTime;
 use anvilkit_camera::prelude::*;
-use anvilkit_camera::systems::MouseDelta;
 
 use craft::block::BlockType;
 use craft::chunk::CHUNK_SIZE;
@@ -28,6 +26,8 @@ use craft::components::*;
 use craft::resources::*;
 use craft::systems::input as input_sys;
 use craft::systems::physics as physics_sys;
+use craft::systems::day_night::day_night_system;
+use craft::systems::camera_fx::camera_effects_system;
 use craft::config;
 use craft::persistence;
 
@@ -60,20 +60,21 @@ fn main() {
     ));
 
     app.insert_resource(InputState::new());
-    app.insert_resource(DeltaTime(1.0 / 60.0)); // updated each frame in CraftApp::about_to_wait
+    app.insert_resource(DeltaTime(1.0 / 60.0)); // updated each frame by RenderApp::tick()
     app.insert_resource(WorldSeed::default());
     app.insert_resource(PlayerState::default());
-    app.insert_resource(MouseDelta::default());
     app.insert_resource(VoxelWorld::default());
     app.insert_resource(SelectedBlock::default());
     app.insert_resource(DayNightCycle::default());
     app.insert_resource(ActiveFilter::default());
 
-    // Explicit ordering: Input → Physics → Camera
+    // Explicit ordering: DayNight → Input → Physics → CameraFX → CameraController
     app.add_systems(AnvilKitSchedule::Update, (
+        day_night_system,
         input_sys::player_movement_system,
         physics_sys::player_physics_system.after(input_sys::player_movement_system),
-        camera_controller_system.after(physics_sys::player_physics_system),
+        camera_effects_system.after(physics_sys::player_physics_system),
+        camera_controller_system.after(camera_effects_system),
     ));
 
     // FPS Camera — spawn at a reasonable height above terrain
@@ -146,7 +147,6 @@ fn main() {
             text_renderer: None,
             current_hit: None,
             frame_count: 0,
-            last_frame_time: Instant::now(),
         })
         .unwrap();
 }
@@ -165,8 +165,6 @@ struct CraftApp {
     current_hit: Option<VoxelHit>,
     // Debug frame counter
     frame_count: u64,
-    // Frame timing for DeltaTime
-    last_frame_time: Instant,
 }
 
 
@@ -711,6 +709,7 @@ impl ApplicationHandler for CraftApp {
     }
 
     fn window_event(&mut self, el: &ActiveEventLoop, wid: WindowId, ev: WindowEvent) {
+        // Game-specific event handling
         match &ev {
             WindowEvent::Resized(s) if self.initialized && s.width > 0 && s.height > 0 => {
                 if let Some(device) = self.render_app.render_device() {
@@ -720,7 +719,6 @@ impl ApplicationHandler for CraftApp {
                         let (_, hv) =
                             create_hdr_render_target(device, s.width, s.height, "Voxel HDR RT");
                         let samp = create_sampler(device, "Tonemap Sampler");
-                        // Recreate tonemap bind group (with filter uniform)
                         gpu.tonemap_bg =
                             device
                                 .device()
@@ -749,18 +747,9 @@ impl ApplicationHandler for CraftApp {
             WindowEvent::KeyboardInput { event, .. } => {
                 use winit::keyboard::{KeyCode as WK, PhysicalKey};
                 if let PhysicalKey::Code(code) = event.physical_key {
-                    if let Some(key) = anvilkit_input::prelude::KeyCode::from_winit(code) {
-                        if let Some(mut input) = self.app.world.get_resource_mut::<InputState>() {
-                            if event.state.is_pressed() {
-                                input.press_key(key);
-                            } else {
-                                input.release_key(key);
-                            }
-                        }
-                    }
                     if event.state.is_pressed() {
                         // Ctrl+S: save world
-                        if code == WK::KeyS && (event.repeat == false) {
+                        if code == WK::KeyS && !event.repeat {
                             let input = self.app.world.resource::<InputState>();
                             if input.is_key_pressed(anvilkit_input::prelude::KeyCode::LControl)
                                 || input.is_key_pressed(anvilkit_input::prelude::KeyCode::RControl)
@@ -771,33 +760,22 @@ impl ApplicationHandler for CraftApp {
                                     Ok(n) => println!("Saved {} modified chunks to {:?}", n, persistence::save_path()),
                                     Err(e) => println!("Save failed: {}", e),
                                 }
-                                return;
                             }
                         }
                         match code {
-                            WK::Escape => {
-                                el.exit();
-                                return;
-                            }
+                            WK::Escape => { el.exit(); return; }
                             WK::Tab => {
-                                if let Some(mut ps) =
-                                    self.app.world.get_resource_mut::<PlayerState>()
-                                {
+                                if let Some(mut ps) = self.app.world.get_resource_mut::<PlayerState>() {
                                     ps.flying = !ps.flying;
-                                    println!(
-                                        "Flying: {}",
-                                        if ps.flying { "ON" } else { "OFF" }
-                                    );
+                                    println!("Flying: {}", if ps.flying { "ON" } else { "OFF" });
                                 }
                             }
-                            // F1: Cycle post-processing filter
                             WK::F1 => {
                                 if let Some(mut af) = self.app.world.get_resource_mut::<ActiveFilter>() {
                                     af.filter = af.filter.cycle();
                                     println!("Filter: {}", af.filter.name());
                                 }
                             }
-                            // F5: Toggle first-person / third-person
                             WK::F5 => {
                                 let pos = self.app.world.get_resource::<ActiveCamera>()
                                     .map(|c| c.camera_pos)
@@ -813,7 +791,6 @@ impl ApplicationHandler for CraftApp {
                                     println!("Camera: {}", mode_name);
                                 }
                             }
-                            // Block selection: number keys 1-9
                             WK::Digit1 => self.select_block(0),
                             WK::Digit2 => self.select_block(1),
                             WK::Digit3 => self.select_block(2),
@@ -827,25 +804,6 @@ impl ApplicationHandler for CraftApp {
                         }
                     }
                 }
-                return;
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                if let Some(mut input) = self.app.world.get_resource_mut::<InputState>() {
-                    input.set_mouse_position(glam::Vec2::new(position.x as f32, position.y as f32));
-                }
-                return;
-            }
-            WindowEvent::MouseInput { state, button, .. } => {
-                if let Some(mb) = anvilkit_input::prelude::MouseButton::from_winit(*button) {
-                    if let Some(mut input) = self.app.world.get_resource_mut::<InputState>() {
-                        if state.is_pressed() {
-                            input.press_mouse(mb);
-                        } else {
-                            input.release_mouse(mb);
-                        }
-                    }
-                }
-                return;
             }
             WindowEvent::RedrawRequested if self.initialized => {
                 self.render_frame();
@@ -853,6 +811,9 @@ impl ApplicationHandler for CraftApp {
             }
             _ => {}
         }
+        // Engine handles input forwarding (keyboard→InputState, mouse, cursor, scroll)
+        // and window lifecycle (close, resize surface, focus)
+        RenderApp::forward_input(&mut self.app, &ev);
         self.render_app.window_event(el, wid, ev);
     }
 
@@ -862,74 +823,28 @@ impl ApplicationHandler for CraftApp {
         did: winit::event::DeviceId,
         ev: winit::event::DeviceEvent,
     ) {
-        if let winit::event::DeviceEvent::MouseMotion { delta } = ev {
-            if let Some(mut md) = self.app.world.get_resource_mut::<MouseDelta>() {
-                md.dx += delta.0 as f32;
-                md.dy += delta.1 as f32;
-            }
-        }
+        RenderApp::forward_device_input(&mut self.app, &ev);
         self.render_app.device_event(el, did, ev);
     }
 
     fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
         self.frame_count += 1;
 
-        // Update DeltaTime from actual wall-clock elapsed time
-        {
-            let now = Instant::now();
-            let raw_dt = now.duration_since(self.last_frame_time).as_secs_f32();
-            let clamped_dt = raw_dt.clamp(0.001, 0.1); // prevent physics explosions
-            self.last_frame_time = now;
-            self.app.world.insert_resource(DeltaTime(clamped_dt));
-        }
+        // Engine tick: DeltaTime → app.update() (runs all ECS systems) → end_frame → redraw
+        self.render_app.tick(&mut self.app);
 
-        // Advance day/night cycle
-        {
-            let dt = self.app.world.resource::<DeltaTime>().0;
-            let mut cycle = self.app.world.resource_mut::<DayNightCycle>();
-            cycle.advance(dt);
-        }
+        // Post-update: game logic that depends on ECS system results
+        self.post_update();
+    }
+}
 
-        // Update third-person camera target to player position
-        {
-            let cam_pos = self.app.world.get_resource::<ActiveCamera>()
-                .map(|c| c.camera_pos)
-                .unwrap_or(glam::Vec3::ZERO);
-            let mut q = self.app.world.query::<&mut CameraController>();
-            for mut ctrl in q.iter_mut(&mut self.app.world) {
-                if let CameraMode::ThirdPerson { ref mut target, .. } = &mut ctrl.mode {
-                    *target = cam_pos;
-                }
-            }
-        }
+impl CraftApp {
+    // Pre-update logic is now handled by ECS systems:
+    // - day_night_system: advances DayNightCycle
+    // - camera_effects_system: landing shake, sprint FOV, third-person target
 
-        // Camera effects: landing shake, sprint FOV
-        {
-            let (was_on_ground, on_ground, sprinting, vel_y_before) = {
-                let player = self.app.world.resource::<PlayerState>();
-                (player.was_on_ground, player.on_ground, player.sprinting, player.velocity.y)
-            };
-
-            let mut q = self.app.world.query::<&mut CameraEffects>();
-            for mut fx in q.iter_mut(&mut self.app.world) {
-                // Landing shake
-                if on_ground && !was_on_ground {
-                    let impact = (-vel_y_before * 0.02).clamp(0.0, 0.3);
-                    if impact > 0.02 {
-                        fx.add_shake(impact);
-                    }
-                }
-                // Sprint FOV
-                fx.fov_target = if sprinting { 10.0 } else { 0.0 };
-            }
-
-            // Update was_on_ground
-            let mut player = self.app.world.resource_mut::<PlayerState>();
-            player.was_on_ground = on_ground;
-        }
-
-        self.app.update();
-
+    /// Post-update: game logic that depends on ECS system results.
+    fn post_update(&mut self) {
         // Periodic debug log (every 120 frames ~ 2 sec)
         if self.frame_count % 120 == 0 {
             let player = self.app.world.resource::<PlayerState>();
@@ -953,23 +868,8 @@ impl ApplicationHandler for CraftApp {
 
         // Dynamic chunk loading
         self.update_chunks();
-
-        // Clear mouse delta
-        if let Some(mut md) = self.app.world.get_resource_mut::<MouseDelta>() {
-            md.dx = 0.0;
-            md.dy = 0.0;
-        }
-        if let Some(mut input) = self.app.world.get_resource_mut::<InputState>() {
-            input.end_frame();
-        }
-
-        if let Some(w) = self.render_app.window() {
-            w.request_redraw();
-        }
     }
-}
 
-impl CraftApp {
     fn select_block(&mut self, index: usize) {
         if index < BLOCK_PALETTE.len() {
             if let Some(mut sb) = self.app.world.get_resource_mut::<SelectedBlock>() {

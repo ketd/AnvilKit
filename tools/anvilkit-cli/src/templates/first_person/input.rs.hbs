@@ -13,25 +13,21 @@ pub struct WindowSize {
     pub height: f32,
 }
 
-/// Mouse look stored as accumulated delta.
-#[derive(Debug, Default, Resource)]
-pub struct MouseDelta {
-    pub dx: f32,
-    pub dy: f32,
-}
-
 /// FPS camera movement: WASD moves on the XZ plane, mouse rotates view.
+///
+/// Mouse delta is read from `InputState::mouse_delta()`, which the engine
+/// populates automatically from `DeviceEvent::MouseMotion`.
 pub fn fps_camera_system(
     dt: Res<DeltaTime>,
     input: Res<InputState>,
     config: Res<GameConfig>,
     mut look: ResMut<CameraLook>,
-    mouse_delta: Res<MouseDelta>,
     mut query: Query<(&mut Transform, &CameraComponent), With<FpsCamera>>,
 ) {
+    let mouse_delta = input.mouse_delta();
     // Mouse look
-    look.yaw += mouse_delta.dx * config.mouse_sensitivity;
-    look.pitch = (look.pitch - mouse_delta.dy * config.mouse_sensitivity)
+    look.yaw += mouse_delta.x * config.mouse_sensitivity;
+    look.pitch = (look.pitch - mouse_delta.y * config.mouse_sensitivity)
         .clamp(-1.5, 1.5);
 
     let rotation = glam::Quat::from_rotation_y(look.yaw)

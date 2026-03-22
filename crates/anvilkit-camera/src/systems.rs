@@ -9,7 +9,10 @@ use crate::controller::{CameraController, CameraMode};
 use crate::effects::CameraEffects;
 
 /// Resource for accumulated mouse delta per frame.
-/// Games should populate this each frame from raw device events.
+///
+/// Deprecated: the engine now forwards raw mouse motion into [`InputState::mouse_delta()`]
+/// automatically. Use `InputState::mouse_delta()` instead.
+#[deprecated(note = "Use InputState::mouse_delta() instead — engine forwards DeviceEvent::MouseMotion automatically")]
 #[derive(Debug, Default, Resource)]
 pub struct MouseDelta {
     /// Horizontal mouse movement in pixels since last frame.
@@ -19,10 +22,12 @@ pub struct MouseDelta {
 }
 
 /// Core camera controller system.
+///
+/// Reads mouse delta from [`InputState::mouse_delta()`], which is accumulated from
+/// `DeviceEvent::MouseMotion` by the engine's event loop.
 pub fn camera_controller_system(
     dt: Res<DeltaTime>,
     input: Res<InputState>,
-    mouse_delta: Res<MouseDelta>,
     mut query: Query<(
         &mut CameraController,
         &mut Transform,
@@ -30,10 +35,11 @@ pub fn camera_controller_system(
         Option<&mut CameraEffects>,
     )>,
 ) {
+    let mouse_delta = input.mouse_delta();
     for (mut ctrl, mut transform, mut cam, effects) in query.iter_mut() {
         // --- Apply mouse look ---
-        ctrl.yaw += mouse_delta.dx * ctrl.mouse_sensitivity;
-        ctrl.pitch = (ctrl.pitch + mouse_delta.dy * ctrl.mouse_sensitivity)
+        ctrl.yaw += mouse_delta.x * ctrl.mouse_sensitivity;
+        ctrl.pitch = (ctrl.pitch + mouse_delta.y * ctrl.mouse_sensitivity)
             .clamp(ctrl.pitch_limits.0, ctrl.pitch_limits.1);
 
         // --- Smoothing ---
