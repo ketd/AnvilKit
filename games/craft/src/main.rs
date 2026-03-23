@@ -68,8 +68,17 @@ fn main() {
     app.insert_resource(VoxelWorld::default());
     app.insert_resource(SelectedBlock::default());
     app.insert_resource(DayNightCycle::default());
-    app.insert_resource(BloomSettings::default());
-    app.insert_resource(SsaoSettings::default());
+    app.insert_resource(BloomSettings {
+        threshold: 2.5,    // Only very bright highlights bloom (sun, lava, etc.)
+        knee: 0.2,
+        intensity: 0.15,   // Subtle glow
+        ..BloomSettings::default()
+    });
+    app.insert_resource(SsaoSettings {
+        radius: 0.3,
+        intensity: 0.8,
+        ..SsaoSettings::default()
+    });
     app.insert_resource(ActiveFilter::default());
 
     // Explicit ordering: DayNight → Input → Physics → CameraFX → CameraController
