@@ -644,6 +644,186 @@ impl UiRenderer {
     }
 }
 
+// ---------------------------------------------------------------------------
+//  UI Event System — hit testing, click, hover
+// ---------------------------------------------------------------------------
+
+/// UI 交互事件类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiEventKind {
+    /// Mouse entered the node's bounds.
+    HoverEnter,
+    /// Mouse left the node's bounds.
+    HoverLeave,
+    /// Mouse button pressed within the node.
+    Click,
+}
+
+/// 单个 UI 事件
+#[derive(Debug, Clone, Copy)]
+pub struct UiEvent {
+    /// The entity that received the event.
+    pub entity: Entity,
+    /// The type of interaction.
+    pub kind: UiEventKind,
+}
+
+/// UI 事件收集器（ECS Resource）
+///
+/// 每帧由 UI 系统填充，游戏代码读取。
+#[derive(Resource, Default)]
+pub struct UiEvents {
+    /// Events collected this frame.
+    pub events: Vec<UiEvent>,
+    /// Currently hovered entity (if any).
+    pub hovered: Option<Entity>,
+}
+
+impl UiEvents {
+    /// Clear all events (called at frame start).
+    pub fn clear(&mut self) { self.events.clear(); }
+    /// Iterate over events this frame.
+    pub fn iter(&self) -> impl Iterator<Item = &UiEvent> { self.events.iter() }
+    /// Check if a specific entity was clicked this frame.
+    pub fn was_clicked(&self, entity: Entity) -> bool {
+        self.events.iter().any(|e| e.entity == entity && e.kind == UiEventKind::Click)
+    }
+    /// Check if a specific entity is currently hovered.
+    pub fn is_hovered(&self, entity: Entity) -> bool {
+        self.hovered == Some(entity)
+    }
+}
+
+/// 对一组已计算布局的 UI 节点执行 hit test
+///
+/// `mouse_pos` 是屏幕像素坐标。
+/// `nodes` 按 z-order 排列（后面的覆盖前面的）。
+/// 返回最顶层被命中的实体。
+pub fn ui_hit_test(
+    mouse_pos: glam::Vec2,
+    nodes: &[(Entity, [f32; 4])], // (entity, [x, y, w, h])
+) -> Option<Entity> {
+    // Iterate in reverse to find the topmost node
+    for &(entity, [x, y, w, h]) in nodes.iter().rev() {
+        if mouse_pos.x >= x && mouse_pos.x <= x + w
+            && mouse_pos.y >= y && mouse_pos.y <= y + h
+        {
+            return Some(entity);
+        }
+    }
+    None
+}
+
+/// 处理 UI 交互：根据鼠标位置和按键状态生成事件。
+///
+/// 每帧调用一次。
+pub fn process_ui_interactions(
+    mouse_pos: glam::Vec2,
+    mouse_just_pressed: bool,
+    nodes: &[(Entity, [f32; 4])],
+    ui_events: &mut UiEvents,
+) {
+    ui_events.clear();
+
+    let hit = ui_hit_test(mouse_pos, nodes);
+    let prev_hovered = ui_events.hovered;
+
+    // Hover leave
+    if let Some(prev) = prev_hovered {
+        if hit != Some(prev) {
+            ui_events.events.push(UiEvent { entity: prev, kind: UiEventKind::HoverLeave });
+        }
+    }
+
+    // Hover enter
+    if let Some(current) = hit {
+        if prev_hovered != Some(current) {
+            ui_events.events.push(UiEvent { entity: current, kind: UiEventKind::HoverEnter });
+        }
+        // Click
+        if mouse_just_pressed {
+            ui_events.events.push(UiEvent { entity: current, kind: UiEventKind::Click });
+        }
+    }
+
+    ui_events.hovered = hit;
+}
+
+// ---------------------------------------------------------------------------
+//  Widget Constructors — convenience builders for common UI elements
+// ---------------------------------------------------------------------------
+
+/// 快速构建常用 UI 控件的工厂方法。
+pub struct Widget;
+
+impl Widget {
+    /// 创建一个按钮节点。
+    pub fn button(label: &str) -> UiNode {
+        UiNode {
+            background_color: [0.25, 0.25, 0.30, 1.0],
+            border_radius: 6.0,
+            border_width: 1.0,
+            border_color: [0.4, 0.4, 0.5, 1.0],
+            text: Some(UiText::new(label).with_font_size(16.0)),
+            style: UiStyle {
+                padding: [8.0, 16.0, 8.0, 16.0],
+                justify_content: Align::Center,
+                align_items: Align::Center,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    /// 创建一个文本标签节点。
+    pub fn label(text: &str) -> UiNode {
+        UiNode {
+            text: Some(UiText::new(text).with_font_size(14.0)),
+            ..Default::default()
+        }
+    }
+
+    /// 创建一个面板容器节点。
+    pub fn panel() -> UiNode {
+        UiNode {
+            background_color: [0.1, 0.1, 0.12, 0.9],
+            border_radius: 8.0,
+            style: UiStyle {
+                flex_direction: FlexDirection::Column,
+                padding: [12.0; 4],
+                gap: 8.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    /// 创建一个水平行布局容器。
+    pub fn row() -> UiNode {
+        UiNode {
+            style: UiStyle {
+                flex_direction: FlexDirection::Row,
+                gap: 8.0,
+                align_items: Align::Center,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    /// 创建一个垂直列布局容器。
+    pub fn column() -> UiNode {
+        UiNode {
+            style: UiStyle {
+                flex_direction: FlexDirection::Column,
+                gap: 8.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -671,5 +851,36 @@ mod tests {
         let pct = Val::Percent(50.0);
         assert_ne!(auto, px);
         assert_ne!(px, pct);
+    }
+
+    #[test]
+    fn test_ui_hit_test() {
+        let e1 = Entity::from_raw(1);
+        let e2 = Entity::from_raw(2);
+        let nodes = vec![
+            (e1, [10.0, 10.0, 100.0, 50.0]),
+            (e2, [50.0, 20.0, 80.0, 40.0]),
+        ];
+        // Hit e2 (topmost at overlap)
+        assert_eq!(ui_hit_test(glam::Vec2::new(60.0, 30.0), &nodes), Some(e2));
+        // Hit e1 only
+        assert_eq!(ui_hit_test(glam::Vec2::new(15.0, 15.0), &nodes), Some(e1));
+        // Miss all
+        assert_eq!(ui_hit_test(glam::Vec2::new(0.0, 0.0), &nodes), None);
+    }
+
+    #[test]
+    fn test_widget_button() {
+        let btn = Widget::button("OK");
+        assert!(btn.text.is_some());
+        assert_eq!(btn.text.unwrap().content, "OK");
+        assert!(btn.border_radius > 0.0);
+    }
+
+    #[test]
+    fn test_widget_panel() {
+        let panel = Widget::panel();
+        assert_eq!(panel.style.flex_direction, FlexDirection::Column);
+        assert!(panel.background_color[3] > 0.0);
     }
 }
