@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::mpsc;
 
 /// 资产 ID
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -208,9 +209,17 @@ impl<T> AssetStorage<T> {
     }
 }
 
+/// 异步加载完成消息
+pub struct AsyncLoadResult {
+    /// 完成加载的资产 ID。
+    pub id: AssetId,
+    /// 加载到的原始字节数据（成功时 Some，失败时 None）。
+    pub data: Result<Vec<u8>, String>,
+}
+
 /// 资产服务器
 ///
-/// 管理资产的加载请求和状态追踪。
+/// 管理资产的加载请求和状态追踪，支持同步和异步加载。
 ///
 /// # 示例
 ///
@@ -228,33 +237,101 @@ pub struct AssetServer {
     path_to_id: HashMap<PathBuf, AssetId>,
     /// AssetId → 加载状态
     states: HashMap<AssetId, LoadState>,
+    /// 异步加载结果接收端
+    async_rx: mpsc::Receiver<AsyncLoadResult>,
+    /// 异步加载结果发送端（用于 clone 给后台线程）
+    async_tx: mpsc::Sender<AsyncLoadResult>,
+    /// 已完成但未处理的加载结果（缓存在主线程）
+    completed: Vec<AsyncLoadResult>,
 }
 
 impl AssetServer {
     /// 创建新的资产服务器
     pub fn new(asset_root: impl Into<PathBuf>) -> Self {
+        let (tx, rx) = mpsc::channel();
         Self {
             asset_root: asset_root.into(),
             path_to_id: HashMap::new(),
             states: HashMap::new(),
+            async_rx: rx,
+            async_tx: tx,
+            completed: Vec::new(),
         }
     }
 
-    /// 请求加载资产
+    /// 请求加载资产（同步注册，不执行 I/O）。
     ///
     /// 如果同一路径已请求过，返回相同 ID 的新句柄。
     pub fn load<T>(&mut self, path: impl AsRef<Path>) -> AssetHandle<T> {
         let full_path = self.asset_root.join(path.as_ref());
-        let id = *self.path_to_id.entry(full_path.clone()).or_insert_with(|| {
-            let id = AssetId::next();
-            id
-        });
+        let id = *self.path_to_id.entry(full_path.clone()).or_insert_with(AssetId::next);
 
         if !self.states.contains_key(&id) {
             self.states.insert(id, LoadState::Loading);
         }
 
         AssetHandle::new(id, full_path)
+    }
+
+    /// 异步加载资产文件到字节数据。
+    ///
+    /// 在后台线程中读取文件，完成后结果通过内部通道发送回主线程。
+    /// 调用 [`process_completed`] 来处理完成的加载。
+    ///
+    /// # 示例
+    ///
+    /// ```rust,no_run
+    /// use anvilkit_assets::asset_server::AssetServer;
+    ///
+    /// let mut server = AssetServer::new("assets");
+    /// let handle = server.load_async::<Vec<u8>>("textures/atlas.png");
+    /// // Later, in your game loop:
+    /// // server.process_completed();
+    /// ```
+    pub fn load_async<T>(&mut self, path: impl AsRef<Path>) -> AssetHandle<T> {
+        let handle: AssetHandle<T> = self.load(path);
+        let id = handle.id();
+        let file_path = handle.path().to_path_buf();
+        let tx = self.async_tx.clone();
+
+        std::thread::spawn(move || {
+            let result = std::fs::read(&file_path)
+                .map_err(|e| format!("Failed to load {:?}: {}", file_path, e));
+            let _ = tx.send(AsyncLoadResult { id, data: result });
+        });
+
+        handle
+    }
+
+    /// 处理后台线程完成的加载结果。
+    ///
+    /// 每帧调用一次。将接收到的结果缓存到 `completed`，
+    /// 并更新对应的 `LoadState`。
+    /// 返回本次处理的完成数量。
+    pub fn process_completed(&mut self) -> usize {
+        let mut count = 0;
+        while let Ok(result) = self.async_rx.try_recv() {
+            match &result.data {
+                Ok(_) => {
+                    self.states.insert(result.id, LoadState::Loaded);
+                    log::debug!("Asset {:?} loaded successfully", result.id);
+                }
+                Err(e) => {
+                    self.states.insert(result.id, LoadState::Failed);
+                    log::error!("Asset {:?} failed: {}", result.id, e);
+                }
+            }
+            self.completed.push(result);
+            count += 1;
+        }
+        count
+    }
+
+    /// 取出所有已完成的加载结果（消耗缓存）。
+    ///
+    /// 游戏代码调用此方法获取原始字节数据，然后自行解析。
+    pub fn drain_completed(&mut self) -> Vec<AsyncLoadResult> {
+        std::mem::take(&mut self.completed)
     }
 
     /// 获取资产加载状态
