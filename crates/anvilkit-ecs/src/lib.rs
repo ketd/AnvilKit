@@ -63,6 +63,7 @@ pub mod system;
 pub mod transform;
 pub mod physics;
 pub mod audio;
+pub mod scene;
 
 /// 预导入模块，包含最常用的类型和 trait
 pub mod prelude {

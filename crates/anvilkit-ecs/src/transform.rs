@@ -68,6 +68,7 @@ pub use anvilkit_core::math::{Transform, GlobalTransform};
 /// )).id();
 /// ```
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Parent(pub Entity);
 
 impl Parent {
@@ -108,6 +109,7 @@ impl Parent {
 /// )).id();
 /// ```
 #[derive(Component, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Children {
     children: Vec<Entity>,
 }

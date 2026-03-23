@@ -31,6 +31,7 @@ rapier3d = { workspace = true, optional = true }
 
 # 序列化支持（可选）
 serde = { workspace = true, optional = true }
+ron = { workspace = true, optional = true }
 
 [dev-dependencies]
 # 测试依赖
@@ -39,7 +40,7 @@ approx = "0.5"
 [features]
 default = []
 # 序列化支持
-serde = ["dep:serde", "anvilkit-core/serde", "bevy_ecs/serialize"]
+serde = ["dep:serde", "dep:ron", "anvilkit-core/serde", "bevy_ecs/serialize"]
 # rapier3d 物理集成
 rapier = ["dep:rapier3d"]
 # 调试功能
