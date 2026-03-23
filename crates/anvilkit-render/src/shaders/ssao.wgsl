@@ -12,7 +12,7 @@ struct SsaoParams {
     sample_count: f32,            // number of kernel samples (as float)
 };
 
-@group(0) @binding(0) var depth_texture: texture_2d<f32>;
+@group(0) @binding(0) var depth_texture: texture_depth_2d;
 @group(0) @binding(1) var depth_sampler: sampler;
 @group(0) @binding(2) var noise_texture: texture_2d<f32>;
 @group(0) @binding(3) var noise_sampler: sampler;
@@ -33,6 +33,11 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VertexOutput {
     return out;
 }
 
+// Sample depth texture (returns f32 directly for texture_depth_2d)
+fn sample_depth(uv: vec2<f32>) -> f32 {
+    return textureSampleLevel(depth_texture, depth_sampler, uv, 0);
+}
+
 // Reconstruct view-space position from depth and UV
 fn view_pos_from_depth(uv: vec2<f32>, depth: f32) -> vec3<f32> {
     let ndc = vec4<f32>(uv * 2.0 - 1.0, depth, 1.0);
@@ -43,9 +48,9 @@ fn view_pos_from_depth(uv: vec2<f32>, depth: f32) -> vec3<f32> {
 
 // Reconstruct normal from depth buffer using cross product of screen-space derivatives
 fn reconstruct_normal(uv: vec2<f32>, texel_size: vec2<f32>) -> vec3<f32> {
-    let depth_c = textureSample(depth_texture, depth_sampler, uv).r;
-    let depth_r = textureSample(depth_texture, depth_sampler, uv + vec2<f32>(texel_size.x, 0.0)).r;
-    let depth_u = textureSample(depth_texture, depth_sampler, uv + vec2<f32>(0.0, -texel_size.y)).r;
+    let depth_c = sample_depth(uv);
+    let depth_r = sample_depth(uv + vec2<f32>(texel_size.x, 0.0));
+    let depth_u = sample_depth(uv + vec2<f32>(0.0, -texel_size.y));
 
     let pos_c = view_pos_from_depth(uv, depth_c);
     let pos_r = view_pos_from_depth(uv + vec2<f32>(texel_size.x, 0.0), depth_r);
@@ -61,7 +66,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let texel_size = vec2<f32>(1.0) / depth_dims;
     let uv = in.uv;
 
-    let depth = textureSample(depth_texture, depth_sampler, uv).r;
+    let depth = sample_depth(uv);
 
     // Skip sky (depth == 1.0 or very close)
     if depth > 0.9999 {
@@ -95,8 +100,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let sample_uv = offset.xy * 0.5 + 0.5;
 
         // Sample depth at projected position
-        let sample_depth = textureSample(depth_texture, depth_sampler, vec2<f32>(sample_uv.x, 1.0 - sample_uv.y)).r;
-        let sample_view_z = view_pos_from_depth(vec2<f32>(sample_uv.x, 1.0 - sample_uv.y), sample_depth).z;
+        let sample_depth_val = sample_depth(vec2<f32>(sample_uv.x, 1.0 - sample_uv.y));
+        let sample_view_z = view_pos_from_depth(vec2<f32>(sample_uv.x, 1.0 - sample_uv.y), sample_depth_val).z;
 
         // Range check: only occlude within a reasonable distance
         let range_check = smoothstep(0.0, 1.0, params.radius / abs(frag_pos.z - sample_view_z));
