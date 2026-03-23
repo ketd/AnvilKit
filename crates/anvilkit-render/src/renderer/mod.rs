@@ -33,6 +33,10 @@ pub mod text;
 pub mod buffer_pool;
 pub mod bloom;
 pub mod ssao;
+pub mod dof;
+pub mod motion_blur;
+pub mod color_grading;
+pub mod debug_renderer;
 
 // 重新导出主要类型
 pub use device::RenderDevice;

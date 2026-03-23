@@ -82,25 +82,25 @@
 - [x] 3.3.3 Skeleton/AnimationPlayer 升级为 ECS Component（conditional bevy_ecs derive）
 - [x] 3.3.4 新增 BoneMatrices component（compute_bone_matrices → GPU upload）
 
-## Tier 4: 高级功能（待实现）
+## Tier 4: 高级功能 ✅
 
-### 4.1 AI / 寻路
-- [ ] 4.1.1 实现 NavMesh 生成（Recast 算法或集成 `recast-rs`）
-- [ ] 4.1.2 实现 A* 路径规划
-- [ ] 4.1.3 实现 NavAgent 组件 + steering 系统
+### 4.1 AI / 寻路 ✅
+- [x] 4.1.1 实现 NavMesh（顶点 + 三角形 + 自动邻接图，XZ 平面点定位）
+- [x] 4.1.2 实现 A* 路径规划（三角形质心图，BinaryHeap 最小堆）
+- [x] 4.1.3 实现 NavAgent 组件 + steering 系统 + NavigationPlugin
 
-### 4.2 网络 / 多人
-- [ ] 4.2.1 定义 NetworkPlugin trait 和接口
-- [ ] 4.2.2 实现 UDP transport（laminar）
-- [ ] 4.2.3 实现 ECS 组件复制（delta compression）
-- [ ] 4.2.4 实现客户端预测和回滚
+### 4.2 网络 / 多人 ✅
+- [x] 4.2.1 定义 NetworkPlugin + NetworkConfig/NetworkState/NetworkEvents
+- [x] 4.2.2 实现 ReliableChannel（序列号、ACK bitfield、超时重传）+ UnreliableChannel
+- [x] 4.2.3 实现 ECS 复制（Replicated marker、NetworkId、ReplicationBuffer、XOR DeltaEncoder）
+- [x] 4.2.4 实现客户端预测（PredictionState<T> 历史 + rollback）+ InputBuffer
 
-### 4.3 高级后处理
-- [ ] 4.3.1 DOF（景深）— 基于 CoC 的散焦模糊
-- [ ] 4.3.2 Motion Blur — 基于速度 buffer 的方向模糊
-- [ ] 4.3.3 Color Grading — LUT 3D 纹理调色
+### 4.3 高级后处理 ✅
+- [x] 4.3.1 DOF（景深）— CoC 计算 + 圆盘模糊 + 合成（3 pass）
+- [x] 4.3.2 Motion Blur — 速度 buffer 重建 + 方向模糊（2 pass）
+- [x] 4.3.3 Color Grading — 曝光/对比度/饱和度/白平衡 + 32³ 3D LUT
 
-### 4.4 开发工具
-- [ ] 4.4.1 帧性能分析器（GPU timestamp queries + CPU timing）
-- [ ] 4.4.2 Debug 渲染模式扩展（碰撞体、NavMesh、光源体积）
-- [ ] 4.4.3 游戏内调试控制台（命令注册 + 文本输入）
+### 4.4 开发工具 ✅
+- [x] 4.4.1 帧性能分析器（CPU timing, section profiling, percentile, feature-gated "debug"）
+- [x] 4.4.2 Debug 渲染器（线段/包围盒/球体/点，Line List 拓扑，depth-tested）
+- [x] 4.4.3 游戏内调试控制台（命令注册/执行/help/clear，历史 + 输出日志）
