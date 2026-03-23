@@ -31,6 +31,7 @@ pub mod raycast;
 pub mod line;
 pub mod text;
 pub mod buffer_pool;
+pub mod bloom;
 
 // 重新导出主要类型
 pub use device::RenderDevice;

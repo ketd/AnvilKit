@@ -622,6 +622,57 @@ pub fn create_hdr_msaa_texture(
     (texture, view)
 }
 
+/// Bloom mip chain 的默认级数
+pub const BLOOM_MIP_COUNT: u32 = 5;
+
+/// 创建 Bloom mip chain 纹理
+///
+/// 返回一个 Rgba16Float 纹理（多级 mip）以及每级 mip 的独立 TextureView。
+/// Mip 0 = width/2 x height/2, Mip 1 = width/4 x height/4, ...
+///
+/// 用于 Bloom downsample/upsample passes。
+pub fn create_bloom_mip_chain(
+    device: &RenderDevice,
+    width: u32,
+    height: u32,
+    mip_count: u32,
+    label: &str,
+) -> (wgpu::Texture, Vec<wgpu::TextureView>) {
+    let mip_width = (width / 2).max(1);
+    let mip_height = (height / 2).max(1);
+    let actual_mips = mip_count.min(
+        (mip_width.min(mip_height) as f32).log2().floor() as u32 + 1,
+    );
+
+    let texture = device.device().create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d {
+            width: mip_width,
+            height: mip_height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: actual_mips,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: HDR_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+
+    let views: Vec<wgpu::TextureView> = (0..actual_mips)
+        .map(|mip| {
+            texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some(&format!("{} Mip {}", label, mip)),
+                base_mip_level: mip,
+                mip_level_count: Some(1),
+                ..Default::default()
+            })
+        })
+        .collect();
+
+    (texture, views)
+}
+
 /// 从 RGBA 数据创建 GPU 纹理和视图
 ///
 /// # 参数

@@ -122,6 +122,8 @@ pub struct RenderState {
     pub shadow_map_view: wgpu::TextureView,
     /// MSAA multi-sampled HDR color attachment texture view.
     pub hdr_msaa_texture_view: wgpu::TextureView,
+    /// Bloom post-processing GPU resources (mip chain, pipelines, bind groups).
+    pub bloom: Option<crate::renderer::bloom::BloomResources>,
 }
 
 #[cfg(test)]

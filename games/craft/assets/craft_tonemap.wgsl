@@ -12,6 +12,7 @@ struct FilterUniform {
 };
 
 @group(0) @binding(2) var<uniform> post_fx: FilterUniform;
+@group(0) @binding(3) var bloom_texture: texture_2d<f32>;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -101,6 +102,10 @@ fn nightvision_post_fx(c: vec3<f32>, uv: vec2<f32>, t: f32) -> vec3<f32> {
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var uv = in.texcoord;
     var c = textureSample(hdr_texture, hdr_sampler, uv).rgb;
+
+    // Bloom composite (in HDR space, before effects and tone mapping)
+    let bloom = textureSample(bloom_texture, hdr_sampler, uv).rgb;
+    c += bloom;
 
     // Apply post_fx effects (in HDR space, before tone mapping)
     if (post_fx.filter_type == 1u) {

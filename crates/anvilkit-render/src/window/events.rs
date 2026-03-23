@@ -29,6 +29,7 @@ use crate::renderer::buffer::{
 };
 use crate::renderer::{RenderPipelineBuilder, DEPTH_FORMAT};
 use crate::renderer::ibl::generate_brdf_lut;
+use crate::renderer::bloom::{BloomResources, BloomSettings};
 use anvilkit_core::error::{AnvilKitError, Result};
 
 /// 将 SceneLights 打包为 GPU 光源数组
@@ -337,56 +338,62 @@ impl RenderApp {
         let (_, hdr_msaa_texture_view) = create_hdr_msaa_texture(device, w, h, "ECS HDR MSAA");
         let sampler = create_sampler(device, "ECS Tonemap Sampler");
 
-        // Tonemap bind group layout + bind group
+        // --- Bloom resources ---
+        let bloom_settings = BloomSettings::default();
+        let bloom = BloomResources::new(device, w, h, bloom_settings.mip_count);
+
+        // Tonemap bind group layout + bind group (3 entries: HDR + sampler + bloom)
+        let tonemap_bgl_entries = [
+            wgpu::BindGroupLayoutEntry {
+                binding: 0, visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                }, count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2, visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                }, count: None,
+            },
+        ];
+
         let tonemap_bind_group_layout = device.device().create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
                 label: Some("ECS Tonemap BGL"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0, visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        }, count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
+                entries: &tonemap_bgl_entries,
             },
         );
 
+        let bloom_view_for_tonemap = if bloom.mip_views.is_empty() {
+            &hdr_texture_view // fallback — shouldn't happen
+        } else {
+            &bloom.mip_views[0]
+        };
         let tonemap_bind_group = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("ECS Tonemap BG"),
             layout: &tonemap_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&hdr_texture_view) },
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(bloom_view_for_tonemap) },
             ],
         });
 
-        // Tonemap pipeline needs its own bind group layout (consumed by builder)
+        // Tonemap pipeline BGL (consumed by builder — duplicate needed because builder takes ownership)
         let tonemap_pipeline_bgl = device.device().create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
                 label: Some("ECS Tonemap Pipeline BGL"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0, visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        }, count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
+                entries: &tonemap_bgl_entries,
             },
         );
 
@@ -496,10 +503,12 @@ impl RenderApp {
             shadow_pipeline,
             shadow_map_view,
             hdr_msaa_texture_view,
+            bloom: Some(bloom),
         });
+        app.insert_resource(bloom_settings);
 
         self.gpu_initialized = true;
-        info!("RenderState (HDR + IBL + Shadow) 已注入 ECS World");
+        info!("RenderState (HDR + IBL + Shadow + Bloom) 已注入 ECS World");
     }
 
     /// 处理窗口大小变化
@@ -517,6 +526,9 @@ impl RenderApp {
         // 更新 ECS RenderState 中的深度纹理、HDR RT 和 surface_size
         if self.gpu_initialized && new_size.width > 0 && new_size.height > 0 {
             if let (Some(app), Some(device)) = (&mut self.app, &self.render_device) {
+                let bloom_mip_count: u32 = app.world.get_resource::<BloomSettings>()
+                    .map(|s| s.mip_count)
+                    .unwrap_or(5u32);
                 if let Some(mut rs) = app.world.get_resource_mut::<RenderState>() {
                     rs.surface_size = (new_size.width, new_size.height);
                     let (_, depth_view) = create_depth_texture_msaa(device, new_size.width, new_size.height, "ECS Depth MSAA");
@@ -526,12 +538,22 @@ impl RenderApp {
                     let (_, hdr_view) = create_hdr_render_target(device, new_size.width, new_size.height, "ECS HDR RT");
                     let (_, hdr_msaa_view) = create_hdr_msaa_texture(device, new_size.width, new_size.height, "ECS HDR MSAA");
                     let sampler = create_sampler(device, "ECS Sampler");
+                    // Resize bloom mip chain
+                    if let Some(ref mut bloom) = rs.bloom {
+                        bloom.resize(device, new_size.width, new_size.height, bloom_mip_count);
+                    }
+
+                    // Recreate tonemap bind group with new HDR + bloom views
+                    let bloom_view = rs.bloom.as_ref()
+                        .and_then(|b| b.mip_views.first());
+                    let bloom_view_ref = bloom_view.unwrap_or(&hdr_view);
                     let new_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
                         label: Some("ECS Tonemap BG"),
                         layout: &rs.tonemap_bind_group_layout,
                         entries: &[
                             wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&hdr_view) },
                             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+                            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(bloom_view_ref) },
                         ],
                     });
                     rs.hdr_texture_view = hdr_view;
@@ -709,7 +731,15 @@ impl RenderApp {
             }
         }
 
-        // --- Pass 2: Tone mapping HDR → Swapchain ---
+        // --- Bloom passes: downsample → upsample ---
+        if let Some(ref bloom) = render_state.bloom {
+            let bloom_settings = app.world.get_resource::<BloomSettings>();
+            let default_settings = BloomSettings::default();
+            let settings = bloom_settings.unwrap_or(&default_settings);
+            bloom.execute(device, &mut encoder, &render_state.hdr_texture_view, settings);
+        }
+
+        // --- Pass 2: Tone mapping HDR + Bloom → Swapchain ---
         {
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ECS Tonemap Pass"),

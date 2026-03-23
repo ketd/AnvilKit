@@ -1,8 +1,9 @@
 // AnvilKit Tone Mapping 后处理着色器
-// 全屏三角形 + ACES Filmic + Gamma 校正
+// 全屏三角形 + Bloom 合成 + ACES Filmic + Gamma 校正
 
 @group(0) @binding(0) var hdr_texture: texture_2d<f32>;
 @group(0) @binding(1) var hdr_sampler: sampler;
+@group(0) @binding(2) var bloom_texture: texture_2d<f32>;
 
 struct VertexOutput { @builtin(position) position: vec4<f32>, @location(0) texcoord: vec2<f32> };
 
@@ -23,6 +24,9 @@ fn aces_filmic(x: vec3<f32>) -> vec3<f32> {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var c = textureSample(hdr_texture, hdr_sampler, in.texcoord).rgb;
+    // Bloom composite: add bloom contribution
+    let bloom = textureSample(bloom_texture, hdr_sampler, in.texcoord).rgb;
+    c += bloom;
     c = aces_filmic(c);
     c = pow(c, vec3<f32>(1.0 / 2.2));
     return vec4<f32>(c, 1.0);

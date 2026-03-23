@@ -83,6 +83,8 @@ pub struct VoxelGpu {
     // Filter
     pub filter_ub: wgpu::Buffer,
     pub tonemap_bgl: wgpu::BindGroupLayout,
+    // Bloom
+    pub bloom: anvilkit_render::renderer::bloom::BloomResources,
 }
 
 pub fn init_voxel_gpu(
@@ -376,7 +378,12 @@ pub fn init_voxel_gpu(
     let filter_initial = FilterUniform::default();
     let filter_ub = create_uniform_buffer(device, "Filter UB", bytemuck::bytes_of(&filter_initial));
 
-    // --- Tonemap pipeline (with filter uniform) ---
+    // --- Bloom ---
+    let bloom = anvilkit_render::renderer::bloom::BloomResources::new(
+        device, w, h, anvilkit_render::renderer::buffer::BLOOM_MIP_COUNT,
+    );
+
+    // --- Tonemap pipeline (with filter uniform + bloom texture) ---
     let linear_sampler = create_sampler(device, "Tonemap Sampler");
     let tm_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("Tonemap BGL"),
@@ -407,8 +414,19 @@ pub fn init_voxel_gpu(
                 },
                 count: None,
             },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
         ],
     });
+    let bloom_view = bloom.mip_views.first().unwrap_or(&hdr_view);
     let tonemap_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("Tonemap BG"),
         layout: &tm_bgl,
@@ -424,6 +442,10 @@ pub fn init_voxel_gpu(
             wgpu::BindGroupEntry {
                 binding: 2,
                 resource: filter_ub.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(bloom_view),
             },
         ],
     });
@@ -483,5 +505,6 @@ pub fn init_voxel_gpu(
         sky_bg,
         filter_ub,
         tonemap_bgl: tm_bgl,
+        bloom,
     }
 }

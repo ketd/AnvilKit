@@ -22,6 +22,7 @@ use craft::world_gen::WorldGenerator;
 use craft::raycast::{self, VoxelHit};
 use craft::render::setup::{self, VoxelGpu, VoxelSceneUniform, SkyUniform};
 use craft::render::filters::{ActiveFilter, FilterUniform};
+use anvilkit_render::renderer::bloom::BloomSettings;
 use craft::components::*;
 use craft::resources::*;
 use craft::systems::input as input_sys;
@@ -66,6 +67,7 @@ fn main() {
     app.insert_resource(VoxelWorld::default());
     app.insert_resource(SelectedBlock::default());
     app.insert_resource(DayNightCycle::default());
+    app.insert_resource(BloomSettings::default());
     app.insert_resource(ActiveFilter::default());
 
     // Explicit ordering: DayNight → Input → Physics → CameraFX → CameraController
@@ -528,7 +530,13 @@ impl CraftApp {
             }
         }
 
-        // Pass 4: Tonemap (HDR → swapchain)
+        // Bloom passes: downsample → upsample
+        {
+            let bloom_settings = self.app.world.resource::<BloomSettings>();
+            gpu.bloom.execute(device, &mut enc, &gpu.hdr_view, &bloom_settings);
+        }
+
+        // Pass 4: Tonemap (HDR + Bloom → swapchain)
         {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Tonemap"),
@@ -719,6 +727,10 @@ impl ApplicationHandler for CraftApp {
                         let (_, hv) =
                             create_hdr_render_target(device, s.width, s.height, "Voxel HDR RT");
                         let samp = create_sampler(device, "Tonemap Sampler");
+                        // Resize bloom mip chain
+                        let bloom_mips = self.app.world.resource::<BloomSettings>().mip_count;
+                        gpu.bloom.resize(device, s.width, s.height, bloom_mips);
+                        let bloom_view = gpu.bloom.mip_views.first().unwrap_or(&hv);
                         gpu.tonemap_bg =
                             device
                                 .device()
@@ -737,6 +749,10 @@ impl ApplicationHandler for CraftApp {
                                         wgpu::BindGroupEntry {
                                             binding: 2,
                                             resource: gpu.filter_ub.as_entire_binding(),
+                                        },
+                                        wgpu::BindGroupEntry {
+                                            binding: 3,
+                                            resource: wgpu::BindingResource::TextureView(bloom_view),
                                         },
                                     ],
                                 });
