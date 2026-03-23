@@ -452,18 +452,109 @@ pub mod rapier_integration {
     #[derive(Component)]
     pub struct RapierSynced;
 
+    /// 物理射线检测结果
+    #[derive(Debug, Clone)]
+    pub struct RaycastHit {
+        /// The entity that was hit.
+        pub entity: Entity,
+        /// World-space hit point.
+        pub point: Vec3,
+        /// Surface normal at the hit point.
+        pub normal: Vec3,
+        /// Distance from ray origin to the hit point.
+        pub distance: f32,
+    }
+
+    impl RapierContext {
+        /// Cast a ray and return the closest hit.
+        pub fn raycast(
+            &self,
+            origin: Vec3,
+            direction: Vec3,
+            max_distance: f32,
+        ) -> Option<RaycastHit> {
+            let ray = rp::Ray::new(
+                rp::point![origin.x, origin.y, origin.z],
+                rp::vector![direction.x, direction.y, direction.z],
+            );
+
+            // Use rapier's query pipeline for efficient raycasting
+            let mut best: Option<(Entity, f32, Vec3, Vec3)> = None;
+
+            for (collider_handle, collider) in self.collider_set.iter() {
+                if let Some(hit) = collider.shape().cast_ray_and_get_normal(
+                    collider.position(),
+                    &ray,
+                    max_distance,
+                    true,
+                ) {
+                    if best.as_ref().map_or(true, |b| hit.toi < b.1) {
+                        // Find the entity for this collider's parent body
+                        let entity = collider.parent()
+                            .and_then(|bh| {
+                                self.entity_to_body.iter()
+                                    .find(|(_, &h)| h == bh)
+                                    .map(|(&e, _)| e)
+                            });
+                        if let Some(entity) = entity {
+                            let point = ray.point_at(hit.toi);
+                            best = Some((
+                                entity,
+                                hit.toi,
+                                Vec3::new(point.x, point.y, point.z),
+                                Vec3::new(hit.normal.x, hit.normal.y, hit.normal.z),
+                            ));
+                        }
+                    }
+                }
+            }
+
+            best.map(|(entity, distance, point, normal)| RaycastHit {
+                entity,
+                point,
+                normal,
+                distance,
+            })
+        }
+    }
+
+    /// 从 rapier NarrowPhase 提取碰撞事件到 ECS CollisionEvents 资源
+    /// 从 rapier NarrowPhase 提取碰撞事件到 ECS CollisionEvents 资源
+    pub fn extract_collision_events_system(
+        ctx: Res<RapierContext>,
+        mut events: ResMut<CollisionEvents>,
+    ) {
+        events.clear();
+        for pair in ctx.narrow_phase.contact_pairs() {
+            if pair.has_any_active_contact {
+                let entity_a = ctx.collider_set.get(pair.collider1)
+                    .and_then(|c| c.parent())
+                    .and_then(|bh| ctx.entity_to_body.iter().find(|(_, &h)| h == bh).map(|(&e, _)| e));
+                let entity_b = ctx.collider_set.get(pair.collider2)
+                    .and_then(|c| c.parent())
+                    .and_then(|bh| ctx.entity_to_body.iter().find(|(_, &h)| h == bh).map(|(&e, _)| e));
+
+                if let (Some(a), Some(b)) = (entity_a, entity_b) {
+                    events.push(CollisionEvent { a, b });
+                }
+            }
+        }
+    }
+
     /// rapier3d 物理插件
     pub struct RapierPhysicsPlugin;
 
     impl crate::plugin::Plugin for RapierPhysicsPlugin {
         fn build(&self, app: &mut crate::app::App) {
             app.init_resource::<RapierContext>();
+            app.init_resource::<CollisionEvents>();
             app.add_systems(
                 AnvilKitSchedule::Update,
                 (
                     sync_to_rapier_system,
                     step_physics_system.after(sync_to_rapier_system),
                     sync_from_rapier_system.after(step_physics_system),
+                    extract_collision_events_system.after(step_physics_system),
                 ),
             );
         }
