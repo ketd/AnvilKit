@@ -53,6 +53,7 @@ pub struct Joint {
 /// assert_eq!(skeleton.joint_count(), 2);
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::prelude::Component))]
 pub struct Skeleton {
     /// Ordered list of joints forming the skeleton hierarchy.
     pub joints: Vec<Joint>,
@@ -265,6 +266,7 @@ impl AnimationClip {
 /// assert_eq!(player.current_time, 0.5);
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::prelude::Component))]
 pub struct AnimationPlayer {
     /// 当前播放的剪辑
     pub clip: AnimationClip,
@@ -367,6 +369,36 @@ pub fn compute_bone_matrices(skeleton: &Skeleton, player: &AnimationPlayer) -> V
         .enumerate()
         .map(|(j, g)| *g * skeleton.joints[j].inverse_bind_matrix)
         .collect()
+}
+
+// ---------------------------------------------------------------------------
+//  ECS Animation System (requires bevy_ecs feature)
+// ---------------------------------------------------------------------------
+
+/// GPU 骨骼矩阵组件
+///
+/// 每帧由 `animation_system` 从 Skeleton + AnimationPlayer 计算并填充。
+/// 渲染系统将其上传到 storage buffer 供 skinned vertex shader 使用。
+///
+/// 最多 128 个关节（与 skinned_pbr.wgsl 中 MAX_JOINTS 匹配）。
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::prelude::Component))]
+pub struct BoneMatrices {
+    /// Joint matrices in column-major format. Length = joint_count.
+    pub matrices: Vec<Mat4>,
+}
+
+impl Default for BoneMatrices {
+    fn default() -> Self {
+        Self { matrices: Vec::new() }
+    }
+}
+
+impl BoneMatrices {
+    /// Flatten matrices to a Vec of f32 arrays for GPU upload.
+    pub fn to_cols_array(&self) -> Vec<[[f32; 4]; 4]> {
+        self.matrices.iter().map(|m| m.to_cols_array_2d()).collect()
+    }
 }
 
 #[cfg(test)]
