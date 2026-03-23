@@ -21,6 +21,8 @@ pub mod asset_server;
 pub mod animation;
 /// Procedural mesh generation utilities (sphere, plane, box).
 pub mod procedural;
+/// File watching for hot-reload (enabled via `hot-reload` feature).
+pub mod hot_reload;
 
 /// Prelude module re-exporting the most commonly used types.
 pub mod prelude {
