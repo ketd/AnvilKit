@@ -21,11 +21,14 @@ Each frame, rendering data (transforms, materials, visibility) is extracted from
 
 - **PBR Materials** — Metallic/roughness workflow with albedo, normal, and metallic-roughness textures
 - **HDR + Tonemap** — Rgba16Float render target + ACES Filmic tone mapping
+- **Bloom** — 13-tap downsample + 9-tap tent upsample, 5-level mip chain, configurable threshold/intensity
+- **SSAO** — Screen-space ambient occlusion with hemisphere sampling, half-res + blur
+- **Cascade Shadow Maps** — 3-level CSM with per-cascade frustum fitting, PCF soft shadows
 - **IBL** — Cubemap-based environment lighting (diffuse irradiance + specular reflection)
-- **Shadows** — Directional light cascaded shadow maps
 - **MSAA** — Multi-sample anti-aliasing
 - **Frustum Culling** — Fast bounding sphere-based culling
 - **GPU Instancing** — Batch drawing of identical meshes
+- **Skeletal Animation** — GPU skinning via storage buffer (MAX_JOINTS=128, Linear Blend Skinning)
 
 ### 2D Rendering
 
@@ -33,7 +36,7 @@ Each frame, rendering data (transforms, materials, visibility) is extracted from
 - **Line** — Line drawing (debug, guides)
 - **Text** — Text rendering
 - **Particle** — Particle effect system
-- **UI** — UI elements based on `taffy` layout
+- **UI** — UI elements based on `taffy` layout, event system (hit test, click, hover), Widget builders
 
 ## RenderPlugin
 

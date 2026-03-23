@@ -69,15 +69,44 @@ let material = Material {
 
 ## Asset Server
 
+Supports both synchronous and asynchronous loading:
+
 ```rust
 use anvilkit_assets::asset_server::AssetServer;
 
 let mut server = AssetServer::new("assets/");
+
+// Synchronous: register intent (no I/O)
 let handle = server.load::<Mesh>("models/tree.glb");
 
-match server.get_load_state(handle) {
-    LoadState::Loading => { /* Waiting */ },
-    LoadState::Loaded => { /* Ready to use */ },
-    LoadState::Failed(err) => { /* Handle error */ },
+// Asynchronous: load file in background thread
+let async_handle = server.load_async::<Vec<u8>>("textures/atlas.png");
+
+// In your game loop: poll for completed loads
+server.process_completed();
+for result in server.drain_completed() {
+    match result.data {
+        Ok(bytes) => { /* Parse and use the loaded data */ },
+        Err(err) => { /* Handle error */ },
+    }
+}
+```
+
+## Hot Reload
+
+File watching for automatic asset refresh during development (requires `hot-reload` feature):
+
+```rust
+use anvilkit_assets::hot_reload::FileWatcher;
+
+let watcher = FileWatcher::new("assets").unwrap();
+
+// In your game loop:
+for path in watcher.poll_changes() {
+    if FileWatcher::is_shader(&path) {
+        // Rebuild render pipeline with new shader
+    } else if FileWatcher::is_texture(&path) {
+        // Re-upload texture to GPU
+    }
 }
 ```

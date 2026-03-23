@@ -75,16 +75,44 @@ let material = Material {
 
 ## Asset Server
 
+支持同步和异步加载：
+
 ```rust
 use anvilkit_assets::asset_server::AssetServer;
 
 let mut server = AssetServer::new("assets/");
+
+// 同步：注册加载意图（不执行 I/O）
 let handle = server.load::<Mesh>("models/tree.glb");
 
-// 异步加载状态
-match server.get_load_state(handle) {
-    LoadState::Loading => { /* 等待 */ },
-    LoadState::Loaded => { /* 可以使用 */ },
-    LoadState::Failed(err) => { /* 处理错误 */ },
+// 异步：后台线程加载文件
+let async_handle = server.load_async::<Vec<u8>>("textures/atlas.png");
+
+// 在游戏循环中：轮询完成的加载
+server.process_completed();
+for result in server.drain_completed() {
+    match result.data {
+        Ok(bytes) => { /* 解析并使用加载的数据 */ },
+        Err(err) => { /* 处理错误 */ },
+    }
+}
+```
+
+## 热重载
+
+开发时自动监视文件变更（需要 `hot-reload` feature）：
+
+```rust
+use anvilkit_assets::hot_reload::FileWatcher;
+
+let watcher = FileWatcher::new("assets").unwrap();
+
+// 在游戏循环中：
+for path in watcher.poll_changes() {
+    if FileWatcher::is_shader(&path) {
+        // 用新 shader 重建渲染管线
+    } else if FileWatcher::is_texture(&path) {
+        // 重新上传纹理到 GPU
+    }
 }
 ```

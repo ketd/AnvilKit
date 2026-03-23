@@ -21,11 +21,14 @@ description: 渲染引擎 — 统一 2D/3D 渲染管线
 
 - **PBR 材质** — 金属度/粗糙度工作流，支持 albedo、normal、metallic-roughness 贴图
 - **HDR + Tonemap** — Rgba16Float 渲染目标 + ACES Filmic 色调映射
+- **Bloom** — 13-tap 降采样 + 9-tap tent 升采样，5 级 mip chain，可配置 threshold/intensity
+- **SSAO** — 屏幕空间环境遮蔽，hemisphere sampling，半分辨率 + blur
+- **级联阴影 (CSM)** — 3 级 cascade shadow maps，视锥体分割，PCF 软阴影
 - **IBL** — 基于 cubemap 的环境光照（漫反射辐照度 + 镜面反射）
-- **阴影** — 方向光级联阴影贴图
 - **MSAA** — 多重采样抗锯齿
 - **视锥体剔除** — 基于 bounding sphere 的快速剔除
 - **GPU 实例化** — 相同 mesh 的批量绘制
+- **骨骼动画** — GPU skinning（storage buffer，MAX_JOINTS=128，线性混合蒙皮）
 
 ### 2D 渲染
 
@@ -33,7 +36,7 @@ description: 渲染引擎 — 统一 2D/3D 渲染管线
 - **Line** — 线段绘制（调试、辅助线）
 - **Text** — 文本渲染
 - **Particle** — 粒子效果系统
-- **UI** — 基于 `taffy` 布局的 UI 元素
+- **UI** — 基于 `taffy` 布局的 UI 元素，事件系统（hit test、click、hover），Widget 构造器
 
 ## RenderPlugin
 
