@@ -222,10 +222,13 @@ fn camera_system(
 
 /// 渲染提取系统 (PostUpdate, after camera_system)
 ///
-/// 查询 (MeshHandle, MaterialHandle, Transform, Option<MaterialParams>, Option<Aabb>)
+/// 查询 (MeshHandle, MaterialHandle, GlobalTransform, Option<MaterialParams>, Option<Aabb>)
 /// → 视锥体剔除 → 填充 DrawCommandList
+///
+/// Uses `GlobalTransform` (world-space) rather than local `Transform`,
+/// so entities in a parent-child hierarchy render at their correct world position.
 fn render_extract_system(
-    query: Query<(&MeshHandle, &MaterialHandle, &Transform, Option<&MaterialParams>, Option<&Aabb>)>,
+    query: Query<(&MeshHandle, &MaterialHandle, &GlobalTransform, Option<&MaterialParams>, Option<&Aabb>)>,
     active_camera: Res<ActiveCamera>,
     mut draw_list: ResMut<DrawCommandList>,
 ) {
@@ -233,20 +236,18 @@ fn render_extract_system(
 
     let frustum = Frustum::from_view_proj(&active_camera.view_proj);
 
-    for (mesh, material, transform, mat_params, aabb) in query.iter() {
-        let model = transform.compute_matrix();
+    for (mesh, material, global_transform, mat_params, aabb) in query.iter() {
+        let model = global_transform.0;
 
         // Frustum culling: if entity has an Aabb, test visibility
         if let Some(aabb) = aabb {
-            // Transform AABB center to world space
             let local_center = aabb.center();
             let world_center = model.transform_point3(local_center);
-            // Scale half_extents by model matrix (approximate for uniform scale)
-            let scale = transform.scale;
+            let scale = global_transform.scale();
             let world_half = aabb.half_extents() * scale;
 
             if !frustum.intersects_aabb(world_center, world_half) {
-                continue; // 不可见，跳过
+                continue;
             }
         }
 
