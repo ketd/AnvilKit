@@ -35,7 +35,7 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VertexOutput {
 
 // Sample depth texture (returns f32 directly for texture_depth_2d)
 fn sample_depth(uv: vec2<f32>) -> f32 {
-    return textureSampleLevel(depth_texture, depth_sampler, uv, 0);
+    return textureSampleLevel(depth_texture, depth_sampler, uv, 0.0);
 }
 
 // Reconstruct view-space position from depth and UV
