@@ -34,6 +34,7 @@
 pub mod math;
 pub mod time;
 pub mod error;
+pub mod persistence;
 
 /// 预导入模块，包含最常用的类型和函数
 pub mod prelude {

@@ -17,12 +17,15 @@ readme = "../../README.md"
 glam = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true, optional = true }
+ron = { workspace = true, optional = true }
 bevy_ecs = { workspace = true, optional = true }
 
 [features]
 default = []
 # 启用序列化支持
 serde = ["dep:serde", "glam/serde"]
+# 持久化系统 (Settings + WorldStorage)
+persistence = ["dep:serde", "dep:ron", "glam/serde"]
 # 启用调试功能
 debug = []
 # Bevy ECS 集成
