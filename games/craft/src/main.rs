@@ -23,6 +23,7 @@ use craft::raycast::{self, VoxelHit};
 use craft::render::setup::{self, VoxelGpu, VoxelSceneUniform, SkyUniform};
 use craft::render::filters::{ActiveFilter, FilterUniform};
 use anvilkit_render::renderer::bloom::BloomSettings;
+use anvilkit_render::renderer::ssao::SsaoSettings;
 use craft::components::*;
 use craft::resources::*;
 use craft::systems::input as input_sys;
@@ -68,6 +69,7 @@ fn main() {
     app.insert_resource(SelectedBlock::default());
     app.insert_resource(DayNightCycle::default());
     app.insert_resource(BloomSettings::default());
+    app.insert_resource(SsaoSettings::default());
     app.insert_resource(ActiveFilter::default());
 
     // Explicit ordering: DayNight → Input → Physics → CameraFX → CameraController
@@ -530,6 +532,18 @@ impl CraftApp {
             }
         }
 
+        // SSAO pass: depth → half-res AO → blur
+        {
+            let ssao_settings = self.app.world.resource::<SsaoSettings>();
+            // Build projection matrix (same as camera uses)
+            let (w, h) = self.render_app.window_state().size();
+            let aspect = w as f32 / h as f32;
+            let projection = glam::Mat4::perspective_rh(
+                config::FOV.to_radians(), aspect, config::NEAR_PLANE, config::FAR_PLANE,
+            );
+            gpu.ssao.execute(device, &mut enc, &gpu.depth_view, &projection, &ssao_settings);
+        }
+
         // Bloom passes: downsample → upsample
         {
             let bloom_settings = self.app.world.resource::<BloomSettings>();
@@ -727,9 +741,10 @@ impl ApplicationHandler for CraftApp {
                         let (_, hv) =
                             create_hdr_render_target(device, s.width, s.height, "Voxel HDR RT");
                         let samp = create_sampler(device, "Tonemap Sampler");
-                        // Resize bloom mip chain
+                        // Resize bloom + SSAO
                         let bloom_mips = self.app.world.resource::<BloomSettings>().mip_count;
                         gpu.bloom.resize(device, s.width, s.height, bloom_mips);
+                        gpu.ssao.resize(device, s.width, s.height);
                         let bloom_view = gpu.bloom.mip_views.first().unwrap_or(&hv);
                         gpu.tonemap_bg =
                             device
@@ -753,6 +768,10 @@ impl ApplicationHandler for CraftApp {
                                         wgpu::BindGroupEntry {
                                             binding: 3,
                                             resource: wgpu::BindingResource::TextureView(bloom_view),
+                                        },
+                                        wgpu::BindGroupEntry {
+                                            binding: 4,
+                                            resource: wgpu::BindingResource::TextureView(&gpu.ssao.blurred_view),
                                         },
                                     ],
                                 });

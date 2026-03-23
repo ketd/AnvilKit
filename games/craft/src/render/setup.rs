@@ -85,6 +85,8 @@ pub struct VoxelGpu {
     pub tonemap_bgl: wgpu::BindGroupLayout,
     // Bloom
     pub bloom: anvilkit_render::renderer::bloom::BloomResources,
+    // SSAO
+    pub ssao: anvilkit_render::renderer::ssao::SsaoResources,
 }
 
 pub fn init_voxel_gpu(
@@ -383,6 +385,9 @@ pub fn init_voxel_gpu(
         device, w, h, anvilkit_render::renderer::buffer::BLOOM_MIP_COUNT,
     );
 
+    // --- SSAO ---
+    let ssao = anvilkit_render::renderer::ssao::SsaoResources::new(device, w, h, 32);
+
     // --- Tonemap pipeline (with filter uniform + bloom texture) ---
     let linear_sampler = create_sampler(device, "Tonemap Sampler");
     let tm_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -424,6 +429,16 @@ pub fn init_voxel_gpu(
                 },
                 count: None,
             },
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
         ],
     });
     let bloom_view = bloom.mip_views.first().unwrap_or(&hdr_view);
@@ -446,6 +461,10 @@ pub fn init_voxel_gpu(
             wgpu::BindGroupEntry {
                 binding: 3,
                 resource: wgpu::BindingResource::TextureView(bloom_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::TextureView(&ssao.blurred_view),
             },
         ],
     });
@@ -506,5 +525,6 @@ pub fn init_voxel_gpu(
         filter_ub,
         tonemap_bgl: tm_bgl,
         bloom,
+        ssao,
     }
 }
