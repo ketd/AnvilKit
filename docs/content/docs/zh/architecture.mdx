@@ -5,81 +5,120 @@ description: AnvilKit 引擎的整体架构设计
 
 ## 分层架构
 
-AnvilKit 采用分层模块化设计，每一层只依赖下层，不会反向依赖：
+AnvilKit 采用分层模块化设计，每层只依赖下层：
 
 ```
-┌─────────────────────────────────────────┐
-│              游戏层 (games/)             │
-│       billiards / craft / your_game     │
-├─────────────────────────────────────────┤
-│            系统层 (高级 Crate)           │
-│   anvilkit-camera  anvilkit-audio       │
-│   anvilkit-input   anvilkit-assets      │
-├─────────────────────────────────────────┤
-│            核心层 (底层 Crate)           │
-│   anvilkit-core    anvilkit-ecs         │
-│   anvilkit-render                       │
-├─────────────────────────────────────────┤
-│          第三方依赖                      │
-│   bevy_ecs / wgpu / rapier / glam      │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│            游戏层 (games/)                    │
+│        billiards / craft / your_game         │
+├──────────────────────────────────────────────┤
+│            系统层（高级）                     │
+│    anvilkit-camera   anvilkit-audio          │
+│    anvilkit-input    anvilkit-assets         │
+├──────────────────────────────────────────────┤
+│            核心层（低级）                     │
+│    anvilkit-core     anvilkit-ecs            │
+│    anvilkit-render                           │
+├──────────────────────────────────────────────┤
+│            第三方依赖                        │
+│    bevy_ecs / wgpu / rapier / glam / taffy   │
+└──────────────────────────────────────────────┘
 ```
+
+## Crate 依赖图
+
+```
+anvilkit-core (数学, 时间, 错误, 持久化)
+    ↑
+anvilkit-ecs (App, Plugin, Schedule, Transform, Physics)
+    ↑           ↑
+anvilkit-render  anvilkit-input (InputState, ActionMap)
+    ↑               ↑
+anvilkit-camera (控制器, 特效)
+
+anvilkit-assets (glTF, 动画, AssetServer) → anvilkit-core
+anvilkit-audio (AudioSource, 空间音频) → anvilkit-ecs
+```
+
+## 每帧生命周期
+
+```
+┌─ 事件循环 (winit) ────────────────────────────────────────────┐
+│                                                                │
+│  1. window_event / device_event                                │
+│     ├─ forward_input()     → InputState (键盘, 鼠标, 滚轮)    │
+│     └─ forward_device_input() → InputState.mouse_delta         │
+│                                                                │
+│  2. about_to_wait                                              │
+│     ├─ tick() {                                                │
+│     │    DeltaTime = 实际经过时间                               │
+│     │    app.update() {                                        │
+│     │       PreUpdate:  (预留)                                 │
+│     │       Update:     输入 → 物理 → 相机特效 → 相机控制     │
+│     │       PostUpdate: Transform 传播 → 渲染提取              │
+│     │    }                                                     │
+│     │    InputState.end_frame()                                │
+│     │    window.request_redraw()                               │
+│     │ }                                                        │
+│     └─ post_update (游戏特有: chunk, raycast 等)               │
+│                                                                │
+│  3. RedrawRequested                                            │
+│     └─ render_frame() {                                        │
+│          Shadow Pass ×3 (CSM cascade)                          │
+│          HDR 场景 Pass (PBR + MSAA 4×)                         │
+│          SSAO Pass (半分辨率 + blur)                           │
+│          Bloom Pass (降采样 ×5 + 升采样 ×4)                    │
+│          Tonemap Pass (HDR × AO + bloom → ACES → sRGB)        │
+│          HUD Pass (线段, 文本, UI)                             │
+│        }                                                       │
+└────────────────────────────────────────────────────────────────┘
+```
+
+## ECS Schedule 阶段
+
+| 阶段 | 时机 | 典型系统 |
+|------|------|----------|
+| `Startup` | 初始化时运行一次 | 资源设置，初始生成 |
+| `PreUpdate` | 每帧 Update 之前 | (预留) |
+| `Update` | 每帧主逻辑 | 输入、物理、游戏逻辑、相机 |
+| `PostUpdate` | 每帧 Update 之后 | Transform 传播、渲染提取 |
+| `Cleanup` | 每帧最后 | (预留) |
+
+## Feature Flags
+
+| Crate | Feature | 启用功能 |
+|-------|---------|----------|
+| `anvilkit-core` | `serde` | Transform, GlobalTransform 的序列化 |
+| `anvilkit-core` | `persistence` | SaveManager, Settings, WorldStorage |
+| `anvilkit-core` | `bevy_ecs` | 数学类型的 Component derive |
+| `anvilkit-ecs` | `serde` | Parent, Children 序列化，场景序列化 |
+| `anvilkit-ecs` | `rapier` | rapier3d 物理引擎运行时集成 |
+| `anvilkit-assets` | `hot-reload` | notify 文件监视热重载 |
+| `anvilkit-assets` | `bevy_ecs` | Skeleton, AnimationPlayer 的 Component derive |
 
 ## 模块概览
 
 ### anvilkit-core
-
-引擎基础类型库：数学工具（向量、矩阵、变换、插值）、时间系统、错误类型。
+基础类型库: 数学工具 (Vec3, Mat4, Transform, GlobalTransform, 插值), 时间系统, 错误类型, 持久化系统 (SaveManager, Settings, WorldStorage)。
 
 ### anvilkit-ecs
-
-基于 `bevy_ecs` 的应用框架：App 生命周期、Plugin 系统、Schedule 调度、System 注册。
+基于 `bevy_ecs 0.14` 的应用框架: App 生命周期, Plugin 系统, Schedule 调度, Transform 层级传播, 物理 (AABB + rapier3d), 场景序列化 (RON)。
 
 ### anvilkit-render
-
-统一 2D/3D 渲染管线：
-- wgpu 设备管理和窗口 Surface
-- PBR 材质系统（金属度/粗糙度工作流）
-- HDR 渲染 + ACES Tonemap
-- IBL（环境光照）和阴影
-- Sprite、Line、Particle、Text、UI 渲染器
-- 视锥体剔除和 GPU 实例化
+统一 2D/3D 渲染管线: PBR + HDR + Bloom + SSAO + CSM + IBL + MSAA + 骨骼动画 + 视锥剔除 + 实例化 + Sprite/Line/Particle/Text/UI。
 
 ### anvilkit-assets
-
-资产管线：glTF 模型加载、骨骼动画（线性/球面/三次样条插值）、程序化网格生成、场景管理。
+资产管线: glTF 加载, AssetServer (同步+异步), 热重载, 过程化网格生成。
 
 ### anvilkit-audio
-
-音频系统：BGM 和 SFX 播放、空间音频、音量控制。
+基于 `rodio` 的音频: BGM/SFX, 空间音频, 音量控制。
 
 ### anvilkit-input
-
-输入抽象层：键盘/鼠标/手柄输入状态、自定义 Action Map 绑定。
+输入抽象: InputState, ActionMap, RenderApp 辅助方法。
 
 ### anvilkit-camera
-
-相机系统：第一/第三人称控制器、FOV 效果、万向锁保护。
-
-## 数据流
-
-```
-输入事件 → InputState → Systems → ECS World → Extract → RenderWorld → GPU
-```
-
-每帧的典型执行流程：
-
-1. **输入阶段** — `InputState` 收集键盘/鼠标事件
-2. **更新阶段** — 游戏系统读写 ECS 组件（物理、AI、游戏逻辑）
-3. **提取阶段** — 从主 World 提取渲染所需数据到 RenderWorld
-4. **渲染阶段** — 各渲染器提交 draw call 到 GPU
+相机系统: 第一/第三人称/自由控制器, CameraEffects, 万向锁保护。
 
 ## 坐标系
 
-AnvilKit 使用 **左手坐标系**：
-
-- +X 向右
-- +Y 向上
-- +Z 向屏幕内（前方）
-
-投影使用 `look_at_lh` 和 `perspective_lh`。
+AnvilKit 使用**右手坐标系**（与 wgpu/glam 默认一致）：+X 向右, +Y 向上, -Z 指向屏幕内。

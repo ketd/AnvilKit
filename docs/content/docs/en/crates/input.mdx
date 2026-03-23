@@ -1,58 +1,219 @@
 ---
 title: anvilkit-input
-description: Input system — keyboard, mouse, Action Map
+description: Input system — keyboard, mouse, Action Map, RenderApp integration
 ---
 
-`anvilkit-input` provides cross-platform input abstraction with keyboard, mouse support and custom Action Maps.
+`anvilkit-input` provides cross-platform input abstraction with keyboard and mouse support, a logical Action Map system, and helpers for integrating with the render window event loop.
 
 ## InputState
 
+`InputState` is an ECS `Resource` that tracks per-frame keyboard and mouse state. It distinguishes between continuous press, first-frame press, and first-frame release.
+
+### Keyboard API
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `press_key` | `(&mut self, KeyCode)` | Record a key press. If the key was not already held, it is also marked as "just pressed". |
+| `release_key` | `(&mut self, KeyCode)` | Record a key release. If the key was held, it is marked as "just released". |
+| `is_key_pressed` | `(&self, KeyCode) -> bool` | True while the key is held down (persists across frames). |
+| `is_key_just_pressed` | `(&self, KeyCode) -> bool` | True only on the frame the key was first pressed. |
+| `is_key_just_released` | `(&self, KeyCode) -> bool` | True only on the frame the key was released. |
+| `pressed_keys` | `(&self) -> &HashSet<KeyCode>` | All currently held keys. |
+
+### Mouse Button API
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `press_mouse` | `(&mut self, MouseButton)` | Record a mouse button press. |
+| `release_mouse` | `(&mut self, MouseButton)` | Record a mouse button release. |
+| `is_mouse_pressed` | `(&self, MouseButton) -> bool` | True while the button is held. |
+| `is_mouse_just_pressed` | `(&self, MouseButton) -> bool` | True only on the press frame. |
+| `is_mouse_just_released` | `(&self, MouseButton) -> bool` | True only on the release frame. |
+
+`MouseButton` variants: `Left`, `Right`, `Middle`.
+
+### Mouse Position / Motion API
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `set_mouse_position` | `(&mut self, Vec2)` | Set absolute cursor position (pixels). |
+| `mouse_position` | `(&self) -> Vec2` | Get current cursor position. |
+| `add_mouse_delta` | `(&mut self, Vec2)` | Accumulate raw mouse motion delta. |
+| `mouse_delta` | `(&self) -> Vec2` | Get accumulated delta for this frame (pixels). |
+| `add_scroll_delta` | `(&mut self, f32)` | Accumulate scroll wheel delta (lines). |
+| `scroll_delta` | `(&self) -> f32` | Get accumulated scroll delta for this frame. |
+
+### Frame Lifecycle
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `end_frame` | `(&mut self)` | Clear all `just_pressed`, `just_released`, `mouse_delta`, and `scroll_delta`. Call once at the end of each frame. |
+
+### Usage Example
+
 ```rust
-use anvilkit_input::input_state::InputState;
+use anvilkit_input::input_state::{InputState, KeyCode, MouseButton};
 
-fn player_input(input: Res<InputState>) {
-    if input.is_key_pressed(KeyCode::Space) {
-        // Jump (on press)
+fn player_system(input: Res<InputState>) {
+    // Movement (held)
+    if input.is_key_pressed(KeyCode::W) {
+        // move forward
     }
-    if input.is_key_held(KeyCode::KeyW) {
-        // Move forward (while held)
+    if input.is_key_pressed(KeyCode::S) {
+        // move backward
     }
 
+    // Jump (just pressed -- fires once)
+    if input.is_key_just_pressed(KeyCode::Space) {
+        // jump
+    }
+
+    // Shooting
     if input.is_mouse_pressed(MouseButton::Left) {
-        // Shoot
+        // fire weapon
     }
-    let mouse_delta = input.mouse_delta();
+
+    // Camera look (raw delta for FPS)
+    let delta = input.mouse_delta();
+    camera_yaw   -= delta.x * sensitivity;
+    camera_pitch -= delta.y * sensitivity;
+
+    // Zoom
+    let scroll = input.scroll_delta();
+    fov -= scroll * 2.0;
 }
 ```
 
-## Action Map
+## ActionMap
 
-Map physical keys to logical actions:
+`ActionMap` maps logical action names (strings) to one or more physical `InputBinding`s. Any bound input being active makes the action active.
+
+### InputBinding
 
 ```rust
-use anvilkit_input::action_map::ActionMap;
+pub enum InputBinding {
+    Key(KeyCode),
+    Mouse(MouseButton),
+}
+```
 
-let mut actions = ActionMap::new();
+### ActionState
 
-actions.bind("move_forward", KeyCode::KeyW);
-actions.bind("move_forward", KeyCode::ArrowUp);
-actions.bind("jump", KeyCode::Space);
-actions.bind("shoot", MouseButton::Left);
+| Variant | `is_active()` | `is_just_pressed()` | `is_just_released()` |
+|---------|---------------|----------------------|----------------------|
+| `Inactive` | false | false | false |
+| `JustPressed` | true | true | false |
+| `Pressed` | true | false | false |
+| `JustReleased` | false | false | true |
 
-if actions.is_action_pressed("jump", &input) {
-    // Execute jump
+### ActionMap API
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `new` | `() -> Self` | Create an empty action map. |
+| `add_binding` | `(&mut self, action: &str, InputBinding)` | Bind an input to a named action. Multiple bindings per action are supported. |
+| `update` | `(&mut self, &InputState)` | Recompute all action states from the current input. Call once per frame after input events. |
+| `action_state` | `(&self, action: &str) -> ActionState` | Get the full state of an action. Returns `Inactive` for unknown actions. |
+| `is_action_active` | `(&self, action: &str) -> bool` | True if `JustPressed` or `Pressed`. |
+| `is_action_just_pressed` | `(&self, action: &str) -> bool` | True only on the activation frame. |
+| `is_action_just_released` | `(&self, action: &str) -> bool` | True only on the deactivation frame. |
+| `get_bindings` | `(&self, action: &str) -> Option<&[InputBinding]>` | Inspect current bindings. |
+| `clear_bindings` | `(&mut self, action: &str)` | Remove all bindings for an action. |
+
+### Usage Example
+
+```rust
+use anvilkit_input::prelude::*;
+use anvilkit_input::action_map::InputBinding;
+
+// Setup (typically in Startup)
+fn setup_actions(mut commands: Commands) {
+    let mut map = ActionMap::new();
+
+    map.add_binding("move_forward", InputBinding::Key(KeyCode::W));
+    map.add_binding("move_forward", InputBinding::Key(KeyCode::Up));
+    map.add_binding("move_back",    InputBinding::Key(KeyCode::S));
+    map.add_binding("move_back",    InputBinding::Key(KeyCode::Down));
+    map.add_binding("jump",         InputBinding::Key(KeyCode::Space));
+    map.add_binding("shoot",        InputBinding::Mouse(MouseButton::Left));
+    map.add_binding("aim",          InputBinding::Mouse(MouseButton::Right));
+
+    commands.insert_resource(map);
+}
+
+// Per-frame update (PreUpdate)
+fn update_actions(input: Res<InputState>, mut actions: ResMut<ActionMap>) {
+    actions.update(&input);
+}
+
+// Game logic (Update)
+fn game_logic(actions: Res<ActionMap>) {
+    if actions.is_action_active("move_forward") {
+        // move forward
+    }
+    if actions.is_action_just_pressed("jump") {
+        // start jump
+    }
+    if actions.is_action_just_released("shoot") {
+        // release charged shot
+    }
+}
+```
+
+## RenderApp Integration
+
+When using `anvilkit-render`'s `RenderApp`, three helper methods bridge OS window events into the ECS `InputState` resource automatically. Games with a custom `ApplicationHandler` can call these directly.
+
+| Method | Kind | Signature | Description |
+|--------|------|-----------|-------------|
+| `forward_input` | `static` | `(app: &mut App, event: &WindowEvent)` | Translates keyboard, mouse button, cursor position, and scroll wheel events into `InputState` calls. |
+| `forward_device_input` | `static` | `(app: &mut App, event: &DeviceEvent)` | Translates raw `DeviceEvent::MouseMotion` into `InputState::add_mouse_delta`. Use this for FPS-style camera control. |
+| `tick` | `instance` | `(&mut self, app: &mut App)` | Runs one frame: updates `DeltaTime`, calls `app.update()`, then calls `InputState::end_frame()`. |
+
+### Typical Custom Event Loop
+
+```rust
+use anvilkit_render::RenderApp;
+use winit::event::{WindowEvent, DeviceEvent};
+
+// In your ApplicationHandler impl:
+
+fn window_event(&mut self, event_loop, window_id, event: WindowEvent) {
+    // Let the engine handle input bookkeeping
+    RenderApp::forward_input(&mut self.app, &event);
+
+    // Handle game-specific window events
+    match &event {
+        WindowEvent::CloseRequested => event_loop.exit(),
+        _ => {}
+    }
+}
+
+fn device_event(&mut self, event_loop, device_id, event: DeviceEvent) {
+    // Raw mouse motion for FPS camera
+    RenderApp::forward_device_input(&mut self.app, &event);
+}
+
+fn about_to_wait(&mut self, event_loop) {
+    // Standard per-frame lifecycle: DeltaTime → app.update() → end_frame()
+    self.render_app.tick(&mut self.app);
+    self.window.request_redraw();
 }
 ```
 
 ## Mouse Lock
 
-FPS games need cursor locking with raw mouse deltas:
+FPS games typically lock the cursor and use raw deltas:
 
 ```rust
+use winit::window::CursorGrabMode;
+
+// Lock cursor to window
 window.set_cursor_grab(CursorGrabMode::Confined)
-    .or_else(|_| window.set_cursor_grab(CursorGrabMode::Locked));
+    .or_else(|_| window.set_cursor_grab(CursorGrabMode::Locked))
+    .unwrap();
 window.set_cursor_visible(false);
 
-// Use DeviceEvent::MouseMotion for raw deltas
-// instead of CursorMoved (limited by window bounds)
+// Use DeviceEvent::MouseMotion (forwarded by forward_device_input)
+// instead of CursorMoved, which clips at window boundaries.
 ```
