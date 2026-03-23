@@ -75,8 +75,7 @@ fn main() {
         ..BloomSettings::default()
     });
     app.insert_resource(SsaoSettings {
-        radius: 0.3,
-        intensity: 0.8,
+        enabled: false,  // Voxel games don't benefit from SSAO (flat 90° surfaces)
         ..SsaoSettings::default()
     });
     app.insert_resource(ActiveFilter::default());
