@@ -40,9 +40,12 @@ impl Default for GpuLight {
 /// 最大光源数量
 pub const MAX_LIGHTS: usize = 8;
 
-/// PBR 场景 Uniform (848 字节)
+/// Cascade Shadow Maps 级数
+pub const CSM_CASCADE_COUNT: usize = 3;
+
+/// PBR 场景 Uniform (1072 字节)
 ///
-/// 包含 per-object 变换、材质参数和多光源数据。
+/// 包含 per-object 变换、材质参数、多光源数据和 CSM 矩阵。
 /// 前 256 字节与旧布局兼容（light_dir/light_color 保留但多光源路径不使用）。
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -63,9 +66,11 @@ pub struct PbrSceneUniform {
     pub material_params: [f32; 4],
     /// Multi-light array, up to `MAX_LIGHTS` entries (512 bytes).
     pub lights: [GpuLight; MAX_LIGHTS],
-    /// Light-space view-projection for shadow mapping (64 bytes).
-    pub shadow_view_proj: [[f32; 4]; 4],
-    /// Emissive factor rgb, w unused (16 bytes).
+    /// Cascade shadow map view-projection matrices (3 × 64 = 192 bytes).
+    pub cascade_view_projs: [[[f32; 4]; 4]; CSM_CASCADE_COUNT],
+    /// Cascade far plane split distances in view-space [c0, c1, c2, shadow_texel_size] (16 bytes).
+    pub cascade_splits: [f32; 4],
+    /// Emissive factor rgb, w = cascade_count (16 bytes).
     pub emissive_factor: [f32; 4],
 }
 
@@ -80,8 +85,9 @@ impl Default for PbrSceneUniform {
             light_color: [1.0, 1.0, 1.0, 3.0],
             material_params: [0.0, 0.5, 1.0, 0.0],
             lights: [GpuLight::default(); MAX_LIGHTS],
-            shadow_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
-            emissive_factor: [0.0; 4],
+            cascade_view_projs: [glam::Mat4::IDENTITY.to_cols_array_2d(); CSM_CASCADE_COUNT],
+            cascade_splits: [10.0, 30.0, 100.0, 1.0 / 2048.0],
+            emissive_factor: [0.0, 0.0, 0.0, CSM_CASCADE_COUNT as f32],
         }
     }
 }
@@ -118,8 +124,10 @@ pub struct RenderState {
     pub ibl_shadow_bind_group_layout: wgpu::BindGroupLayout,
     /// Shadow-only depth render pipeline.
     pub shadow_pipeline: wgpu::RenderPipeline,
-    /// Shadow map depth texture view.
+    /// Shadow map depth texture view (D2Array for CSM sampling).
     pub shadow_map_view: wgpu::TextureView,
+    /// Per-cascade shadow map layer views (for rendering into individual layers).
+    pub shadow_cascade_views: Vec<wgpu::TextureView>,
     /// MSAA multi-sampled HDR color attachment texture view.
     pub hdr_msaa_texture_view: wgpu::TextureView,
     /// Bloom post-processing GPU resources (mip chain, pipelines, bind groups).
@@ -132,7 +140,8 @@ mod tests {
 
     #[test]
     fn test_pbr_scene_uniform_size() {
-        assert_eq!(std::mem::size_of::<PbrSceneUniform>(), 848);
+        // 768 (old fields before shadow_view_proj) + 192 (3 cascade matrices) + 16 (cascade_splits) + 16 (emissive) = 992
+        assert_eq!(std::mem::size_of::<PbrSceneUniform>(), 992);
     }
 
     #[test]

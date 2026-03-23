@@ -421,8 +421,9 @@ impl PbrEcsApp {
                 light_color: [light.color.x, light.color.y, light.color.z, light.intensity],
                 material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, light_count as f32],
                 lights: gpu_lights,
-                shadow_view_proj: shadow_view_proj.to_cols_array_2d(),
-                emissive_factor: [cmd.emissive_factor[0], cmd.emissive_factor[1], cmd.emissive_factor[2], 0.0],
+                cascade_view_projs: [shadow_view_proj.to_cols_array_2d(); 3],
+                cascade_splits: [10.0, 30.0, 100.0, 1.0 / 2048.0],
+                emissive_factor: [cmd.emissive_factor[0], cmd.emissive_factor[1], cmd.emissive_factor[2], 3.0],
             };
             device.queue().write_buffer(ub, 0, bytemuck::bytes_of(&uniform));
 

@@ -21,7 +21,8 @@ struct SceneUniform {
     light_color: vec4<f32>,
     material_params: vec4<f32>,
     lights: array<GpuLight, 8>,
-    shadow_view_proj: mat4x4<f32>,
+    cascade_view_projs: array<mat4x4<f32>, 3>,
+    cascade_splits: vec4<f32>,
     emissive_factor: vec4<f32>,
 };
 
@@ -38,7 +39,7 @@ struct JointMatrices {
 @group(1) @binding(5) var material_sampler: sampler;
 @group(2) @binding(0) var brdf_lut: texture_2d<f32>;
 @group(2) @binding(1) var brdf_lut_sampler: sampler;
-@group(2) @binding(2) var shadow_map: texture_depth_2d;
+@group(2) @binding(2) var shadow_map: texture_depth_2d_array;
 @group(2) @binding(3) var shadow_sampler: sampler_comparison;
 @group(3) @binding(0) var<storage, read> joints: JointMatrices;
 

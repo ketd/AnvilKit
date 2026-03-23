@@ -24,9 +24,11 @@ use crate::renderer::state::{RenderState, PbrSceneUniform, GpuLight, MAX_LIGHTS}
 use crate::renderer::buffer::{
     create_uniform_buffer, create_depth_texture_msaa,
     create_hdr_render_target, create_hdr_msaa_texture,
-    create_sampler, create_texture_linear, create_shadow_map, create_shadow_sampler,
+    create_sampler, create_texture_linear, create_shadow_sampler,
+    create_csm_shadow_map,
     Vertex, PbrVertex, SHADOW_MAP_SIZE,
 };
+use crate::renderer::state::CSM_CASCADE_COUNT;
 use crate::renderer::{RenderPipelineBuilder, DEPTH_FORMAT};
 use crate::renderer::ibl::generate_brdf_lut;
 use crate::renderer::bloom::{BloomResources, BloomSettings};
@@ -77,16 +79,89 @@ pub fn pack_lights(scene_lights: &SceneLights) -> ([GpuLight; MAX_LIGHTS], u32) 
     (lights, count)
 }
 
-/// 计算方向光的光空间矩阵（正交投影）
+/// Cascade Shadow Maps 默认分割比例（视锥体远平面百分比）
+const CSM_SPLIT_RATIOS: [f32; 3] = [0.1, 0.3, 1.0];
+
+/// 计算 CSM 各级 cascade 的光空间矩阵
 ///
-/// 生成一个从光源方向看向原点的 view-projection 矩阵，
-/// 用于 shadow pass 的深度渲染。
+/// 将相机视锥体按 `CSM_SPLIT_RATIOS` 分割，每个子锥体紧密包围一个正交投影。
+/// 返回 (cascade_matrices, cascade_split_distances)。
+pub fn compute_cascade_matrices(
+    light_direction: &glam::Vec3,
+    view: &glam::Mat4,
+    fov: f32,
+    aspect: f32,
+    near: f32,
+    far: f32,
+) -> ([glam::Mat4; 3], [f32; 3]) {
+    let light_dir = light_direction.normalize();
+    let _inv_view = view.inverse();
+
+    let mut matrices = [glam::Mat4::IDENTITY; 3];
+    let mut splits = [0.0f32; 3];
+    let mut prev_split = near;
+
+    for (i, &ratio) in CSM_SPLIT_RATIOS.iter().enumerate() {
+        let split_far = near + (far - near) * ratio;
+        splits[i] = split_far;
+
+        // Compute frustum corners for this cascade slice
+        let proj = glam::Mat4::perspective_rh(fov, aspect, prev_split, split_far);
+        let inv_vp = (proj * *view).inverse();
+
+        // NDC corners → world-space
+        let ndc_corners = [
+            glam::Vec3::new(-1.0, -1.0, 0.0), glam::Vec3::new(1.0, -1.0, 0.0),
+            glam::Vec3::new(-1.0,  1.0, 0.0), glam::Vec3::new(1.0,  1.0, 0.0),
+            glam::Vec3::new(-1.0, -1.0, 1.0), glam::Vec3::new(1.0, -1.0, 1.0),
+            glam::Vec3::new(-1.0,  1.0, 1.0), glam::Vec3::new(1.0,  1.0, 1.0),
+        ];
+
+        let mut world_corners = [glam::Vec3::ZERO; 8];
+        let mut center = glam::Vec3::ZERO;
+        for (j, ndc) in ndc_corners.iter().enumerate() {
+            let clip = inv_vp * glam::Vec4::new(ndc.x, ndc.y, ndc.z, 1.0);
+            world_corners[j] = clip.truncate() / clip.w;
+            center += world_corners[j];
+        }
+        center /= 8.0;
+
+        // Build light view looking at the center of the frustum slice
+        let light_pos = center - light_dir * 50.0;
+        let up = if light_dir.y.abs() > 0.99 { glam::Vec3::Z } else { glam::Vec3::Y };
+        let light_view = glam::Mat4::look_at_rh(light_pos, center, up);
+
+        // Find bounding box in light space
+        let mut min_ls = glam::Vec3::splat(f32::MAX);
+        let mut max_ls = glam::Vec3::splat(f32::MIN);
+        for c in &world_corners {
+            let ls = (light_view * glam::Vec4::new(c.x, c.y, c.z, 1.0)).truncate();
+            min_ls = min_ls.min(ls);
+            max_ls = max_ls.max(ls);
+        }
+
+        // Add margin to avoid edge clipping
+        let margin = (max_ls - min_ls).max_element() * 0.1;
+        min_ls -= glam::Vec3::splat(margin);
+        max_ls += glam::Vec3::splat(margin);
+
+        let light_proj = glam::Mat4::orthographic_rh(
+            min_ls.x, max_ls.x, min_ls.y, max_ls.y,
+            -max_ls.z - 50.0, -min_ls.z + 50.0,
+        );
+
+        matrices[i] = light_proj * light_view;
+        prev_split = split_far;
+    }
+
+    (matrices, splits)
+}
+
+/// Legacy: compute a single light-space matrix (for backward compatibility).
 pub fn compute_light_space_matrix(light_direction: &glam::Vec3) -> glam::Mat4 {
     let light_dir = light_direction.normalize();
-    // 光源位置设在场景中心的反方向
     let light_pos = -light_dir * 15.0;
     let light_view = glam::Mat4::look_at_lh(light_pos, glam::Vec3::ZERO, glam::Vec3::Y);
-    // 正交投影覆盖场景范围
     let light_proj = glam::Mat4::orthographic_lh(-10.0, 10.0, -10.0, 10.0, 0.1, 30.0);
     light_proj * light_view
 }
@@ -408,10 +483,11 @@ impl RenderApp {
             .expect("创建 Tonemap 管线失败")
             .into_pipeline();
 
-        // IBL + Shadow: bind group 2 (BRDF LUT + shadow map)
+        // IBL + Shadow: bind group 2 (BRDF LUT + CSM shadow map array)
         let brdf_lut_data = generate_brdf_lut(256);
         let (_, brdf_lut_view) = create_texture_linear(device, 256, 256, &brdf_lut_data, "ECS BRDF LUT");
-        let (_, shadow_map_view) = create_shadow_map(device, SHADOW_MAP_SIZE, "ECS Shadow Map");
+        let (_shadow_tex, shadow_map_view, shadow_cascade_views) =
+            create_csm_shadow_map(device, SHADOW_MAP_SIZE, CSM_CASCADE_COUNT as u32, "ECS CSM Shadow Map");
         let shadow_sampler = create_shadow_sampler(device, "ECS Shadow Sampler");
 
         let ibl_shadow_bind_group_layout = device.device().create_bind_group_layout(
@@ -435,7 +511,7 @@ impl RenderApp {
                         binding: 2, visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
                             sample_type: wgpu::TextureSampleType::Depth,
-                            view_dimension: wgpu::TextureViewDimension::D2,
+                            view_dimension: wgpu::TextureViewDimension::D2Array,
                             multisampled: false,
                         }, count: None,
                     },
@@ -502,6 +578,7 @@ impl RenderApp {
             ibl_shadow_bind_group_layout,
             shadow_pipeline,
             shadow_map_view,
+            shadow_cascade_views,
             hdr_msaa_texture_view,
             bloom: Some(bloom),
         });
@@ -609,21 +686,34 @@ impl RenderApp {
         let (gpu_lights, light_count) = pack_lights(scene_lights);
         let light = &scene_lights.directional;
 
-        // Compute light-space matrix for shadow mapping (directional light)
-        let shadow_view_proj = compute_light_space_matrix(&light.direction);
+        // Compute CSM cascade matrices for shadow mapping
+        let (sw, sh) = render_state.surface_size;
+        let cam_aspect = sw as f32 / sh.max(1) as f32;
+        let cam_fov = std::f32::consts::FRAC_PI_4; // 45 degrees default
+        // Approximate view matrix from camera position and forward direction
+        let cam_view_approx = glam::Mat4::look_at_rh(
+            camera_pos,
+            camera_pos + (active_camera.view_proj.inverse() * glam::Vec4::new(0.0, 0.0, -1.0, 0.0)).truncate().normalize(),
+            glam::Vec3::Y,
+        );
+        let (cascade_matrices, cascade_splits) =
+            compute_cascade_matrices(&light.direction, &cam_view_approx, cam_fov, cam_aspect, 0.1, 200.0);
 
         // === Batched rendering: single encoder, multiple passes, single submit ===
         let mut encoder = device.device().create_command_encoder(
             &wgpu::CommandEncoderDescriptor { label: Some("ECS Frame Encoder") },
         );
 
-        // --- Pass 0: Shadow pass → shadow depth map ---
-        {
+        // --- Pass 0: CSM Shadow passes (one per cascade) ---
+        for cascade_idx in 0..render_state.shadow_cascade_views.len().min(CSM_CASCADE_COUNT) {
+            let cascade_view = &render_state.shadow_cascade_views[cascade_idx];
+            let cascade_vp = cascade_matrices[cascade_idx];
+
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Shadow Pass"),
+                label: Some("CSM Shadow Pass"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &render_state.shadow_map_view,
+                    view: cascade_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -641,7 +731,7 @@ impl RenderApp {
 
                 let shadow_uniform = PbrSceneUniform {
                     model: cmd.model_matrix.to_cols_array_2d(),
-                    view_proj: shadow_view_proj.to_cols_array_2d(),
+                    view_proj: cascade_vp.to_cols_array_2d(),
                     ..Default::default()
                 };
                 device.queue().write_buffer(
@@ -710,8 +800,13 @@ impl RenderApp {
                     light_color: [light.color.x, light.color.y, light.color.z, light.intensity],
                     material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, light_count as f32],
                     lights: gpu_lights,
-                    shadow_view_proj: shadow_view_proj.to_cols_array_2d(),
-                    emissive_factor: [cmd.emissive_factor[0], cmd.emissive_factor[1], cmd.emissive_factor[2], 1.0 / SHADOW_MAP_SIZE as f32],
+                    cascade_view_projs: [
+                        cascade_matrices[0].to_cols_array_2d(),
+                        cascade_matrices[1].to_cols_array_2d(),
+                        cascade_matrices[2].to_cols_array_2d(),
+                    ],
+                    cascade_splits: [cascade_splits[0], cascade_splits[1], cascade_splits[2], 1.0 / SHADOW_MAP_SIZE as f32],
+                    emissive_factor: [cmd.emissive_factor[0], cmd.emissive_factor[1], cmd.emissive_factor[2], CSM_CASCADE_COUNT as f32],
                 };
                 device.queue().write_buffer(
                     &render_state.scene_uniform_buffer, 0, bytemuck::bytes_of(&uniform),

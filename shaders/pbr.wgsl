@@ -19,7 +19,8 @@ struct SceneUniform {
     light_color: vec4<f32>,
     material_params: vec4<f32>,
     lights: array<GpuLight, 8>,
-    shadow_view_proj: mat4x4<f32>,
+    cascade_view_projs: array<mat4x4<f32>, 3>,
+    cascade_splits: vec4<f32>,
     emissive_factor: vec4<f32>,
 };
 
@@ -32,7 +33,7 @@ struct SceneUniform {
 @group(1) @binding(5) var material_sampler: sampler;
 @group(2) @binding(0) var brdf_lut: texture_2d<f32>;
 @group(2) @binding(1) var brdf_lut_sampler: sampler;
-@group(2) @binding(2) var shadow_map: texture_depth_2d;
+@group(2) @binding(2) var shadow_map: texture_depth_2d_array;
 @group(2) @binding(3) var shadow_sampler: sampler_comparison;
 
 struct VertexInput {
@@ -104,17 +105,29 @@ fn hemisphere_specular(R: vec3<f32>, roughness: f32) -> vec3<f32> {
     return mix(avg, sharp, 1.0 - roughness * roughness);
 }
 
-fn calculate_shadow(world_pos: vec3<f32>, shadow_vp: mat4x4<f32>) -> f32 {
+fn calculate_shadow(world_pos: vec3<f32>) -> f32 {
+    // Compute view-space depth for cascade selection
+    let view_pos = scene.view_proj * vec4<f32>(world_pos, 1.0);
+    let view_z = view_pos.w; // w contains the linear view-space depth after perspective
+
+    // Determine cascade index from split distances
+    let cascade_count = u32(scene.emissive_factor.w);
+    var cascade_idx = 0u;
+    if (view_z > scene.cascade_splits.x) { cascade_idx = 1u; }
+    if (view_z > scene.cascade_splits.y) { cascade_idx = 2u; }
+    if (cascade_idx >= cascade_count) { return 1.0; }
+
+    let shadow_vp = scene.cascade_view_projs[cascade_idx];
     let clip = shadow_vp * vec4<f32>(world_pos, 1.0);
     let ndc = clip.xyz / clip.w;
     let uv = vec2<f32>(ndc.x * 0.5 + 0.5, -ndc.y * 0.5 + 0.5);
     let depth = ndc.z;
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth > 1.0) { return 1.0; }
-    // Shadow map texel size passed via emissive_factor.w
-    let ts = scene.emissive_factor.w;
+
+    let ts = scene.cascade_splits.w; // shadow texel size
     var s = 0.0;
     for (var x = -1; x <= 1; x++) { for (var y = -1; y <= 1; y++) {
-        s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(f32(x), f32(y)) * ts, depth - 0.005);
+        s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(f32(x), f32(y)) * ts, cascade_idx, depth - 0.005);
     }}
     return s / 9.0;
 }
@@ -145,7 +158,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let NdotV = max(dot(N, V), 0.0);
     let F0 = mix(vec3<f32>(0.04), albedo, metallic);
 
-    let shadow = calculate_shadow(in.world_position, scene.shadow_view_proj);
+    let shadow = calculate_shadow(in.world_position);
     let light_count = u32(scene.material_params.w);
     var Lo = vec3<f32>(0.0);
 

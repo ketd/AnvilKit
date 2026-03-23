@@ -353,8 +353,9 @@ impl ShowcaseApp {
                 light_color: [lights.directional.color.x, lights.directional.color.y, lights.directional.color.z, lights.directional.intensity],
                 material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, lc as f32],
                 lights: gpu_lights,
-                shadow_view_proj: svp.to_cols_array_2d(),
-                emissive_factor: [cmd.emissive_factor[0], cmd.emissive_factor[1], cmd.emissive_factor[2], 0.0],
+                cascade_view_projs: [svp.to_cols_array_2d(); 3],
+                cascade_splits: [10.0, 30.0, 100.0, 1.0 / 2048.0],
+                emissive_factor: [cmd.emissive_factor[0], cmd.emissive_factor[1], cmd.emissive_factor[2], 3.0],
             };
             device.queue().write_buffer(ub, 0, bytemuck::bytes_of(&u));
 

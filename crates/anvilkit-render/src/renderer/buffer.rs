@@ -418,6 +418,49 @@ pub fn create_shadow_map(
     (texture, view)
 }
 
+/// 创建 CSM 阴影贴图 (2D array texture)
+///
+/// 创建一个具有 `layer_count` 层的深度纹理数组，用于 Cascade Shadow Maps。
+/// 返回纹理、完整数组视图（采样用）、以及每层的独立视图（渲染用）。
+pub fn create_csm_shadow_map(
+    device: &RenderDevice,
+    size: u32,
+    layer_count: u32,
+    label: &str,
+) -> (wgpu::Texture, wgpu::TextureView, Vec<wgpu::TextureView>) {
+    let texture = device.device().create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: layer_count,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let array_view = texture.create_view(&wgpu::TextureViewDescriptor {
+        label: Some(&format!("{} Array View", label)),
+        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        ..Default::default()
+    });
+    let layer_views: Vec<wgpu::TextureView> = (0..layer_count)
+        .map(|i| {
+            texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some(&format!("{} Layer {}", label, i)),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                base_array_layer: i,
+                array_layer_count: Some(1),
+                ..Default::default()
+            })
+        })
+        .collect();
+    (texture, array_view, layer_views)
+}
+
 /// 创建阴影比较采样器
 ///
 /// 使用 `LessEqual` 比较函数，用于 `textureSampleCompare()` 调用。
