@@ -1,31 +1,31 @@
 ---
-title: Depth of Field
-description: Circle-of-confusion based depth of field post-processing
+title: 景深
+description: 基于弥散圆的景深后处理
 ---
 
-## Depth of Field
+## 景深
 
-Depth of field (DOF) simulates camera lens defocus blur, keeping a focal plane sharp while smoothly blurring foreground and background objects based on their distance from the focus point. The implementation uses a Circle of Confusion (CoC) approach.
+景深 (DOF) 模拟相机镜头的散焦模糊效果，保持焦平面清晰，同时根据前景和背景物体与焦点的距离平滑地对其进行模糊处理。实现采用弥散圆 (CoC) 方法。
 
-**Pipeline**: 3-pass fullscreen process:
+**管线**：3 通道全屏处理：
 
-1. **CoC Pass** -- Reads the depth buffer and computes a per-pixel Circle of Confusion radius into an `R16Float` texture at full resolution. Pixels at `focus_distance` get zero CoC; pixels further from the focal plane receive larger values.
-2. **Bokeh Blur Pass** -- Samples the HDR color buffer weighted by the CoC texture and writes to a half-resolution `Rgba16Float` blur target, producing the characteristic bokeh disc shape.
-3. **Composite Pass** -- Blends the sharp HDR image with the blurred result using the CoC as an interpolation mask, producing the final DOF output.
+1. **CoC 通道** -- 读取深度缓冲并计算每像素弥散圆半径，以全分辨率写入 `R16Float` 纹理。位于 `focus_distance` 处的像素 CoC 为零；距离焦平面越远的像素获得越大的值。
+2. **散景模糊通道** -- 以 CoC 纹理为权重采样 HDR 颜色缓冲，写入半分辨率 `Rgba16Float` 模糊目标，产生特征性的散景光斑形状。
+3. **合成通道** -- 使用 CoC 作为插值遮罩，将清晰的 HDR 图像与模糊结果混合，生成最终的景深输出。
 
-**Configuration** (`DofSettings` ECS resource):
+**配置** (`DofSettings` ECS 资源)：
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `enabled` | `false` | Toggle DOF on/off (zero GPU cost when off) |
-| `focus_distance` | `10.0` | Distance to the focus plane in world units |
-| `focus_range` | `5.0` | Range around `focus_distance` that remains in sharp focus |
-| `bokeh_radius` | `4.0` | Maximum blur radius in pixels |
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `enabled` | `false` | 开关景深（关闭时零 GPU 开销） |
+| `focus_distance` | `10.0` | 以世界单位表示的焦平面距离 |
+| `focus_range` | `5.0` | `focus_distance` 周围保持清晰对焦的范围 |
+| `bokeh_radius` | `4.0` | 以像素为单位的最大模糊半径 |
 
 ```rust
 use anvilkit_render::renderer::dof::DofSettings;
 
-// Enable DOF with custom focus
+// 启用自定义对焦的景深
 app.insert_resource(DofSettings {
     enabled: true,
     focus_distance: 8.0,
@@ -34,4 +34,4 @@ app.insert_resource(DofSettings {
 });
 ```
 
-**Files**: `dof.rs`, `dof.wgsl`
+**文件**：`dof.rs`、`dof.wgsl`

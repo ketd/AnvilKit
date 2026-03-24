@@ -1,40 +1,40 @@
 ---
-title: Physics
-description: Built-in AABB physics and Rapier 3D integration
+title: 物理系统
+description: 内置 AABB 物理和 Rapier 3D 集成
 ---
 
-AnvilKit provides two physics options: a lightweight built-in AABB system (default) and full rigid-body simulation via `rapier3d` (feature-gated).
+AnvilKit 提供两种物理方案：轻量级的内置 AABB 系统（默认）和通过 `rapier3d` 实现的完整刚体模拟（需启用 feature）。
 
-## Built-in AABB Physics (default)
+## 内置 AABB 物理（默认）
 
-`PhysicsPlugin` registers velocity integration and N-squared AABB collision detection in `Update`.
+`PhysicsPlugin` 在 `Update` 中注册速度积分和 N-平方 AABB 碰撞检测。
 
-| Type | Kind | Description |
+| 类型 | 类别 | 说明 |
 |------|------|-------------|
-| `DeltaTime` | Resource | Frame delta in seconds (default 1/60) |
+| `DeltaTime` | Resource | 帧间隔时间（秒），默认 1/60 |
 | `Velocity` | Component | `linear: Vec3`, `angular: Vec3` |
 | `AabbCollider` | Component | `half_extents: Vec3` |
-| `CollisionEvents` | Resource | `Vec<CollisionEvent>` populated each frame |
+| `CollisionEvents` | Resource | 每帧填充的 `Vec<CollisionEvent>` |
 | `CollisionEvent` | Struct | `a: Entity`, `b: Entity` |
 
-| System | Description |
+| 系统 | 说明 |
 |--------|-------------|
 | `velocity_integration_system` | `transform.translation += velocity.linear * dt` |
-| `collision_detection_system` | N-squared AABB overlap test, writes `CollisionEvents` |
+| `collision_detection_system` | N-平方 AABB 重叠检测，写入 `CollisionEvents` |
 
 ```rust
 use anvilkit_ecs::prelude::*;
 use anvilkit_ecs::physics::*;
 
 fn setup_physics(mut commands: Commands) {
-    // Dynamic moving box
+    // 动态移动方块
     commands.spawn((
         Transform::from_xyz(0.0, 10.0, 0.0),
         Velocity::linear(Vec3::new(0.0, -5.0, 0.0)),
         AabbCollider::cube(0.5),
     ));
 
-    // Static ground
+    // 静态地面
     commands.spawn((
         Transform::from_xyz(0.0, 0.0, 0.0),
         AabbCollider::new(Vec3::new(50.0, 0.1, 50.0)),
@@ -48,32 +48,32 @@ fn read_collisions(events: Res<CollisionEvents>) {
 }
 ```
 
-## Rapier Integration (feature `"rapier"`)
+## Rapier 集成（feature `"rapier"`）
 
-Enable the `rapier` feature for full rigid-body simulation with `rapier3d`.
+启用 `rapier` feature 以使用 `rapier3d` 进行完整的刚体模拟。
 
-`RapierPhysicsPlugin` registers four systems in `Update`:
+`RapierPhysicsPlugin` 在 `Update` 中注册四个系统：
 
-| System | Order | Description |
+| 系统 | 顺序 | 说明 |
 |--------|-------|-------------|
-| `sync_to_rapier_system` | 1st | Creates rapier bodies from ECS `RigidBody`+`Collider`+`Transform` |
-| `step_physics_system` | 2nd | Steps the rapier simulation one tick |
-| `sync_from_rapier_system` | 3rd | Writes rapier positions back to ECS `Transform` |
-| `extract_collision_events_system` | 3rd | Populates `CollisionEvents` from rapier narrow-phase |
+| `sync_to_rapier_system` | 第 1 | 从 ECS 的 `RigidBody`+`Collider`+`Transform` 创建 rapier 刚体 |
+| `step_physics_system` | 第 2 | 推进 rapier 模拟一个 tick |
+| `sync_from_rapier_system` | 第 3 | 将 rapier 位置写回 ECS 的 `Transform` |
+| `extract_collision_events_system` | 第 3 | 从 rapier 窄相检测填充 `CollisionEvents` |
 
-| Type | Description |
+| 类型 | 说明 |
 |------|-------------|
-| `RapierContext` | Resource holding all rapier state (rigid body set, collider set, pipeline, etc.) |
-| `RigidBody` | Component: `body_type`, `mass`, `gravity_scale`, `is_sensor`, damping |
-| `Collider` | Component: `shape` (Sphere/Cuboid/Capsule/TriMesh), `friction`, `restitution` |
-| `RaycastHit` | Result struct: `entity`, `point`, `normal`, `distance` |
+| `RapierContext` | 持有所有 rapier 状态的 Resource（刚体集合、碰撞体集合、管线等） |
+| `RigidBody` | Component：`body_type`、`mass`、`gravity_scale`、`is_sensor`、damping |
+| `Collider` | Component：`shape`（Sphere/Cuboid/Capsule/TriMesh）、`friction`、`restitution` |
+| `RaycastHit` | 结果结构体：`entity`、`point`、`normal`、`distance` |
 
 ```rust
 use anvilkit_ecs::prelude::*;
 use anvilkit_ecs::physics::*;
 
 fn setup_rapier(mut commands: Commands) {
-    // Dynamic sphere
+    // 动态球体
     commands.spawn((
         Transform::from_xyz(0.0, 10.0, 0.0),
         RigidBody::dynamic(),
@@ -81,7 +81,7 @@ fn setup_rapier(mut commands: Commands) {
         Velocity::default(),
     ));
 
-    // Static ground
+    // 静态地面
     commands.spawn((
         Transform::default(),
         RigidBody::fixed(),
@@ -89,12 +89,12 @@ fn setup_rapier(mut commands: Commands) {
     ));
 }
 
-// Raycast query
+// 射线查询
 fn shoot_ray(ctx: Res<RapierContext>) {
     if let Some(hit) = ctx.raycast(
-        Vec3::new(0.0, 5.0, 0.0), // origin
-        Vec3::NEG_Y,               // direction
-        100.0,                     // max distance
+        Vec3::new(0.0, 5.0, 0.0), // 起点
+        Vec3::NEG_Y,               // 方向
+        100.0,                     // 最大距离
     ) {
         log::info!(
             "Hit entity {:?} at {} (distance {})",

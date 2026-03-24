@@ -1,65 +1,65 @@
 ---
-title: Debug Console
-description: In-game debug console with command registration and execution
+title: 调试控制台
+description: 游戏内调试控制台，支持命令注册与执行
 ---
 
-## Overview
+## 概述
 
-`DebugConsole` is an in-game debug console that allows registering and executing named commands at runtime. Output is stored in a scrollable log with categorized entries (info, warning, error, command result). The console can be toggled visible/hidden for overlay rendering.
+`DebugConsole` 是一个游戏内调试控制台，允许在运行时注册和执行命名命令。输出存储在可滚动的日志中，条目按类别分类（信息、警告、错误、命令结果）。控制台可以切换显示/隐藏，用于覆盖层渲染。
 
-The console is provided by the `anvilkit-ecs` crate:
+该控制台由 `anvilkit-ecs` crate 提供：
 
 ```rust
 use anvilkit_ecs::console::DebugConsole;
 ```
 
-`DebugConsole` is an ECS `Resource` that stores registered commands, command history, and an output log.
+`DebugConsole` 是一个 ECS `Resource`，存储已注册的命令、命令历史和输出日志。
 
-## Built-in Commands
+## 内置命令
 
-| Command | Description |
+| 命令 | 说明 |
 |---------|-------------|
-| `help` | List all available commands with descriptions |
-| `clear` | Clear the console output log |
+| `help` | 列出所有可用命令及其说明 |
+| `clear` | 清除控制台输出日志 |
 
 ## DebugConsole API
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `new` | `() -> Self` | Create a new console with built-in `help` and `clear` commands |
-| `register` | `(&mut self, name: &str, description: &str, handler: F)` | Register a command. `handler` is `Fn(&[&str]) -> String + Send + Sync + 'static` |
-| `execute` | `(&mut self, input: &str)` | Execute a command string (command name followed by space-separated arguments) |
-| `toggle` | `(&mut self)` | Toggle console visibility on/off |
-| `log` | `(&mut self, text: &str)` | Log an informational message to the output |
-| `warn` | `(&mut self, text: &str)` | Log a warning message to the output |
-| `error` | `(&mut self, text: &str)` | Log an error message to the output |
+| `new` | `() -> Self` | 创建新的控制台，包含内置的 `help` 和 `clear` 命令 |
+| `register` | `(&mut self, name: &str, description: &str, handler: F)` | 注册一个命令。`handler` 为 `Fn(&[&str]) -> String + Send + Sync + 'static` |
+| `execute` | `(&mut self, input: &str)` | 执行命令字符串（命令名后跟空格分隔的参数） |
+| `toggle` | `(&mut self)` | 切换控制台的显示/隐藏 |
+| `log` | `(&mut self, text: &str)` | 记录一条信息消息到输出 |
+| `warn` | `(&mut self, text: &str)` | 记录一条警告消息到输出 |
+| `error` | `(&mut self, text: &str)` | 记录一条错误消息到输出 |
 
-### Public Fields
+### 公开字段
 
-| Field | Type | Description |
+| 字段 | 类型 | 说明 |
 |-------|------|-------------|
-| `commands` | `HashMap<String, ConsoleCommand>` | Registered commands keyed by name |
-| `history` | `Vec<String>` | Command input history (most recent last) |
-| `output` | `Vec<ConsoleOutput>` | Output log entries |
-| `visible` | `bool` | Whether the console overlay is visible |
-| `input_buffer` | `String` | Current input buffer text |
-| `max_history` | `usize` | Maximum history entries (default: 100) |
-| `max_output` | `usize` | Maximum output entries (default: 200) |
+| `commands` | `HashMap<String, ConsoleCommand>` | 按名称索引的已注册命令 |
+| `history` | `Vec<String>` | 命令输入历史（最新的在最后） |
+| `output` | `Vec<ConsoleOutput>` | 输出日志条目 |
+| `visible` | `bool` | 控制台覆盖层是否可见 |
+| `input_buffer` | `String` | 当前输入缓冲区文本 |
+| `max_history` | `usize` | 最大历史条目数（默认：100） |
+| `max_output` | `usize` | 最大输出条目数（默认：200） |
 
 ## OutputKind
 
-`OutputKind` categorizes console output entries:
+`OutputKind` 对控制台输出条目进行分类：
 
-| Variant | Description |
+| 变体 | 说明 |
 |---------|-------------|
-| `Info` | Informational message |
-| `Warning` | Warning message |
-| `Error` | Error message |
-| `CommandResult` | Result of a command execution |
+| `Info` | 信息消息 |
+| `Warning` | 警告消息 |
+| `Error` | 错误消息 |
+| `CommandResult` | 命令执行结果 |
 
 ## ConsolePlugin
 
-`ConsolePlugin` is an ECS `Plugin` that inserts a `DebugConsole` resource into the world on build:
+`ConsolePlugin` 是一个 ECS `Plugin`，在构建时向 World 中插入一个 `DebugConsole` 资源：
 
 ```rust
 use anvilkit_ecs::console::ConsolePlugin;
@@ -67,14 +67,14 @@ use anvilkit_ecs::console::ConsolePlugin;
 app.add_plugin(ConsolePlugin);
 ```
 
-## Usage Example
+## 用法示例
 
 ```rust
 use anvilkit_ecs::console::DebugConsole;
 
 let mut console = DebugConsole::new();
 
-// Register custom commands
+// 注册自定义命令
 console.register("greet", "Say hello to someone", |args| {
     if let Some(name) = args.first() {
         format!("Hello, {}!", name)
@@ -91,17 +91,17 @@ console.register("tp", "Teleport to x y z", |args| {
     }
 });
 
-// Execute commands
-console.execute("greet Claude");   // Output: "Hello, Claude!"
-console.execute("help");           // Lists all commands
-console.execute("unknown_cmd");    // Output: "Unknown command: 'unknown_cmd'" (Error)
+// 执行命令
+console.execute("greet Claude");   // 输出: "Hello, Claude!"
+console.execute("help");           // 列出所有命令
+console.execute("unknown_cmd");    // 输出: "Unknown command: 'unknown_cmd'"（错误）
 
-// Log messages
+// 记录消息
 console.log("Game started");
 console.warn("Low FPS detected");
 console.error("Failed to load asset");
 
-// Toggle visibility
-console.toggle(); // Show
-console.toggle(); // Hide
+// 切换可见性
+console.toggle(); // 显示
+console.toggle(); // 隐藏
 ```

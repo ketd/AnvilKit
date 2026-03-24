@@ -1,28 +1,28 @@
 ---
-title: Bloom
-description: Physically-based HDR bloom post-processing
+title: 泛光
+description: 基于物理的 HDR 泛光后处理
 ---
 
-## Bloom
+## 泛光
 
-Physically-based bloom extracted from HDR values above a brightness threshold.
+基于物理的泛光效果，从超过亮度阈值的 HDR 值中提取。
 
-**Pipeline**: 13-tap weighted downsample (prevents firefly artifacts) → progressive 5-level mip chain → 9-tap tent filter upsample with additive blending → composite in tonemap shader.
+**管线**：13-tap 加权降采样（防止萤火虫伪影） → 渐进式 5 级 mip 链 → 9-tap 帐篷滤波器上采样与叠加混合 → 在色调映射着色器中合成。
 
-**Configuration** (`BloomSettings` ECS resource):
+**配置** (`BloomSettings` ECS 资源)：
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `enabled` | `true` | Toggle bloom on/off (zero GPU cost when off) |
-| `threshold` | `1.0` | HDR brightness threshold for bloom extraction |
-| `knee` | `0.1` | Soft knee range for smooth threshold transition |
-| `intensity` | `0.3` | Bloom contribution multiplier |
-| `mip_count` | `5` | Number of downsample levels |
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `enabled` | `true` | 开关泛光（关闭时零 GPU 开销） |
+| `threshold` | `1.0` | 泛光提取的 HDR 亮度阈值 |
+| `knee` | `0.1` | 软膝盖范围，用于平滑阈值过渡 |
+| `intensity` | `0.3` | 泛光贡献乘数 |
+| `mip_count` | `5` | 降采样级别数量 |
 
 ```rust
 use anvilkit_render::renderer::bloom::BloomSettings;
 
-// Runtime adjustment
+// 运行时调整
 app.insert_resource(BloomSettings {
     threshold: 0.8,
     intensity: 0.5,
@@ -30,4 +30,4 @@ app.insert_resource(BloomSettings {
 });
 ```
 
-**Files**: `bloom.rs`, `bloom_downsample.wgsl`, `bloom_upsample.wgsl`
+**文件**：`bloom.rs`、`bloom_downsample.wgsl`、`bloom_upsample.wgsl`

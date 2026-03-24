@@ -1,9 +1,9 @@
 ---
-title: anvilkit-audio
-description: Audio system — BGM, sound effects, spatial audio
+title: 音频系统
+description: 音频系统 — 背景音乐、音效、空间音频
 ---
 
-`anvilkit-audio` provides game audio playback capabilities, supporting background music and sound effects.
+`anvilkit-audio` 提供游戏音频播放功能，支持背景音乐和音效。
 
 ## AudioEngine
 
@@ -19,9 +19,9 @@ audio.set_bgm_volume(0.5);
 audio.set_sfx_volume(0.7);
 ```
 
-## ECS Integration
+## ECS 集成
 
-Control audio through Systems in game logic:
+通过游戏逻辑中的 System 控制音频：
 
 ```rust
 fn play_hit_sound(
@@ -34,11 +34,11 @@ fn play_hit_sound(
 }
 ```
 
-## Supported Formats
+## 支持的格式
 
-| Format | Description |
+| 格式 | 说明 |
 |--------|-------------|
-| `.ogg` | Ogg Vorbis — recommended for BGM |
-| `.wav` | WAV — recommended for short SFX |
-| `.mp3` | MP3 — compatibility format |
-| `.flac` | FLAC — lossless format |
+| `.ogg` | Ogg Vorbis — 推荐用于背景音乐 |
+| `.wav` | WAV — 推荐用于短音效 |
+| `.mp3` | MP3 — 兼容格式 |
+| `.flac` | FLAC — 无损格式 |

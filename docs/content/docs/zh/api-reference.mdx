@@ -1,29 +1,29 @@
 ---
-title: API Reference
-description: Links to auto-generated API documentation
+title: API 参考
+description: 自动生成的 API 文档链接
 ---
 
-Auto-generated API documentation is available on [docs.rs](https://docs.rs) for each AnvilKit crate. These pages are built directly from the source code and doc comments, providing complete type signatures, trait implementations, and examples.
+每个 AnvilKit crate 的自动生成 API 文档可在 [docs.rs](https://docs.rs) 上查阅。这些页面直接从源代码和文档注释构建，提供完整的类型签名、trait 实现和示例。
 
-## Crate Documentation
+## Crate 文档
 
-| Crate | Description | docs.rs |
+| Crate | 说明 | docs.rs |
 |-------|-------------|---------|
-| `anvilkit-core` | Core types -- Transform, Time, Timer, Persistence | [docs.rs/anvilkit-core](https://docs.rs/anvilkit-core) |
-| `anvilkit-ecs` | Entity Component System -- App, World, Systems, Profiler, Console | [docs.rs/anvilkit-ecs](https://docs.rs/anvilkit-ecs) |
-| `anvilkit-render` | Rendering -- PBR pipeline, post-processing, debug renderer | [docs.rs/anvilkit-render](https://docs.rs/anvilkit-render) |
-| `anvilkit-assets` | Asset pipeline -- glTF loading, animation, procedural meshes | [docs.rs/anvilkit-assets](https://docs.rs/anvilkit-assets) |
-| `anvilkit-audio` | Audio -- BGM, sound effects | [docs.rs/anvilkit-audio](https://docs.rs/anvilkit-audio) |
-| `anvilkit-input` | Input -- keyboard, mouse, Action Map | [docs.rs/anvilkit-input](https://docs.rs/anvilkit-input) |
-| `anvilkit-camera` | Camera -- controllers, effects, gimbal lock protection | [docs.rs/anvilkit-camera](https://docs.rs/anvilkit-camera) |
-| `anvilkit` | Umbrella crate -- re-exports all sub-crates | [docs.rs/anvilkit](https://docs.rs/anvilkit) |
+| `anvilkit-core` | 核心类型 -- Transform、Time、Timer、Persistence | [docs.rs/anvilkit-core](https://docs.rs/anvilkit-core) |
+| `anvilkit-ecs` | 实体组件系统 -- App、World、Systems、Profiler、Console | [docs.rs/anvilkit-ecs](https://docs.rs/anvilkit-ecs) |
+| `anvilkit-render` | 渲染 -- PBR 管线、后处理、调试渲染器 | [docs.rs/anvilkit-render](https://docs.rs/anvilkit-render) |
+| `anvilkit-assets` | 资产管线 -- glTF 加载、动画、程序化网格 | [docs.rs/anvilkit-assets](https://docs.rs/anvilkit-assets) |
+| `anvilkit-audio` | 音频 -- 背景音乐、音效 | [docs.rs/anvilkit-audio](https://docs.rs/anvilkit-audio) |
+| `anvilkit-input` | 输入 -- 键盘、鼠标、操作映射 | [docs.rs/anvilkit-input](https://docs.rs/anvilkit-input) |
+| `anvilkit-camera` | 摄像机 -- 控制器、效果、万向节锁保护 | [docs.rs/anvilkit-camera](https://docs.rs/anvilkit-camera) |
+| `anvilkit` | 总括 crate -- 重新导出所有子 crate | [docs.rs/anvilkit](https://docs.rs/anvilkit) |
 
-## Building Docs Locally
+## 本地构建文档
 
-To generate and view the API documentation locally:
+在本地生成并查看 API 文档：
 
 ```bash
 cargo doc --workspace --no-deps --open
 ```
 
-This builds documentation for all workspace crates and opens it in your browser.
+此命令为工作区中所有 crate 构建文档，并在浏览器中打开。

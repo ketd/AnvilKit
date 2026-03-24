@@ -1,71 +1,71 @@
 ---
-title: Math & Transform
-description: Transform types, math utilities, time tracking, and timers
+title: 数学与变换
+description: 变换类型、数学工具、时间追踪与计时器
 ---
 
-`anvilkit-core` is the engine's foundation type library, providing shared infrastructure -- math types, time tracking, and persistence -- for all other crates. This page covers the transform types, math utilities, and time/timer APIs.
+`anvilkit-core` 是引擎的基础类型库，为所有其他 crate 提供共享基础设施——数学类型、时间追踪和持久化。本页涵盖变换类型、数学工具以及时间/计时器 API。
 
 ## Transform
 
-`Transform` represents position, rotation, and scale in 3D space (40 bytes). Built on `glam`.
+`Transform` 表示 3D 空间中的位置、旋转和缩放（40 字节），基于 `glam` 构建。
 
-### Fields
+### 字段
 
-| Field | Type | Default | Description |
+| 字段 | 类型 | 默认值 | 说明 |
 |-------|------|---------|-------------|
-| `translation` | `Vec3` | `Vec3::ZERO` | Position in space |
-| `rotation` | `Quat` | `Quat::IDENTITY` | Orientation as a unit quaternion |
-| `scale` | `Vec3` | `Vec3::ONE` | Per-axis scale factors |
+| `translation` | `Vec3` | `Vec3::ZERO` | 空间中的位置 |
+| `rotation` | `Quat` | `Quat::IDENTITY` | 以单位四元数表示的朝向 |
+| `scale` | `Vec3` | `Vec3::ONE` | 各轴缩放因子 |
 
-### Constructors
+### 构造函数
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `IDENTITY` | `const` | Zero translation, identity rotation, unit scale |
-| `new` | `(Vec3, Quat, Vec3) -> Self` | Full constructor |
-| `from_translation` | `(Vec3) -> Self` | Position only |
-| `from_rotation` | `(Quat) -> Self` | Rotation only |
-| `from_scale` | `(Vec3) -> Self` | Scale only |
-| `from_xyz` | `(f32, f32, f32) -> Self` | Position from x/y/z |
-| `from_xy` | `(f32, f32) -> Self` | 2D position (z = 0) |
-| `from_matrix` | `(Mat4) -> Self` | Decompose a 4x4 matrix |
-| `looking_at` | `(eye: Vec3, target: Vec3, up: Vec3) -> Result<Self>` | Camera-style orientation |
+| `IDENTITY` | `const` | 零平移、单位旋转、单位缩放 |
+| `new` | `(Vec3, Quat, Vec3) -> Self` | 完整构造函数 |
+| `from_translation` | `(Vec3) -> Self` | 仅设置位置 |
+| `from_rotation` | `(Quat) -> Self` | 仅设置旋转 |
+| `from_scale` | `(Vec3) -> Self` | 仅设置缩放 |
+| `from_xyz` | `(f32, f32, f32) -> Self` | 从 x/y/z 设置位置 |
+| `from_xy` | `(f32, f32) -> Self` | 2D 位置（z = 0） |
+| `from_matrix` | `(Mat4) -> Self` | 从 4x4 矩阵分解 |
+| `looking_at` | `(eye: Vec3, target: Vec3, up: Vec3) -> Result<Self>` | 摄像机风格的朝向 |
 
-### Builder Methods (chainable)
+### 构建器方法（可链式调用）
 
-| Method | Signature |
+| 方法 | 签名 |
 |--------|-----------|
 | `with_translation` | `(self, Vec3) -> Self` |
 | `with_rotation` | `(self, Quat) -> Self` |
 | `with_scale` | `(self, Vec3) -> Self` |
 
-### Operations
+### 运算
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `compute_matrix` | `(&self) -> Mat4` | Build the Scale-Rotation-Translation matrix |
-| `transform_point` | `(&self, Vec3) -> Vec3` | Apply full transform to a point |
-| `transform_vector` | `(&self, Vec3) -> Vec3` | Apply rotation+scale only (ignores translation) |
-| `mul_transform` | `(&self, &Transform) -> Transform` | Compose `self * other` |
-| `inverse` | `(&self) -> Result<Transform>` | Compute inverse (fails if any scale axis is zero) |
-| `is_finite` | `(&self) -> bool` | True if no NaN/Inf in any field |
+| `compute_matrix` | `(&self) -> Mat4` | 构建缩放-旋转-平移矩阵 |
+| `transform_point` | `(&self, Vec3) -> Vec3` | 对点应用完整变换 |
+| `transform_vector` | `(&self, Vec3) -> Vec3` | 仅应用旋转和缩放（忽略平移） |
+| `mul_transform` | `(&self, &Transform) -> Transform` | 组合变换 `self * other` |
+| `inverse` | `(&self) -> Result<Transform>` | 计算逆变换（任一缩放轴为零时失败） |
+| `is_finite` | `(&self) -> bool` | 所有字段均无 NaN/Inf 时返回 true |
 
 ```rust
 use anvilkit_core::math::Transform;
 use glam::{Vec3, Quat};
 
-// Create and chain
+// 创建并链式调用
 let t = Transform::from_xyz(1.0, 2.0, 3.0)
     .with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_4))
     .with_scale(Vec3::splat(2.0));
 
-// Compose parent * child
+// 组合 parent * child
 let parent = Transform::from_xyz(10.0, 0.0, 0.0);
 let child  = Transform::from_xyz(5.0, 0.0, 0.0);
 let world  = parent.mul_transform(&child);
 assert!((world.translation - Vec3::new(15.0, 0.0, 0.0)).length() < 1e-5);
 
-// Inverse
+// 逆变换
 let inv = t.inverse().unwrap();
 let identity = t.mul_transform(&inv);
 assert!(identity.translation.length() < 1e-4);
@@ -73,27 +73,27 @@ assert!(identity.translation.length() < 1e-4);
 
 ## GlobalTransform
 
-`GlobalTransform` wraps a `Mat4` and represents the final world-space transform.
-It is typically computed automatically by the transform propagation systems in `anvilkit-ecs`.
+`GlobalTransform` 封装了一个 `Mat4`，表示最终的世界空间变换。
+它通常由 `anvilkit-ecs` 中的变换传播系统自动计算。
 
 ### API
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `IDENTITY` | `const` | Identity matrix |
-| `from_matrix` | `(Mat4) -> Self` | Wrap an existing matrix |
-| `from_transform` | `(&Transform) -> Self` | Convert from a local Transform |
-| `matrix` | `(&self) -> Mat4` | Get the raw matrix |
-| `translation` | `(&self) -> Vec3` | Extract the translation column |
-| `rotation` | `(&self) -> Quat` | Decompose and return rotation |
-| `scale` | `(&self) -> Vec3` | Decompose and return scale |
-| `transform_point` | `(&self, Vec3) -> Vec3` | Transform a point |
-| `transform_vector` | `(&self, Vec3) -> Vec3` | Transform a vector (no translation) |
-| `mul_transform` | `(&self, &GlobalTransform) -> GlobalTransform` | Matrix multiplication |
-| `inverse` | `(&self) -> Result<Self>` | Matrix inverse (fails if singular) |
-| `is_finite` | `(&self) -> bool` | True if all elements are finite |
+| `IDENTITY` | `const` | 单位矩阵 |
+| `from_matrix` | `(Mat4) -> Self` | 封装一个已有矩阵 |
+| `from_transform` | `(&Transform) -> Self` | 从局部 Transform 转换 |
+| `matrix` | `(&self) -> Mat4` | 获取原始矩阵 |
+| `translation` | `(&self) -> Vec3` | 提取平移列 |
+| `rotation` | `(&self) -> Quat` | 分解并返回旋转 |
+| `scale` | `(&self) -> Vec3` | 分解并返回缩放 |
+| `transform_point` | `(&self, Vec3) -> Vec3` | 变换一个点 |
+| `transform_vector` | `(&self, Vec3) -> Vec3` | 变换一个向量（不含平移） |
+| `mul_transform` | `(&self, &GlobalTransform) -> GlobalTransform` | 矩阵乘法 |
+| `inverse` | `(&self) -> Result<Self>` | 矩阵求逆（奇异矩阵时失败） |
+| `is_finite` | `(&self) -> bool` | 所有元素均为有限值时返回 true |
 
-`GlobalTransform` implements `From<Transform>` and `From<Mat4>`.
+`GlobalTransform` 实现了 `From<Transform>` 和 `From<Mat4>`。
 
 ```rust
 use anvilkit_core::math::{Transform, GlobalTransform};
@@ -104,9 +104,9 @@ let global: GlobalTransform = local.into();
 assert_eq!(global.translation(), Vec3::new(5.0, 10.0, 15.0));
 ```
 
-## Math Utilities
+## 数学工具
 
-### Interpolation
+### 插值
 
 ```rust
 use anvilkit_core::math::interpolation::*;
@@ -116,7 +116,7 @@ let mapped = remap(0.5, 0.0..=1.0, 0.0..=100.0);     // 50.0
 let eased  = ease_in_out_cubic(t);
 ```
 
-### Geometry
+### 几何
 
 ```rust
 use anvilkit_core::math::geometry::*;
@@ -126,105 +126,105 @@ let aabb    = Aabb::from_min_max(min, max);
 let visible = frustum.contains_sphere(center, radius);
 ```
 
-### Constants
+### 常量
 
 ```rust
 use anvilkit_core::math::constants::*;
 
 PI;       // 3.14159...
 TAU;      // 6.28318...
-EPSILON;  // Float comparison tolerance
+EPSILON;  // 浮点数比较容差
 ```
 
 ## Time
 
-`Time` tracks frame delta, total elapsed time, and frame count. It is usually stored as an ECS resource and updated once per frame.
+`Time` 追踪帧间隔时间、总运行时间和帧计数。它通常作为 ECS 资源存储，每帧更新一次。
 
 ### API
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `new` | `() -> Self` | Create with current instant as startup time |
-| `update` | `(&mut self)` | Advance to current instant (call once per frame) |
-| `delta` | `(&self) -> Duration` | Time since last `update()` |
-| `delta_seconds` | `(&self) -> f32` | Delta as `f32` seconds |
-| `delta_seconds_f64` | `(&self) -> f64` | Delta as `f64` seconds |
-| `delta_millis` | `(&self) -> u128` | Delta as milliseconds |
-| `elapsed` | `(&self) -> Duration` | Time since startup |
-| `elapsed_seconds` | `(&self) -> f32` | Elapsed as `f32` seconds |
-| `frame_count` | `(&self) -> u64` | Total frames processed |
-| `fps` | `(&self) -> f64` | Average FPS (frames / elapsed) |
-| `instant_fps` | `(&self) -> f64` | Instantaneous FPS (1 / delta) |
-| `is_first_frame` | `(&self) -> bool` | True before the first `update()` |
-| `reset` | `(&mut self)` | Reset all counters to zero |
-| `with_scale` | `(&self, f32) -> ScaledTime` | Create a time-scaled wrapper |
+| `new` | `() -> Self` | 以当前时刻作为启动时间创建 |
+| `update` | `(&mut self)` | 推进到当前时刻（每帧调用一次） |
+| `delta` | `(&self) -> Duration` | 距上次 `update()` 的时间 |
+| `delta_seconds` | `(&self) -> f32` | 以 `f32` 秒为单位的 delta |
+| `delta_seconds_f64` | `(&self) -> f64` | 以 `f64` 秒为单位的 delta |
+| `delta_millis` | `(&self) -> u128` | 以毫秒为单位的 delta |
+| `elapsed` | `(&self) -> Duration` | 自启动以来的时间 |
+| `elapsed_seconds` | `(&self) -> f32` | 以 `f32` 秒为单位的已用时间 |
+| `frame_count` | `(&self) -> u64` | 已处理的总帧数 |
+| `fps` | `(&self) -> f64` | 平均 FPS（帧数 / 已用时间） |
+| `instant_fps` | `(&self) -> f64` | 即时 FPS（1 / delta） |
+| `is_first_frame` | `(&self) -> bool` | 首次 `update()` 之前返回 true |
+| `reset` | `(&mut self)` | 将所有计数器重置为零 |
+| `with_scale` | `(&self, f32) -> ScaledTime` | 创建时间缩放包装器 |
 
 ```rust
 use anvilkit_core::time::Time;
 
 let mut time = Time::new();
 
-// Game loop
+// 游戏循环
 time.update();
-let dt = time.delta_seconds();   // seconds since last update
+let dt = time.delta_seconds();   // 距上次更新的秒数
 let total = time.elapsed_seconds();
 println!("Frame {} | dt={:.4}s | FPS={:.1}", time.frame_count(), dt, time.fps());
 
-// Slow motion
+// 慢动作
 let slow = time.with_scale(0.5);
 let slow_dt = slow.delta_seconds(); // dt * 0.5
 ```
 
 ## Timer
 
-`Timer` provides one-shot and repeating countdown timers with pause/resume support.
+`Timer` 提供一次性和重复倒计时计时器，支持暂停/恢复。
 
-### Constructors
+### 构造函数
 
-| Method | Description |
+| 方法 | 说明 |
 |--------|-------------|
-| `new(Duration)` | One-shot timer |
-| `repeating(Duration)` | Repeating timer |
-| `from_seconds(f32)` | One-shot from seconds |
-| `repeating_from_seconds(f32)` | Repeating from seconds |
-| `from_millis(u64)` | One-shot from milliseconds |
-| `repeating_from_millis(u64)` | Repeating from milliseconds |
+| `new(Duration)` | 一次性计时器 |
+| `repeating(Duration)` | 重复计时器 |
+| `from_seconds(f32)` | 从秒数创建一次性计时器 |
+| `repeating_from_seconds(f32)` | 从秒数创建重复计时器 |
+| `from_millis(u64)` | 从毫秒数创建一次性计时器 |
+| `repeating_from_millis(u64)` | 从毫秒数创建重复计时器 |
 
-### Core API
+### 核心 API
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `tick` | `(&mut self, Duration)` | Advance the timer by delta |
-| `finished` | `(&self) -> bool` | True when elapsed >= duration |
-| `just_finished` | `(&self) -> bool` | True only on the frame the timer completes |
-| `percent` | `(&self) -> f32` | Progress 0.0..1.0 |
-| `elapsed` | `(&self) -> Duration` | Time elapsed so far |
-| `remaining` | `(&self) -> Duration` | Time left |
-| `reset` | `(&mut self)` | Reset elapsed to zero, state to Running |
-| `pause` | `(&mut self)` | Pause (tick becomes no-op) |
-| `resume` | `(&mut self)` | Resume from paused state |
-| `finish` | `(&mut self)` | Force-complete immediately |
-| `set_duration` | `(&mut self, Duration)` | Change the target duration |
-| `set_repeating` | `(&mut self, bool)` | Toggle repeating mode |
-| `is_running` / `is_paused` | `(&self) -> bool` | State queries |
+| `tick` | `(&mut self, Duration)` | 将计时器推进 delta 时间 |
+| `finished` | `(&self) -> bool` | 当已用时间 >= 目标时长时返回 true |
+| `just_finished` | `(&self) -> bool` | 仅在计时器完成的那一帧返回 true |
+| `percent` | `(&self) -> f32` | 进度 0.0..1.0 |
+| `elapsed` | `(&self) -> Duration` | 已经过的时间 |
+| `remaining` | `(&self) -> Duration` | 剩余时间 |
+| `reset` | `(&mut self)` | 将已用时间重置为零，状态设为运行中 |
+| `pause` | `(&mut self)` | 暂停（tick 变为空操作） |
+| `resume` | `(&mut self)` | 从暂停状态恢复 |
+| `finish` | `(&mut self)` | 立即强制完成 |
+| `set_duration` | `(&mut self, Duration)` | 更改目标时长 |
+| `set_repeating` | `(&mut self, bool)` | 切换重复模式 |
+| `is_running` / `is_paused` | `(&self) -> bool` | 状态查询 |
 
 ```rust
 use anvilkit_core::time::Timer;
 use std::time::Duration;
 
-// Weapon cooldown: 0.5s repeating
+// 武器冷却：0.5 秒重复
 let mut cooldown = Timer::repeating_from_seconds(0.5);
 
-// Each frame
+// 每帧
 cooldown.tick(Duration::from_millis(16));
 if cooldown.just_finished() {
-    // Can fire again
+    // 可以再次射击
 }
 
-// Delayed event: 3 seconds one-shot
+// 延迟事件：3 秒一次性
 let mut delay = Timer::from_seconds(3.0);
 delay.tick(delta);
 if delay.just_finished() {
-    // Trigger cutscene
+    // 触发过场动画
 }
 ```

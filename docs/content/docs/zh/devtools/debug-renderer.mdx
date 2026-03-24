@@ -1,68 +1,68 @@
 ---
-title: Debug Renderer
-description: Wireframe debug visualization — lines, boxes, spheres, points
+title: 调试渲染器
+description: 线框调试可视化 — 线段、包围盒、球体、点
 ---
 
-## Overview
+## 概述
 
-`DebugRenderer` provides immediate-mode wireframe debug drawing for visualizing collision bounds, rays, spawn points, and other spatial data. All primitives are rendered as colored line segments using a single `LineList` draw call per frame.
+`DebugRenderer` 提供即时模式的线框调试绘制功能，用于可视化碰撞边界、射线、生成点和其他空间数据。所有图元以着色线段的形式渲染，每帧使用单次 `LineList` 绘制调用。
 
-The renderer is provided by the `anvilkit-render` crate:
+该渲染器由 `anvilkit-render` crate 提供：
 
 ```rust
 use anvilkit_render::renderer::debug_renderer::DebugRenderer;
 ```
 
-The maximum number of debug vertices per frame is capped at `MAX_DEBUG_VERTICES` (65,536). Excess vertices are silently truncated.
+每帧的调试顶点数上限为 `MAX_DEBUG_VERTICES`（65,536）。超出部分会被静默截断。
 
 ## DebugDrawCommand
 
-`DebugDrawCommand` is an enum representing the four supported primitive types:
+`DebugDrawCommand` 是一个枚举，表示四种支持的图元类型：
 
-| Variant | Fields | Description |
+| 变体 | 字段 | 说明 |
 |---------|--------|-------------|
-| `Line` | `start: Vec3`, `end: Vec3`, `color: [f32; 4]` | A single line segment |
-| `Box` | `center: Vec3`, `half_extents: Vec3`, `color: [f32; 4]` | A wireframe box (12 edges) |
-| `Sphere` | `center: Vec3`, `radius: f32`, `color: [f32; 4]`, `segments: u32` | A wireframe sphere (3 axis-aligned circles) |
-| `Point` | `position: Vec3`, `color: [f32; 4]`, `size: f32` | A point rendered as a 3-axis cross |
+| `Line` | `start: Vec3`, `end: Vec3`, `color: [f32; 4]` | 单条线段 |
+| `Box` | `center: Vec3`, `half_extents: Vec3`, `color: [f32; 4]` | 线框盒（12 条边） |
+| `Sphere` | `center: Vec3`, `radius: f32`, `color: [f32; 4]`, `segments: u32` | 线框球体（3 个轴对齐圆环） |
+| `Point` | `position: Vec3`, `color: [f32; 4]`, `size: f32` | 以三轴十字形渲染的点 |
 
 ## DebugRenderer API
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `new` | `(device: &RenderDevice) -> Self` | Create a new debug renderer, allocating GPU buffers and compiling the line shader pipeline |
-| `draw_line` | `(&mut self, start: Vec3, end: Vec3, color: [f32; 4])` | Queue a line segment |
-| `draw_box` | `(&mut self, center: Vec3, half_extents: Vec3, color: [f32; 4])` | Queue a wireframe box |
-| `draw_sphere` | `(&mut self, center: Vec3, radius: f32, color: [f32; 4], segments: u32)` | Queue a wireframe sphere (minimum 8 segments) |
-| `draw_point` | `(&mut self, position: Vec3, color: [f32; 4], size: f32)` | Queue a point (3-axis cross with given half-arm length) |
-| `prepare` | `(&mut self)` | Convert all queued commands into line vertices, truncating at `MAX_DEBUG_VERTICES` |
-| `render` | `(&self, device: &RenderDevice, encoder: &mut CommandEncoder, target_view: &TextureView, depth_view: &TextureView, view_proj: &[[f32; 4]; 4])` | Upload vertices and render all debug lines in a single pass |
-| `clear` | `(&mut self)` | Clear all commands and vertices |
-| `command_count` | `(&self) -> usize` | Number of accumulated draw commands |
-| `vertex_count` | `(&self) -> usize` | Number of line vertices after `prepare()` |
+| `new` | `(device: &RenderDevice) -> Self` | 创建新的调试渲染器，分配 GPU 缓冲区并编译线段着色器管线 |
+| `draw_line` | `(&mut self, start: Vec3, end: Vec3, color: [f32; 4])` | 将一条线段加入队列 |
+| `draw_box` | `(&mut self, center: Vec3, half_extents: Vec3, color: [f32; 4])` | 将一个线框盒加入队列 |
+| `draw_sphere` | `(&mut self, center: Vec3, radius: f32, color: [f32; 4], segments: u32)` | 将一个线框球体加入队列（最少 8 段） |
+| `draw_point` | `(&mut self, position: Vec3, color: [f32; 4], size: f32)` | 将一个点加入队列（给定半臂长度的三轴十字形） |
+| `prepare` | `(&mut self)` | 将所有队列中的命令转换为线段顶点，在 `MAX_DEBUG_VERTICES` 处截断 |
+| `render` | `(&self, device: &RenderDevice, encoder: &mut CommandEncoder, target_view: &TextureView, depth_view: &TextureView, view_proj: &[[f32; 4]; 4])` | 上传顶点并在单次 pass 中渲染所有调试线段 |
+| `clear` | `(&mut self)` | 清除所有命令和顶点 |
+| `command_count` | `(&self) -> usize` | 累计的绘制命令数量 |
+| `vertex_count` | `(&self) -> usize` | `prepare()` 后的线段顶点数量 |
 
-## Usage Example
+## 用法示例
 
 ```rust
 use anvilkit_render::renderer::debug_renderer::DebugRenderer;
 use glam::Vec3;
 
 fn debug_draw_system(debug: &mut DebugRenderer) {
-    // Draw a red line
+    // 绘制红色线段
     debug.draw_line(
         Vec3::ZERO,
         Vec3::new(10.0, 0.0, 0.0),
         [1.0, 0.0, 0.0, 1.0],
     );
 
-    // Draw a green bounding box
+    // 绘制绿色包围盒
     debug.draw_box(
         Vec3::new(5.0, 1.0, 5.0),
         Vec3::new(1.0, 1.0, 1.0),
         [0.0, 1.0, 0.0, 1.0],
     );
 
-    // Draw a blue sphere
+    // 绘制蓝色球体
     debug.draw_sphere(
         Vec3::new(0.0, 3.0, 0.0),
         2.0,
@@ -70,7 +70,7 @@ fn debug_draw_system(debug: &mut DebugRenderer) {
         16,
     );
 
-    // Draw a white point
+    // 绘制白色点
     debug.draw_point(
         Vec3::new(0.0, 5.0, 0.0),
         [1.0, 1.0, 1.0, 1.0],
@@ -78,19 +78,19 @@ fn debug_draw_system(debug: &mut DebugRenderer) {
     );
 }
 
-// In the render loop:
+// 在渲染循环中：
 debug.prepare();
 debug.render(&device, &mut encoder, &target_view, &depth_view, &view_proj);
 debug.clear();
 ```
 
-## DebugVertex Format
+## DebugVertex 格式
 
-Each debug vertex is a `#[repr(C)]` struct suitable for GPU upload via `bytemuck`:
+每个调试顶点是一个 `#[repr(C)]` 结构体，适合通过 `bytemuck` 上传到 GPU：
 
-| Field | Type | Offset | Shader Location | Description |
+| 字段 | 类型 | 偏移 | 着色器位置 | 说明 |
 |-------|------|--------|-----------------|-------------|
-| `position` | `[f32; 3]` | 0 | 0 | World-space position |
-| `color` | `[f32; 4]` | 12 | 1 | RGBA color |
+| `position` | `[f32; 3]` | 0 | 0 | 世界空间位置 |
+| `color` | `[f32; 4]` | 12 | 1 | RGBA 颜色 |
 
-Total stride: 28 bytes per vertex. The vertex buffer layout uses `VertexStepMode::Vertex`.
+每个顶点总步长：28 字节。顶点缓冲区布局使用 `VertexStepMode::Vertex`。

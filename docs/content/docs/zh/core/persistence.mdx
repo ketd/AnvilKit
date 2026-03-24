@@ -1,59 +1,59 @@
 ---
-title: Persistence
-description: Settings, SaveManager, and WorldStorage for game data
+title: 持久化
+description: 设置、存档管理器和世界存储，用于游戏数据
 ---
 
-## Persistence (feature `"persistence"`)
+## 持久化（feature `"persistence"`）
 
-The persistence module provides three layers: player **Settings**, multi-slot **SaveManager**, and raw key-value **WorldStorage**.
+持久化模块提供三个层次：玩家**设置（Settings）**、多存档槽位**存档管理器（SaveManager）**和原始键值**世界存储（WorldStorage）**。
 
 ### Settings
 
-Typed configuration stored as RON. Falls back to defaults when the file is missing or corrupt.
+以 RON 格式存储的类型化配置。当文件缺失或损坏时，回退到默认值。
 
-#### Sub-structs
+#### 子结构
 
 **GraphicsSettings**
 
-| Field | Type | Default | Description |
+| 字段 | 类型 | 默认值 | 说明 |
 |-------|------|---------|-------------|
-| `width` | `u32` | `1280` | Window width |
-| `height` | `u32` | `720` | Window height |
-| `fullscreen` | `bool` | `false` | Fullscreen mode |
-| `vsync` | `bool` | `true` | Vertical sync |
-| `msaa` | `u32` | `4` | MSAA samples (1/2/4) |
-| `bloom` | `bool` | `true` | Bloom post-process |
-| `ssao` | `bool` | `true` | Screen-space AO |
-| `shadow_quality` | `u32` | `2` | 0=off, 1=low, 2=med, 3=high |
+| `width` | `u32` | `1280` | 窗口宽度 |
+| `height` | `u32` | `720` | 窗口高度 |
+| `fullscreen` | `bool` | `false` | 全屏模式 |
+| `vsync` | `bool` | `true` | 垂直同步 |
+| `msaa` | `u32` | `4` | MSAA 采样数（1/2/4） |
+| `bloom` | `bool` | `true` | 泛光后处理 |
+| `ssao` | `bool` | `true` | 屏幕空间环境光遮蔽 |
+| `shadow_quality` | `u32` | `2` | 0=关闭, 1=低, 2=中, 3=高 |
 
 **AudioSettings**
 
-| Field | Type | Default | Description |
+| 字段 | 类型 | 默认值 | 说明 |
 |-------|------|---------|-------------|
-| `master_volume` | `f32` | `1.0` | Master volume 0.0..1.0 |
-| `music_volume` | `f32` | `0.8` | Music volume 0.0..1.0 |
-| `sfx_volume` | `f32` | `1.0` | SFX volume 0.0..1.0 |
+| `master_volume` | `f32` | `1.0` | 主音量 0.0..1.0 |
+| `music_volume` | `f32` | `0.8` | 音乐音量 0.0..1.0 |
+| `sfx_volume` | `f32` | `1.0` | 音效音量 0.0..1.0 |
 
 **InputSettings**
 
-| Field | Type | Default | Description |
+| 字段 | 类型 | 默认值 | 说明 |
 |-------|------|---------|-------------|
-| `mouse_sensitivity` | `f32` | `0.003` | Mouse sensitivity multiplier |
-| `invert_y` | `bool` | `false` | Invert Y axis |
-| `action_overrides` | `HashMap<String, String>` | `{}` | Custom key rebindings |
+| `mouse_sensitivity` | `f32` | `0.003` | 鼠标灵敏度倍率 |
+| `invert_y` | `bool` | `false` | 反转 Y 轴 |
+| `action_overrides` | `HashMap<String, String>` | `{}` | 自定义按键重绑定 |
 
 #### Settings API
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `load` | `(path: &Path) -> Self` | Load from RON; returns defaults on error |
-| `save` | `(&self, path: &Path) -> Result<(), String>` | Write to RON (creates dirs) |
+| `load` | `(path: &Path) -> Self` | 从 RON 加载；出错时返回默认值 |
+| `save` | `(&self, path: &Path) -> Result<(), String>` | 写入 RON（自动创建目录） |
 | `default_path` | `() -> PathBuf` | `"config/settings.ron"` |
 
 ```rust
 use anvilkit_core::persistence::Settings;
 
-// Load (or default)
+// 加载（或使用默认值）
 let mut settings = Settings::load(&Settings::default_path());
 settings.graphics.vsync = false;
 settings.audio.master_volume = 0.7;
@@ -62,40 +62,40 @@ settings.save(&Settings::default_path()).unwrap();
 
 ### SaveManager
 
-Manages multiple save slots, each with metadata (`meta.ron`) and a `data/` directory for `WorldStorage`.
+管理多个存档槽位，每个槽位包含元数据（`meta.ron`）和一个用于 `WorldStorage` 的 `data/` 目录。
 
-#### Directory Layout
+#### 目录结构
 
 ```
 saves/
   quick/
     meta.ron
-    data/        <-- WorldStorage root
+    data/        <-- WorldStorage 根目录
   slot_1/
     meta.ron
     data/
 ```
 
-#### SaveSlotInfo Fields
+#### SaveSlotInfo 字段
 
-| Field | Type | Description |
+| 字段 | 类型 | 说明 |
 |-------|------|-------------|
-| `name` | `String` | Slot name (e.g. `"quick"`, `"slot_1"`) |
-| `timestamp` | `u64` | Unix timestamp (seconds) |
-| `play_time_secs` | `f64` | Cumulative play time |
-| `game_version` | `String` | Game version string |
-| `metadata` | `HashMap<String, String>` | Game-specific metadata |
+| `name` | `String` | 槽位名称（如 `"quick"`、`"slot_1"`） |
+| `timestamp` | `u64` | Unix 时间戳（秒） |
+| `play_time_secs` | `f64` | 累计游戏时间 |
+| `game_version` | `String` | 游戏版本字符串 |
+| `metadata` | `HashMap<String, String>` | 游戏特定的元数据 |
 
 #### SaveManager API
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `new` | `(dir: impl AsRef<Path>, version: &str) -> Result<Self, String>` | Create/open saves directory |
-| `save` | `(&self, slot: &str, play_time: f64, metadata: HashMap) -> Result<PathBuf, String>` | Write metadata, return `data/` path |
-| `list_saves` | `(&self) -> Vec<SaveSlotInfo>` | All slots sorted newest-first |
-| `get_save_info` | `(&self, slot: &str) -> Option<SaveSlotInfo>` | Read one slot's metadata |
-| `delete` | `(&self, slot: &str) -> Result<(), String>` | Remove slot directory recursively |
-| `slot_data_path` | `(&self, slot: &str) -> PathBuf` | Get `data/` path without writing metadata |
+| `new` | `(dir: impl AsRef<Path>, version: &str) -> Result<Self, String>` | 创建/打开存档目录 |
+| `save` | `(&self, slot: &str, play_time: f64, metadata: HashMap) -> Result<PathBuf, String>` | 写入元数据，返回 `data/` 路径 |
+| `list_saves` | `(&self) -> Vec<SaveSlotInfo>` | 所有槽位按最新排序 |
+| `get_save_info` | `(&self, slot: &str) -> Option<SaveSlotInfo>` | 读取单个槽位的元数据 |
+| `delete` | `(&self, slot: &str) -> Result<(), String>` | 递归删除槽位目录 |
+| `slot_data_path` | `(&self, slot: &str) -> PathBuf` | 获取 `data/` 路径而不写入元数据 |
 
 ```rust
 use anvilkit_core::persistence::SaveManager;
@@ -103,54 +103,54 @@ use std::collections::HashMap;
 
 let mgr = SaveManager::new("saves", "1.0.0").unwrap();
 
-// Create a save
+// 创建存档
 let mut meta = HashMap::new();
 meta.insert("level".into(), "3".into());
 let data_path = mgr.save("slot_1", 3600.0, meta).unwrap();
 
-// List saves
+// 列出存档
 for info in mgr.list_saves() {
     println!("{}: played {}s", info.name, info.play_time_secs);
 }
 
-// Delete
+// 删除
 mgr.delete("slot_1").unwrap();
 ```
 
 ### WorldStorage
 
-File-system key-value store. Each key maps to a file under the base directory. Slashes in keys create subdirectories. Writes are atomic (write to `.tmp` then rename).
+基于文件系统的键值存储。每个键映射到基目录下的一个文件。键中的斜杠会创建子目录。写入是原子的（先写入 `.tmp` 文件再重命名）。
 
 #### API
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `open` | `(path: impl AsRef<Path>) -> Result<Self, String>` | Open/create the storage directory |
-| `get` | `(&self, key: &str) -> Option<Vec<u8>>` | Read value; `None` if missing |
-| `put` | `(&self, key: &str, value: &[u8]) -> Result<(), String>` | Write atomically (tmp + rename) |
-| `delete` | `(&self, key: &str) -> Result<(), String>` | Remove a key |
-| `keys_with_prefix` | `(&self, prefix: &str) -> Vec<String>` | List keys starting with prefix |
-| `batch_put` | `(&self, entries: &[(&str, &[u8])]) -> Result<(), String>` | Write multiple keys (each atomic) |
-| `path` | `(&self) -> &Path` | Base directory |
+| `open` | `(path: impl AsRef<Path>) -> Result<Self, String>` | 打开/创建存储目录 |
+| `get` | `(&self, key: &str) -> Option<Vec<u8>>` | 读取值；缺失时返回 `None` |
+| `put` | `(&self, key: &str, value: &[u8]) -> Result<(), String>` | 原子写入（tmp + 重命名） |
+| `delete` | `(&self, key: &str) -> Result<(), String>` | 删除一个键 |
+| `keys_with_prefix` | `(&self, prefix: &str) -> Vec<String>` | 列出以指定前缀开头的键 |
+| `batch_put` | `(&self, entries: &[(&str, &[u8])]) -> Result<(), String>` | 批量写入多个键（每个均为原子操作） |
+| `path` | `(&self) -> &Path` | 基目录 |
 
 ```rust
 use anvilkit_core::persistence::WorldStorage;
 
 let storage = WorldStorage::open("saves/slot_1/data").unwrap();
 
-// Store chunk data
+// 存储区块数据
 storage.put("chunk/0/0", &bincode::serialize(&chunk).unwrap()).unwrap();
 
-// Read it back
+// 读取回来
 if let Some(data) = storage.get("chunk/0/0") {
     let chunk: Chunk = bincode::deserialize(&data).unwrap();
 }
 
-// Enumerate all chunks
+// 枚举所有区块
 let keys = storage.keys_with_prefix("chunk/");
 println!("Stored {} chunks", keys.len());
 
-// Batch write
+// 批量写入
 storage.batch_put(&[
     ("meta/version", b"1"),
     ("meta/seed", b"42"),

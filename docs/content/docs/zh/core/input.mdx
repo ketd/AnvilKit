@@ -1,84 +1,84 @@
 ---
-title: anvilkit-input
-description: Input system — keyboard, mouse, Action Map, RenderApp integration
+title: 输入系统
+description: 输入系统 — 键盘、鼠标、操作映射、RenderApp 集成
 ---
 
-`anvilkit-input` provides cross-platform input abstraction with keyboard and mouse support, a logical Action Map system, and helpers for integrating with the render window event loop.
+`anvilkit-input` 提供跨平台的输入抽象，支持键盘和鼠标输入、逻辑操作映射（Action Map）系统，以及与渲染窗口事件循环集成的辅助工具。
 
 ## InputState
 
-`InputState` is an ECS `Resource` that tracks per-frame keyboard and mouse state. It distinguishes between continuous press, first-frame press, and first-frame release.
+`InputState` 是一个 ECS `Resource`，用于追踪每帧的键盘和鼠标状态。它区分持续按下、首帧按下和首帧释放。
 
-### Keyboard API
+### 键盘 API
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `press_key` | `(&mut self, KeyCode)` | Record a key press. If the key was not already held, it is also marked as "just pressed". |
-| `release_key` | `(&mut self, KeyCode)` | Record a key release. If the key was held, it is marked as "just released". |
-| `is_key_pressed` | `(&self, KeyCode) -> bool` | True while the key is held down (persists across frames). |
-| `is_key_just_pressed` | `(&self, KeyCode) -> bool` | True only on the frame the key was first pressed. |
-| `is_key_just_released` | `(&self, KeyCode) -> bool` | True only on the frame the key was released. |
-| `pressed_keys` | `(&self) -> &HashSet<KeyCode>` | All currently held keys. |
+| `press_key` | `(&mut self, KeyCode)` | 记录按键按下。如果该键之前未被按住，同时标记为"刚按下"。 |
+| `release_key` | `(&mut self, KeyCode)` | 记录按键释放。如果该键之前被按住，标记为"刚释放"。 |
+| `is_key_pressed` | `(&self, KeyCode) -> bool` | 当键被按住时返回 true（跨帧持续）。 |
+| `is_key_just_pressed` | `(&self, KeyCode) -> bool` | 仅在按键首次按下的那一帧返回 true。 |
+| `is_key_just_released` | `(&self, KeyCode) -> bool` | 仅在按键释放的那一帧返回 true。 |
+| `pressed_keys` | `(&self) -> &HashSet<KeyCode>` | 所有当前被按住的键。 |
 
-### Mouse Button API
+### 鼠标按钮 API
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `press_mouse` | `(&mut self, MouseButton)` | Record a mouse button press. |
-| `release_mouse` | `(&mut self, MouseButton)` | Record a mouse button release. |
-| `is_mouse_pressed` | `(&self, MouseButton) -> bool` | True while the button is held. |
-| `is_mouse_just_pressed` | `(&self, MouseButton) -> bool` | True only on the press frame. |
-| `is_mouse_just_released` | `(&self, MouseButton) -> bool` | True only on the release frame. |
+| `press_mouse` | `(&mut self, MouseButton)` | 记录鼠标按钮按下。 |
+| `release_mouse` | `(&mut self, MouseButton)` | 记录鼠标按钮释放。 |
+| `is_mouse_pressed` | `(&self, MouseButton) -> bool` | 当按钮被按住时返回 true。 |
+| `is_mouse_just_pressed` | `(&self, MouseButton) -> bool` | 仅在按下的那一帧返回 true。 |
+| `is_mouse_just_released` | `(&self, MouseButton) -> bool` | 仅在释放的那一帧返回 true。 |
 
-`MouseButton` variants: `Left`, `Right`, `Middle`.
+`MouseButton` 变体：`Left`、`Right`、`Middle`。
 
-### Mouse Position / Motion API
+### 鼠标位置/运动 API
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `set_mouse_position` | `(&mut self, Vec2)` | Set absolute cursor position (pixels). |
-| `mouse_position` | `(&self) -> Vec2` | Get current cursor position. |
-| `add_mouse_delta` | `(&mut self, Vec2)` | Accumulate raw mouse motion delta. |
-| `mouse_delta` | `(&self) -> Vec2` | Get accumulated delta for this frame (pixels). |
-| `add_scroll_delta` | `(&mut self, f32)` | Accumulate scroll wheel delta (lines). |
-| `scroll_delta` | `(&self) -> f32` | Get accumulated scroll delta for this frame. |
+| `set_mouse_position` | `(&mut self, Vec2)` | 设置光标绝对位置（像素）。 |
+| `mouse_position` | `(&self) -> Vec2` | 获取当前光标位置。 |
+| `add_mouse_delta` | `(&mut self, Vec2)` | 累加原始鼠标运动增量。 |
+| `mouse_delta` | `(&self) -> Vec2` | 获取本帧累计的增量（像素）。 |
+| `add_scroll_delta` | `(&mut self, f32)` | 累加滚轮增量（行数）。 |
+| `scroll_delta` | `(&self) -> f32` | 获取本帧累计的滚轮增量。 |
 
-### Frame Lifecycle
+### 帧生命周期
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `end_frame` | `(&mut self)` | Clear all `just_pressed`, `just_released`, `mouse_delta`, and `scroll_delta`. Call once at the end of each frame. |
+| `end_frame` | `(&mut self)` | 清除所有 `just_pressed`、`just_released`、`mouse_delta` 和 `scroll_delta`。每帧结束时调用一次。 |
 
-### Usage Example
+### 用法示例
 
 ```rust
 use anvilkit_input::input_state::{InputState, KeyCode, MouseButton};
 
 fn player_system(input: Res<InputState>) {
-    // Movement (held)
+    // 移动（按住）
     if input.is_key_pressed(KeyCode::W) {
-        // move forward
+        // 前进
     }
     if input.is_key_pressed(KeyCode::S) {
-        // move backward
+        // 后退
     }
 
-    // Jump (just pressed -- fires once)
+    // 跳跃（刚按下——只触发一次）
     if input.is_key_just_pressed(KeyCode::Space) {
-        // jump
+        // 跳跃
     }
 
-    // Shooting
+    // 射击
     if input.is_mouse_pressed(MouseButton::Left) {
-        // fire weapon
+        // 开火
     }
 
-    // Camera look (raw delta for FPS)
+    // 摄像机视角（用于 FPS 的原始增量）
     let delta = input.mouse_delta();
     camera_yaw   -= delta.x * sensitivity;
     camera_pitch -= delta.y * sensitivity;
 
-    // Zoom
+    // 缩放
     let scroll = input.scroll_delta();
     fov -= scroll * 2.0;
 }
@@ -86,7 +86,7 @@ fn player_system(input: Res<InputState>) {
 
 ## ActionMap
 
-`ActionMap` maps logical action names (strings) to one or more physical `InputBinding`s. Any bound input being active makes the action active.
+`ActionMap` 将逻辑操作名称（字符串）映射到一个或多个物理 `InputBinding`。任一绑定的输入处于激活状态时，该操作即为激活。
 
 ### InputBinding
 
@@ -99,7 +99,7 @@ pub enum InputBinding {
 
 ### ActionState
 
-| Variant | `is_active()` | `is_just_pressed()` | `is_just_released()` |
+| 变体 | `is_active()` | `is_just_pressed()` | `is_just_released()` |
 |---------|---------------|----------------------|----------------------|
 | `Inactive` | false | false | false |
 | `JustPressed` | true | true | false |
@@ -108,25 +108,25 @@ pub enum InputBinding {
 
 ### ActionMap API
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `new` | `() -> Self` | Create an empty action map. |
-| `add_binding` | `(&mut self, action: &str, InputBinding)` | Bind an input to a named action. Multiple bindings per action are supported. |
-| `update` | `(&mut self, &InputState)` | Recompute all action states from the current input. Call once per frame after input events. |
-| `action_state` | `(&self, action: &str) -> ActionState` | Get the full state of an action. Returns `Inactive` for unknown actions. |
-| `is_action_active` | `(&self, action: &str) -> bool` | True if `JustPressed` or `Pressed`. |
-| `is_action_just_pressed` | `(&self, action: &str) -> bool` | True only on the activation frame. |
-| `is_action_just_released` | `(&self, action: &str) -> bool` | True only on the deactivation frame. |
-| `get_bindings` | `(&self, action: &str) -> Option<&[InputBinding]>` | Inspect current bindings. |
-| `clear_bindings` | `(&mut self, action: &str)` | Remove all bindings for an action. |
+| `new` | `() -> Self` | 创建空的操作映射。 |
+| `add_binding` | `(&mut self, action: &str, InputBinding)` | 将输入绑定到命名操作。每个操作支持多个绑定。 |
+| `update` | `(&mut self, &InputState)` | 根据当前输入重新计算所有操作状态。每帧在输入事件之后调用一次。 |
+| `action_state` | `(&self, action: &str) -> ActionState` | 获取操作的完整状态。未知操作返回 `Inactive`。 |
+| `is_action_active` | `(&self, action: &str) -> bool` | 当状态为 `JustPressed` 或 `Pressed` 时返回 true。 |
+| `is_action_just_pressed` | `(&self, action: &str) -> bool` | 仅在激活帧返回 true。 |
+| `is_action_just_released` | `(&self, action: &str) -> bool` | 仅在停用帧返回 true。 |
+| `get_bindings` | `(&self, action: &str) -> Option<&[InputBinding]>` | 查看当前绑定。 |
+| `clear_bindings` | `(&mut self, action: &str)` | 移除某个操作的所有绑定。 |
 
-### Usage Example
+### 用法示例
 
 ```rust
 use anvilkit_input::prelude::*;
 use anvilkit_input::action_map::InputBinding;
 
-// Setup (typically in Startup)
+// 初始化（通常在 Startup 中）
 fn setup_actions(mut commands: Commands) {
     let mut map = ActionMap::new();
 
@@ -141,48 +141,48 @@ fn setup_actions(mut commands: Commands) {
     commands.insert_resource(map);
 }
 
-// Per-frame update (PreUpdate)
+// 每帧更新（PreUpdate）
 fn update_actions(input: Res<InputState>, mut actions: ResMut<ActionMap>) {
     actions.update(&input);
 }
 
-// Game logic (Update)
+// 游戏逻辑（Update）
 fn game_logic(actions: Res<ActionMap>) {
     if actions.is_action_active("move_forward") {
-        // move forward
+        // 前进
     }
     if actions.is_action_just_pressed("jump") {
-        // start jump
+        // 开始跳跃
     }
     if actions.is_action_just_released("shoot") {
-        // release charged shot
+        // 释放蓄力射击
     }
 }
 ```
 
-## RenderApp Integration
+## RenderApp 集成
 
-When using `anvilkit-render`'s `RenderApp`, three helper methods bridge OS window events into the ECS `InputState` resource automatically. Games with a custom `ApplicationHandler` can call these directly.
+使用 `anvilkit-render` 的 `RenderApp` 时，三个辅助方法会自动将操作系统窗口事件桥接到 ECS 的 `InputState` 资源中。使用自定义 `ApplicationHandler` 的游戏可以直接调用这些方法。
 
-| Method | Kind | Signature | Description |
+| 方法 | 类型 | 签名 | 说明 |
 |--------|------|-----------|-------------|
-| `forward_input` | `static` | `(app: &mut App, event: &WindowEvent)` | Translates keyboard, mouse button, cursor position, and scroll wheel events into `InputState` calls. |
-| `forward_device_input` | `static` | `(app: &mut App, event: &DeviceEvent)` | Translates raw `DeviceEvent::MouseMotion` into `InputState::add_mouse_delta`. Use this for FPS-style camera control. |
-| `tick` | `instance` | `(&mut self, app: &mut App)` | Runs one frame: updates `DeltaTime`, calls `app.update()`, then calls `InputState::end_frame()`. |
+| `forward_input` | `static` | `(app: &mut App, event: &WindowEvent)` | 将键盘、鼠标按钮、光标位置和滚轮事件转换为 `InputState` 调用。 |
+| `forward_device_input` | `static` | `(app: &mut App, event: &DeviceEvent)` | 将原始 `DeviceEvent::MouseMotion` 转换为 `InputState::add_mouse_delta`。用于 FPS 风格的摄像机控制。 |
+| `tick` | `instance` | `(&mut self, app: &mut App)` | 运行一帧：更新 `DeltaTime`，调用 `app.update()`，然后调用 `InputState::end_frame()`。 |
 
-### Typical Custom Event Loop
+### 典型自定义事件循环
 
 ```rust
 use anvilkit_render::RenderApp;
 use winit::event::{WindowEvent, DeviceEvent};
 
-// In your ApplicationHandler impl:
+// 在你的 ApplicationHandler 实现中：
 
 fn window_event(&mut self, event_loop, window_id, event: WindowEvent) {
-    // Let the engine handle input bookkeeping
+    // 让引擎处理输入记录
     RenderApp::forward_input(&mut self.app, &event);
 
-    // Handle game-specific window events
+    // 处理游戏特定的窗口事件
     match &event {
         WindowEvent::CloseRequested => event_loop.exit(),
         _ => {}
@@ -190,30 +190,30 @@ fn window_event(&mut self, event_loop, window_id, event: WindowEvent) {
 }
 
 fn device_event(&mut self, event_loop, device_id, event: DeviceEvent) {
-    // Raw mouse motion for FPS camera
+    // 用于 FPS 摄像机的原始鼠标运动
     RenderApp::forward_device_input(&mut self.app, &event);
 }
 
 fn about_to_wait(&mut self, event_loop) {
-    // Standard per-frame lifecycle: DeltaTime → app.update() → end_frame()
+    // 标准的每帧生命周期：DeltaTime -> app.update() -> end_frame()
     self.render_app.tick(&mut self.app);
     self.window.request_redraw();
 }
 ```
 
-## Mouse Lock
+## 鼠标锁定
 
-FPS games typically lock the cursor and use raw deltas:
+FPS 游戏通常锁定光标并使用原始增量：
 
 ```rust
 use winit::window::CursorGrabMode;
 
-// Lock cursor to window
+// 将光标锁定在窗口内
 window.set_cursor_grab(CursorGrabMode::Confined)
     .or_else(|_| window.set_cursor_grab(CursorGrabMode::Locked))
     .unwrap();
 window.set_cursor_visible(false);
 
-// Use DeviceEvent::MouseMotion (forwarded by forward_device_input)
-// instead of CursorMoved, which clips at window boundaries.
+// 使用 DeviceEvent::MouseMotion（由 forward_device_input 转发）
+// 而非 CursorMoved，后者会在窗口边界处被裁剪。
 ```

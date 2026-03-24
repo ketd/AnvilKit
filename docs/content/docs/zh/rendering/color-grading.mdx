@@ -1,34 +1,34 @@
 ---
-title: Color Grading
-description: Exposure, contrast, saturation, white balance, and 3D LUT color grading
+title: 颜色分级
+description: 曝光、对比度、饱和度、白平衡和 3D LUT 颜色分级
 ---
 
-## Color Grading
+## 颜色分级
 
-Final-stage color grading applied after tonemapping. Adjusts exposure, contrast, saturation, and white balance, with optional 3D LUT support for cinematic color transforms. The pass runs as a single fullscreen draw that reads the HDR buffer and writes the graded result.
+在色调映射之后应用的最终阶段颜色分级。调整曝光、对比度、饱和度和白平衡，并可选地支持 3D LUT 实现电影感色彩变换。该通道作为单次全屏绘制运行，读取 HDR 缓冲并写入分级后的结果。
 
-**Configuration** (`ColorGradingSettings` ECS resource):
+**配置** (`ColorGradingSettings` ECS 资源)：
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `enabled` | `false` | Toggle color grading on/off (zero GPU cost when off) |
-| `exposure` | `1.0` | Exposure multiplier (1.0 = no change) |
-| `contrast` | `1.0` | Contrast multiplier (1.0 = no change) |
-| `saturation` | `1.0` | Saturation multiplier (1.0 = no change, 0.0 = grayscale) |
-| `temperature` | `0.0` | Color temperature offset (-1.0 cool .. 1.0 warm) |
-| `tint` | `0.0` | Green-magenta tint (-1.0 .. 1.0) |
-| `lut_contribution` | `0.0` | LUT contribution blend (0.0 = none, 1.0 = full LUT) |
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `enabled` | `false` | 开关颜色分级（关闭时零 GPU 开销） |
+| `exposure` | `1.0` | 曝光乘数（1.0 = 无变化） |
+| `contrast` | `1.0` | 对比度乘数（1.0 = 无变化） |
+| `saturation` | `1.0` | 饱和度乘数（1.0 = 无变化，0.0 = 灰度） |
+| `temperature` | `0.0` | 色温偏移（-1.0 冷色 .. 1.0 暖色） |
+| `tint` | `0.0` | 绿-品红色调（-1.0 .. 1.0） |
+| `lut_contribution` | `0.0` | LUT 贡献混合（0.0 = 无，1.0 = 完全 LUT） |
 
 ### 3D LUT
 
-The color grading pipeline uses a 32x32x32 3D lookup table (`Rgba8Unorm`) for arbitrary color transforms. On initialization, an identity LUT is generated (each texel maps to its own coordinate as a color), producing no visible change. To apply a custom color grade, replace the LUT texture data with an exported `.cube` or baked LUT image.
+颜色分级管线使用 32x32x32 的 3D 查找表 (`Rgba8Unorm`) 进行任意色彩变换。初始化时会生成一个恒等 LUT（每个纹素映射到自身坐标作为颜色），不产生可见变化。要应用自定义颜色分级，请用导出的 `.cube` 文件或烘焙的 LUT 图像替换 LUT 纹理数据。
 
-The `lut_contribution` parameter controls how much the LUT affects the final image, allowing smooth blending between the analytical color adjustments and the LUT-based grade.
+`lut_contribution` 参数控制 LUT 对最终图像的影响程度，允许在解析式颜色调整和基于 LUT 的分级之间进行平滑混合。
 
 ```rust
 use anvilkit_render::renderer::color_grading::ColorGradingSettings;
 
-// Warm cinematic look
+// 暖色电影感风格
 app.insert_resource(ColorGradingSettings {
     enabled: true,
     exposure: 1.1,
@@ -40,4 +40,4 @@ app.insert_resource(ColorGradingSettings {
 });
 ```
 
-**Files**: `color_grading.rs`, `color_grading.wgsl`
+**文件**：`color_grading.rs`、`color_grading.wgsl`

@@ -1,79 +1,79 @@
 ---
-title: AnvilKit CLI
-description: Command-line tool — project scaffolding, code generation, diagnostics
+title: 命令行工具
+description: 命令行工具 — 项目脚手架、代码生成、工程诊断
 ---
 
-`anvilkit-cli` is the AnvilKit developer command-line tool, providing project creation, code generation, and engineering diagnostics.
+`anvilkit-cli` 是 AnvilKit 开发者命令行工具，提供项目创建、代码生成和工程诊断功能。
 
-## Installation
+## 安装
 
 ```bash
 cargo install --path tools/anvilkit-cli
 ```
 
-## Commands
+## 命令
 
-### new — Create New Project
+### new — 创建新项目
 
 ```bash
 anvilkit new my_game --template 3d-basic
 ```
 
-| Template | Description |
+| 模板 | 说明 |
 |----------|-------------|
-| `empty` | Empty project |
-| `3d-basic` | Basic 3D scene |
-| `topdown` | Top-down 2D |
-| `first-person` | First-person 3D |
+| `empty` | 空项目 |
+| `3d-basic` | 基础 3D 场景 |
+| `topdown` | 俯视角 2D |
+| `first-person` | 第一人称 3D |
 
-Automatically:
-1. Creates directory structure under `games/my_game/`
-2. Generates `main.rs`, `components.rs`, `resources.rs`, etc. from template
-3. Adds to workspace members
-4. Runs `cargo check` to verify
+自动执行：
+1. 在 `games/my_game/` 下创建目录结构
+2. 从模板生成 `main.rs`、`components.rs`、`resources.rs` 等文件
+3. 添加到工作区成员
+4. 运行 `cargo check` 进行验证
 
-### generate — Code Generation
+### generate — 代码生成
 
 ```bash
-# Generate a component
+# 生成组件
 anvilkit generate component PlayerHealth --fields "current:f32,max:f32"
 
-# Generate a resource
+# 生成资源
 anvilkit generate resource GameSettings
 
-# Generate a system
+# 生成系统
 anvilkit generate system apply_damage
 ```
 
-Code generation includes identifier validation (Rust keyword checking, naming conventions).
+代码生成包含标识符验证（Rust 关键字检查、命名约定）。
 
-### run — Run Game
+### run — 运行游戏
 
 ```bash
 anvilkit run my_game
-# Equivalent to cargo run -p my_game
+# 等同于 cargo run -p my_game
 ```
 
-### doctor — Engineering Diagnostics
+### doctor — 工程诊断
 
 ```bash
 anvilkit doctor
 ```
 
-Checks:
-- Rust toolchain version
-- Workspace configuration
-- Dependency health
-- Compilation check
+检查项：
+- Rust 工具链版本
+- 工作区配置
+- 依赖健康状况
+- 编译检查
 
-### check — Quick Check
+### check — 快速检查
 
 ```bash
 anvilkit check
-# Equivalent to cargo check --workspace
+# 等同于 cargo check --workspace
 ```
 
-### build — Build
+### build — 构建
 
 ```bash
 anvilkit build my_game --release

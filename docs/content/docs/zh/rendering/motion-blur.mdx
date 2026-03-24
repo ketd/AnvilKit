@@ -1,29 +1,29 @@
 ---
-title: Motion Blur
-description: Velocity-buffer based per-pixel motion blur
+title: 运动模糊
+description: 基于速度缓冲的逐像素运动模糊
 ---
 
-## Motion Blur
+## 运动模糊
 
-Per-pixel motion blur derived from a screen-space velocity buffer. The effect reconstructs per-pixel motion vectors from the current and previous frame's view-projection matrices, then blurs the HDR image along those vectors for a cinematic look during fast camera or object movement.
+基于屏幕空间速度缓冲的逐像素运动模糊。该效果从当前帧和上一帧的视图投影矩阵重建逐像素运动向量，然后沿这些向量对 HDR 图像进行模糊处理，在快速相机或物体运动时产生电影感效果。
 
-**Pipeline**: 2-pass fullscreen process:
+**管线**：2 通道全屏处理：
 
-1. **Velocity Pass** -- Reads the depth buffer and reprojects each pixel using the previous frame's view-projection matrix and the current frame's inverse view-projection matrix. Outputs per-pixel screen-space velocity into an `Rg16Float` texture at full resolution.
-2. **Blur Pass** -- Samples the HDR color buffer along the velocity vector for each pixel, accumulating `samples` taps scaled by `intensity`. Writes the blurred result to an `Rgba16Float` output texture.
+1. **速度通道** -- 读取深度缓冲，使用上一帧的视图投影矩阵和当前帧的逆视图投影矩阵重新投影每个像素。以全分辨率将逐像素屏幕空间速度输出到 `Rg16Float` 纹理。
+2. **模糊通道** -- 沿每个像素的速度向量采样 HDR 颜色缓冲，累积 `samples` 个采样点并按 `intensity` 缩放。将模糊结果写入 `Rgba16Float` 输出纹理。
 
-**Configuration** (`MotionBlurSettings` ECS resource):
+**配置** (`MotionBlurSettings` ECS 资源)：
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `enabled` | `false` | Toggle motion blur on/off (zero GPU cost when off) |
-| `intensity` | `0.5` | Blur intensity multiplier (higher = longer streaks) |
-| `samples` | `8` | Number of samples along the velocity vector per pixel |
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `enabled` | `false` | 开关运动模糊（关闭时零 GPU 开销） |
+| `intensity` | `0.5` | 模糊强度乘数（越高拖影越长） |
+| `samples` | `8` | 每像素沿速度向量的采样数 |
 
 ```rust
 use anvilkit_render::renderer::motion_blur::MotionBlurSettings;
 
-// Enable motion blur with higher sample count
+// 启用更高采样数的运动模糊
 app.insert_resource(MotionBlurSettings {
     enabled: true,
     intensity: 0.6,
@@ -31,4 +31,4 @@ app.insert_resource(MotionBlurSettings {
 });
 ```
 
-**Files**: `motion_blur.rs`, `motion_blur.wgsl`
+**文件**：`motion_blur.rs`、`motion_blur.wgsl`

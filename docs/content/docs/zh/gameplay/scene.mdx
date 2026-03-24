@@ -1,70 +1,70 @@
 ---
-title: Scene & Serialization
-description: Transform hierarchy, scene save/load with RON format
+title: 场景与序列化
+description: 变换层级、使用 RON 格式的场景保存/加载
 ---
 
-## Transform Hierarchy
+## 变换层级
 
-`TransformPlugin` registers `sync_simple_transforms` and `propagate_transforms` in **PostUpdate** under `AnvilKitSystemSet::Transform`.
+`TransformPlugin` 在 **PostUpdate** 的 `AnvilKitSystemSet::Transform` 下注册 `sync_simple_transforms` 和 `propagate_transforms`。
 
-### Core Components
+### 核心组件
 
-| Component | Description |
+| 组件 | 说明 |
 |-----------|-------------|
-| `Transform` | Local transform relative to parent (translation, rotation, scale) |
-| `GlobalTransform` | World-space transform matrix, computed by the propagation system |
-| `Parent(Entity)` | Reference to parent entity |
-| `Children` | List of child entities |
+| `Transform` | 相对于父级的局部变换（平移、旋转、缩放） |
+| `GlobalTransform` | 世界空间变换矩阵，由传播系统计算 |
+| `Parent(Entity)` | 对父实体的引用 |
+| `Children` | 子实体列表 |
 
-### Spawning a Parent-Child Hierarchy
+### 生成父子层级
 
 ```rust
 use anvilkit_ecs::prelude::*;
 use glam::Vec3;
 
 fn setup_hierarchy(mut commands: Commands) {
-    // Spawn parent at world position (10, 0, 0)
+    // 在世界位置 (10, 0, 0) 生成父实体
     let parent = commands.spawn((
         Transform::from_xyz(10.0, 0.0, 0.0),
         GlobalTransform::default(),
         Children::empty(),
     )).id();
 
-    // Spawn child offset (5, 0, 0) from parent
+    // 生成相对父级偏移 (5, 0, 0) 的子实体
     let child = commands.spawn((
         Transform::from_xyz(5.0, 0.0, 0.0),
         GlobalTransform::default(),
         Parent::new(parent),
     )).id();
 
-    // After propagation, child's GlobalTransform.translation() == (15, 0, 0)
+    // 传播后，child 的 GlobalTransform.translation() == (15, 0, 0)
 }
 ```
 
-### TransformHierarchy Utilities
+### TransformHierarchy 工具方法
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `set_parent` | `(Commands, child: Entity, parent: Entity)` | Establish parent-child relationship |
-| `remove_parent` | `(Commands, child: Entity)` | Detach child from parent |
-| `get_ancestors` | `(&World, Entity) -> Vec<Entity>` | Walk up the hierarchy to root |
-| `get_descendants` | `(&World, Entity) -> Vec<Entity>` | Recursively collect all descendants |
+| `set_parent` | `(Commands, child: Entity, parent: Entity)` | 建立父子关系 |
+| `remove_parent` | `(Commands, child: Entity)` | 将子实体从父级分离 |
+| `get_ancestors` | `(&World, Entity) -> Vec<Entity>` | 沿层级向上遍历到根节点 |
+| `get_descendants` | `(&World, Entity) -> Vec<Entity>` | 递归收集所有后代 |
 
-## Scene Serialization (feature `"serde"`)
+## 场景序列化（feature `"serde"`）
 
-`SceneSerializer` saves/loads entities marked with the `Serializable` component to RON files.
+`SceneSerializer` 将标记了 `Serializable` 组件的实体保存/加载到 RON 文件。
 
-| Type | Description |
+| 类型 | 说明 |
 |------|-------------|
-| `Serializable` | Marker component -- only entities with this are serialized |
-| `SceneSerializer::save` | `(&mut World, path: &str) -> Result<usize, String>` -- returns entity count |
-| `SceneSerializer::load` | `(&mut World, path: &str) -> Result<usize, String>` -- spawns entities, returns count |
+| `Serializable` | 标记组件——只有带此组件的实体会被序列化 |
+| `SceneSerializer::save` | `(&mut World, path: &str) -> Result<usize, String>` -- 返回实体数量 |
+| `SceneSerializer::load` | `(&mut World, path: &str) -> Result<usize, String>` -- 生成实体，返回数量 |
 
 ```rust
 use anvilkit_ecs::prelude::*;
 use anvilkit_ecs::scene::{SceneSerializer, Serializable};
 
-// Mark entities for serialization
+// 标记需要序列化的实体
 fn setup(mut commands: Commands) {
     commands.spawn((
         Transform::from_xyz(1.0, 2.0, 3.0),
@@ -73,17 +73,17 @@ fn setup(mut commands: Commands) {
     ));
 }
 
-// Save the scene
+// 保存场景
 fn save_game(world: &mut World) {
     let count = SceneSerializer::save(world, "scene.ron").unwrap();
     log::info!("Saved {} entities", count);
 }
 
-// Load into a fresh world
+// 加载到新的 World
 fn load_game(world: &mut World) {
     let count = SceneSerializer::load(world, "scene.ron").unwrap();
     log::info!("Loaded {} entities", count);
 }
 ```
 
-The RON file stores a `SerializedScene { version: u32, entities: Vec<SerializedEntity> }` where each entity captures its `Transform` as `TransformData { translation: [f32; 3], rotation: [f32; 4], scale: [f32; 3] }`.
+RON 文件存储 `SerializedScene { version: u32, entities: Vec<SerializedEntity> }`，其中每个实体以 `TransformData { translation: [f32; 3], rotation: [f32; 4], scale: [f32; 3] }` 的形式捕获其 `Transform`。

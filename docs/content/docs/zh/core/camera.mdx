@@ -1,9 +1,9 @@
 ---
-title: anvilkit-camera
-description: Camera system — controllers, effects, gimbal lock protection
+title: 相机系统
+description: 相机系统 — 控制器、效果、万向节锁保护
 ---
 
-`anvilkit-camera` provides a flexible camera control system.
+`anvilkit-camera` 提供灵活的摄像机控制系统。
 
 ## CameraController
 
@@ -14,34 +14,34 @@ let controller = CameraController {
     mode: CameraMode::FirstPerson,
     move_speed: 10.0,
     mouse_sensitivity: 0.003,
-    base_fov: 70.0, // Base field of view (degrees)
+    base_fov: 70.0, // 基础视野角度（度）
     ..Default::default()
 };
 ```
 
-The built-in `camera_controller_system` reads mouse delta from `InputState::mouse_delta()`, which the engine populates automatically from `DeviceEvent::MouseMotion`. No manual mouse delta management is needed.
+内置的 `camera_controller_system` 从 `InputState::mouse_delta()` 读取鼠标增量，引擎会自动从 `DeviceEvent::MouseMotion` 填充该值。无需手动管理鼠标增量。
 
-## Camera Modes
+## 摄像机模式
 
-| Mode | Description |
+| 模式 | 说明 |
 |------|-------------|
-| `FirstPerson` | First-person — camera follows player's viewpoint |
-| `ThirdPerson` | Third-person — camera follows target with offset |
-| `Free` | Free fly — unconstrained 6DOF movement |
+| `FirstPerson` | 第一人称 — 摄像机跟随玩家视角 |
+| `ThirdPerson` | 第三人称 — 摄像机跟随目标并带有偏移 |
+| `Free` | 自由飞行 — 无约束的六自由度运动 |
 
-## Camera Effects
+## 摄像机效果
 
-`CameraEffects` provides head bob, screen shake, and FOV transitions:
+`CameraEffects` 提供头部摆动、屏幕震动和 FOV 过渡效果：
 
 ```rust
 use anvilkit_camera::effects::CameraEffects;
 
 let mut fx = CameraEffects::default();
 fx.head_bob_enabled = true;
-fx.add_shake(0.2);          // Landing impact
-fx.fov_target = 10.0;       // Sprint FOV offset (smoothly interpolated)
+fx.add_shake(0.2);          // 着陆冲击
+fx.fov_target = 10.0;       // 冲刺 FOV 偏移（平滑插值）
 ```
 
-## Gimbal Lock Protection
+## 万向节锁保护
 
-Third-person look-at automatically handles gimbal lock — when the camera approaches directly above or below the target, an alternative up vector is used to prevent flipping.
+第三人称注视（look-at）会自动处理万向节锁——当摄像机接近目标正上方或正下方时，使用替代的上方向向量以防止翻转。

@@ -1,13 +1,13 @@
 ---
-title: ECS & Plugins
-description: Application lifecycle, Plugin system, Schedules, Systems, and Bundles
+title: ECS 与插件系统
+description: 应用生命周期、插件系统、调度、系统与 Bundle
 ---
 
-`anvilkit-ecs` provides application lifecycle management, a Plugin system, System scheduling, and component bundles, all built on top of `bevy_ecs`.
+`anvilkit-ecs` 提供应用生命周期管理、插件系统、系统调度和组件 Bundle，全部基于 `bevy_ecs` 构建。
 
-## App Lifecycle
+## 应用生命周期
 
-`App` is the application entry point. The typical setup flow is:
+`App` 是应用程序的入口点。典型的初始化流程为：
 
 ```
 App::new() → add_plugins() → insert_resource() → add_systems() → run() / update()
@@ -19,45 +19,45 @@ use anvilkit_ecs::schedule::AnvilKitSchedule;
 
 let mut app = App::new();
 
-// 1. Register plugins (order matters — dependencies first)
+// 1. 注册插件（顺序重要——依赖项优先）
 app.add_plugins(AnvilKitEcsPlugin);
 app.add_plugins(TransformPlugin);
 app.add_plugins(PhysicsPlugin);
 
-// 2. Insert global resources
+// 2. 插入全局资源
 app.insert_resource(MyConfig { difficulty: 3 });
-app.init_resource::<Score>();          // uses Default
+app.init_resource::<Score>();          // 使用 Default
 
-// 3. Register systems into schedules
+// 3. 将系统注册到调度中
 app.add_systems(AnvilKitSchedule::Startup, setup_scene);
 app.add_systems(AnvilKitSchedule::Update, (player_input, enemy_ai));
 app.add_systems(AnvilKitSchedule::PostUpdate, cleanup);
 
-// 4a. Blocking main loop (calls update() in a loop)
+// 4a. 阻塞主循环（在循环中调用 update()）
 app.run();
 
-// 4b. Or drive updates manually
+// 4b. 或手动驱动更新
 for _ in 0..60 {
-    app.update(); // one frame
+    app.update(); // 一帧
 }
 ```
 
 ### App API
 
-| Method | Signature | Description |
+| 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `new` | `() -> Self` | Create an App with all engine schedules pre-registered |
-| `add_plugins` | `<P: Plugin>(P) -> &mut Self` | Register a plugin (unique plugins are deduplicated) |
-| `add_systems` | `(impl ScheduleLabel, impl IntoSystemConfigs) -> &mut Self` | Add systems to a schedule |
-| `insert_resource` | `<R: Resource>(R) -> &mut Self` | Insert a typed global resource |
-| `init_resource` | `<R: Resource + FromWorld>() -> &mut Self` | Insert a resource using its Default/FromWorld impl |
-| `run` | `(&mut self)` | Blocking main loop until `exit()` is called |
-| `update` | `(&mut self)` | Execute one frame: Startup (first call only), then PreUpdate -> Update -> PostUpdate |
-| `exit` | `(&mut self)` | Signal the app to stop after the current frame |
+| `new` | `() -> Self` | 创建一个预注册了所有引擎调度的 App |
+| `add_plugins` | `<P: Plugin>(P) -> &mut Self` | 注册插件（唯一插件会自动去重） |
+| `add_systems` | `(impl ScheduleLabel, impl IntoSystemConfigs) -> &mut Self` | 将系统添加到调度中 |
+| `insert_resource` | `<R: Resource>(R) -> &mut Self` | 插入类型化全局资源 |
+| `init_resource` | `<R: Resource + FromWorld>() -> &mut Self` | 使用 Default/FromWorld 实现插入资源 |
+| `run` | `(&mut self)` | 阻塞主循环，直到调用 `exit()` |
+| `update` | `(&mut self)` | 执行一帧：Startup（仅首次调用），然后 PreUpdate -> Update -> PostUpdate |
+| `exit` | `(&mut self)` | 通知应用在当前帧结束后停止 |
 
-## Plugin
+## 插件
 
-Plugins encapsulate reusable engine functionality. Implement the `Plugin` trait:
+插件封装了可复用的引擎功能。实现 `Plugin` trait：
 
 ```rust
 pub struct PhysicsPlugin;
@@ -74,36 +74,36 @@ impl Plugin for PhysicsPlugin {
 }
 ```
 
-Unique plugins (default) are registered at most once; duplicate `add_plugins` calls are silently skipped.
+唯一插件（默认）最多注册一次；重复的 `add_plugins` 调用会被静默跳过。
 
-## Schedule Phases
+## 调度阶段
 
-`App::update()` runs schedules in the following order every frame:
+`App::update()` 每帧按以下顺序运行调度：
 
-| Schedule | Variant | Runs | Typical use |
+| 调度 | 变体 | 执行 | 典型用途 |
 |----------|---------|------|-------------|
-| **Startup** | `AnvilKitSchedule::Startup` | Once, on first `update()` | Scene setup, asset loading |
-| **PreUpdate** | `AnvilKitSchedule::PreUpdate` | Every frame | Input polling, time update |
-| **Update** | `AnvilKitSchedule::Update` | Every frame | Game logic, AI, physics |
-| **PostUpdate** | `AnvilKitSchedule::PostUpdate` | Every frame | Transform propagation, render prep |
-| **Cleanup** | `AnvilKitSchedule::Cleanup` | Every frame | Temp data cleanup, diagnostics |
+| **Startup** | `AnvilKitSchedule::Startup` | 首次 `update()` 时执行一次 | 场景设置、资源加载 |
+| **PreUpdate** | `AnvilKitSchedule::PreUpdate` | 每帧 | 输入轮询、时间更新 |
+| **Update** | `AnvilKitSchedule::Update` | 每帧 | 游戏逻辑、AI、物理 |
+| **PostUpdate** | `AnvilKitSchedule::PostUpdate` | 每帧 | 变换传播、渲染准备 |
+| **Cleanup** | `AnvilKitSchedule::Cleanup` | 每帧 | 临时数据清理、诊断 |
 
 ## SystemSet
 
-Within a schedule, systems can be grouped by `AnvilKitSystemSet` for ordering:
+在调度内，系统可以通过 `AnvilKitSystemSet` 进行分组排序：
 
-| SystemSet | Purpose |
+| SystemSet | 用途 |
 |-----------|---------|
-| `Input` | Keyboard, mouse, gamepad processing |
-| `Time` | Time/timer updates, frame-rate tracking |
-| `Physics` | Velocity integration, collision detection, physics step |
-| `GameLogic` | AI, state machines, game rules |
-| `Transform` | Hierarchy propagation, coordinate sync |
-| `Render` | Visibility culling, material updates, draw prep |
-| `Audio` | Sound playback, volume control |
-| `UI` | Layout, event handling, widget updates |
-| `Network` | Replication, serialization, connection management |
-| `Debug` | Gizmos, performance overlay, logging |
+| `Input` | 键盘、鼠标、手柄处理 |
+| `Time` | 时间/计时器更新、帧率追踪 |
+| `Physics` | 速度积分、碰撞检测、物理步进 |
+| `GameLogic` | AI、状态机、游戏规则 |
+| `Transform` | 层级传播、坐标同步 |
+| `Render` | 可见性剔除、材质更新、绘制准备 |
+| `Audio` | 声音播放、音量控制 |
+| `UI` | 布局、事件处理、组件更新 |
+| `Network` | 复制、序列化、连接管理 |
+| `Debug` | Gizmos、性能叠加层、日志 |
 
 ```rust
 app.add_systems(AnvilKitSchedule::Update, (
@@ -114,9 +114,9 @@ app.add_systems(AnvilKitSchedule::Update, (
 ));
 ```
 
-## System
+## 系统
 
-Systems are plain functions whose parameters declare data access:
+系统是普通函数，其参数声明数据访问方式：
 
 ```rust
 fn move_system(
@@ -138,7 +138,7 @@ fn collision_handler(events: Res<CollisionEvents>) {
 
 ## Bundle
 
-Bundles group components for batch spawning:
+Bundle 将组件打包以便批量生成：
 
 ```rust
 #[derive(Bundle)]

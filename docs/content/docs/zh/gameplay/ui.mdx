@@ -1,72 +1,72 @@
 ---
-title: UI Framework
-description: Flexbox-based UI with event system and widget constructors
+title: UI 框架
+description: 基于 Flexbox 的 UI，带事件系统和组件构造器
 ---
 
-## UI System
+## UI 系统
 
-Flexbox-based UI with GPU-accelerated rectangle rendering, event system, and widget constructors.
+基于 Flexbox 的 UI，配备 GPU 加速的矩形渲染、事件系统和组件构造器。
 
-**Layout**: Powered by `taffy` (full CSS Flexbox subset). `UiLayoutEngine::compute_layout()` takes `UiNode` entities and a container size, outputs `[x, y, w, h]` computed rectangles.
+**布局**：由 `taffy` 驱动（完整的 CSS Flexbox 子集）。`UiLayoutEngine::compute_layout()` 接收 `UiNode` 实体和容器尺寸，输出 `[x, y, w, h]` 计算后的矩形。
 
-**Rendering**: `UiRenderer` draws rounded rectangles with background color, border, and text in a single draw call with alpha blending over the 3D scene.
+**渲染**：`UiRenderer` 通过单次绘制调用，以 alpha 混合方式在 3D 场景上绘制带背景色、边框和文本的圆角矩形。
 
-**Event System**:
+**事件系统**：
 
-| Event | Trigger |
+| 事件 | 触发条件 |
 |-------|---------|
-| `HoverEnter` | Mouse enters node bounds |
-| `HoverLeave` | Mouse leaves node bounds |
-| `Click` | Mouse button pressed within node |
+| `HoverEnter` | 鼠标进入节点边界 |
+| `HoverLeave` | 鼠标离开节点边界 |
+| `Click` | 在节点内按下鼠标按钮 |
 
 ```rust
 use anvilkit_render::renderer::ui::{UiEvents, Widget, UiNode};
 
-// Create widgets
+// 创建组件
 let button = Widget::button("Start Game");
 let panel = Widget::panel();
 let label = Widget::label("Score: 100");
-let row = Widget::row();    // horizontal layout
-let col = Widget::column();  // vertical layout
+let row = Widget::row();    // 水平布局
+let col = Widget::column();  // 垂直布局
 
-// Check events
+// 检查事件
 let events = world.resource::<UiEvents>();
 if events.was_clicked(button_entity) {
-    // Handle button click
+    // 处理按钮点击
 }
 if events.is_hovered(button_entity) {
-    // Show hover effect
+    // 显示悬停效果
 }
 ```
 
-**UiStyle fields**: `flex_direction`, `justify_content`, `align_items`, `width`, `height`, `min_width`, `min_height`, `max_width`, `max_height`, `padding[4]`, `margin[4]`, `gap`, `flex_grow`, `flex_shrink`.
+**UiStyle 字段**：`flex_direction`、`justify_content`、`align_items`、`width`、`height`、`min_width`、`min_height`、`max_width`、`max_height`、`padding[4]`、`margin[4]`、`gap`、`flex_grow`、`flex_shrink`。
 
-## Custom Render Pipeline
+## 自定义渲染管线
 
-For games that bypass the built-in PBR pipeline (e.g., voxel games), use `RenderApp` in low-level mode with the helper API:
+对于绕过内置 PBR 管线的游戏（如体素游戏），可以在低级模式下使用 `RenderApp` 及辅助 API：
 
 ```rust
 use anvilkit_render::window::RenderApp;
 
 impl ApplicationHandler for MyGame {
     fn window_event(&mut self, el, wid, ev) {
-        // Game-specific key handling here...
+        // 游戏特定的按键处理...
 
-        // Engine handles input forwarding (keyboard, mouse, cursor, scroll)
+        // 引擎处理输入转发（键盘、鼠标、光标、滚轮）
         RenderApp::forward_input(&mut self.app, &ev);
         self.render_app.window_event(el, wid, ev);
     }
 
     fn device_event(&mut self, el, did, ev) {
-        // Engine forwards raw mouse motion → InputState.mouse_delta
+        // 引擎转发原始鼠标运动 → InputState.mouse_delta
         RenderApp::forward_device_input(&mut self.app, &ev);
         self.render_app.device_event(el, did, ev);
     }
 
     fn about_to_wait(&mut self, _el) {
-        // Engine tick: DeltaTime → app.update() → InputState.end_frame() → request_redraw
+        // 引擎 tick：DeltaTime → app.update() → InputState.end_frame() → request_redraw
         self.render_app.tick(&mut self.app);
-        // Your post-update logic here...
+        // 你的后更新逻辑...
     }
 }
 ```

@@ -1,13 +1,13 @@
 ---
-title: Pipeline Overview
-description: Multi-pass HDR rendering pipeline architecture
+title: 渲染管线概述
+description: 多通道 HDR 渲染管线架构
 ---
 
-`anvilkit-render` is AnvilKit's core rendering module, providing unified 2D/3D rendering capabilities based on `wgpu 0.19`.
+`anvilkit-render` 是 AnvilKit 的核心渲染模块，基于 `wgpu 0.19` 提供统一的 2D/3D 渲染能力。
 
-## Render Pipeline
+## 渲染管线
 
-The engine runs a multi-pass HDR pipeline per frame:
+引擎每帧执行一个多通道 HDR 管线：
 
 ```
 Pass 0  CSM Shadow (×3 cascades)     → D2Array depth texture
@@ -17,25 +17,25 @@ Pass 3  Bloom (downsample ×5 + upsample ×4) → Rgba16Float mip[0]
 Pass 4  Tonemap (HDR × AO + Bloom → ACES Filmic → sRGB) → Swapchain
 ```
 
-All passes share a single `CommandEncoder` per frame for minimal CPU overhead.
+所有通道共享每帧一个 `CommandEncoder`，以实现最小的 CPU 开销。
 
-## Resource Management
+## 资源管理
 
-`RenderAssets` manages GPU resources through a Handle system:
+`RenderAssets` 通过 Handle 系统管理 GPU 资源：
 
 ```rust
 let handle = render_assets.upload_texture(device, queue, &texture_data);
 let mesh_handle = render_assets.upload_mesh(device, &mesh_data);
 
 if let Some(texture) = render_assets.get_texture(handle) {
-    // Use texture
+    // 使用纹理
 }
 ```
 
-`BufferPool` provides efficient GPU buffer reuse:
+`BufferPool` 提供高效的 GPU 缓冲区复用：
 
 ```rust
 let (buffer, capacity) = pool.acquire(device, needed_size, BufferUsages::VERTEX);
-// ... use buffer ...
+// ... 使用缓冲区 ...
 pool.release(buffer, capacity, BufferUsages::VERTEX);
 ```

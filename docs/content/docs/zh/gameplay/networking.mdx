@@ -1,36 +1,36 @@
 ---
-title: Networking
-description: Network abstraction — config, events, reliable transport, ECS replication, client prediction
+title: 网络多人
+description: 网络抽象 — 配置、事件、可靠传输、ECS 复制、客户端预测
 ---
 
-The networking module provides in-process abstractions for multiplayer game networking: configuration, event dispatch, reliable/unreliable channels, ECS state replication with delta compression, and client-side prediction with rollback.
+网络模块提供进程内的多人游戏网络抽象：配置、事件分发、可靠/不可靠通道、带增量压缩的 ECS 状态复制，以及客户端预测与回滚。
 
-## Configuration
+## 配置
 
-### NetworkConfig (Resource)
+### NetworkConfig（Resource）
 
-| Field | Type | Default | Description |
+| 字段 | 类型 | 默认值 | 说明 |
 |-------|------|---------|-------------|
-| `role` | `NetworkRole` | `Server` | `Server` or `Client` |
-| `bind_addr` | `String` | `"0.0.0.0:7777"` | Bind address |
-| `server_addr` | `Option<String>` | `None` | Server address (clients only) |
-| `tick_rate` | `u32` | `20` | Server ticks per second |
-| `max_clients` | `u32` | `32` | Maximum connected clients |
+| `role` | `NetworkRole` | `Server` | `Server` 或 `Client` |
+| `bind_addr` | `String` | `"0.0.0.0:7777"` | 绑定地址 |
+| `server_addr` | `Option<String>` | `None` | 服务器地址（仅客户端） |
+| `tick_rate` | `u32` | `20` | 服务器每秒 tick 数 |
+| `max_clients` | `u32` | `32` | 最大连接客户端数 |
 
-### NetworkState (Resource)
+### NetworkState（Resource）
 
-| Field | Type | Description |
+| 字段 | 类型 | 说明 |
 |-------|------|-------------|
-| `connected` | `bool` | Whether the connection is established |
-| `client_id` | `Option<u64>` | Assigned client ID |
-| `rtt_ms` | `f32` | Round-trip time (ms) |
-| `bytes_sent` / `bytes_received` | `u64` | Traffic counters |
+| `connected` | `bool` | 连接是否已建立 |
+| `client_id` | `Option<u64>` | 分配的客户端 ID |
+| `rtt_ms` | `f32` | 往返时间（毫秒） |
+| `bytes_sent` / `bytes_received` | `u64` | 流量计数器 |
 
-## Events
+## 事件
 
-`NetworkEvents` resource collects events each frame (cleared automatically by `network_events_cleanup_system`):
+`NetworkEvents` 资源每帧收集事件（由 `network_events_cleanup_system` 自动清除）：
 
-| Event | Fields |
+| 事件 | 字段 |
 |-------|--------|
 | `Connected` | `client_id: u64` |
 | `Disconnected` | `client_id: u64` |
@@ -50,33 +50,33 @@ fn handle_events(events: Res<NetworkEvents>) {
 }
 ```
 
-## Transport Channels
+## 传输通道
 
 ### ReliableChannel
 
-Tracks sent packets with sequence numbers and ACK bitfields. Supports timeout-based retransmission.
+使用序列号和 ACK 位域追踪已发送数据包。支持基于超时的重传。
 
-| Method | Description |
+| 方法 | 说明 |
 |--------|-------------|
-| `send(data, current_time) -> PacketHeader` | Assign sequence, queue for ACK tracking |
-| `receive_ack(ack, ack_bitfield)` | Remove acknowledged packets |
-| `get_resend_packets(current_time, timeout)` | Get packets needing retransmission |
+| `send(data, current_time) -> PacketHeader` | 分配序列号，加入 ACK 追踪队列 |
+| `receive_ack(ack, ack_bitfield)` | 移除已确认的数据包 |
+| `get_resend_packets(current_time, timeout)` | 获取需要重传的数据包 |
 
 ### UnreliableChannel
 
-Assigns sequence numbers without ACK tracking — fire-and-forget delivery.
+分配序列号但不进行 ACK 追踪——即发即弃的投递方式。
 
-## ECS Replication
+## ECS 复制
 
-| Type | Description |
+| 类型 | 说明 |
 |------|-------------|
-| `Replicated` | Marker component for entities to replicate |
-| `NetworkId` | Component with unique `id: u64` |
-| `ReplicationBuffer` | Resource collecting `(network_id, delta_bytes)` changes |
+| `Replicated` | 标记组件，用于标识需要复制的实体 |
+| `NetworkId` | 带唯一 `id: u64` 的组件 |
+| `ReplicationBuffer` | 收集 `(network_id, delta_bytes)` 变更的 Resource |
 
-### Delta Compression
+### 增量压缩
 
-`DeltaEncoder` provides simple XOR-based delta compression:
+`DeltaEncoder` 提供简单的基于 XOR 的增量压缩：
 
 ```rust
 use anvilkit_ecs::network::DeltaEncoder;
@@ -88,30 +88,30 @@ let restored = DeltaEncoder::decode(&old_state, &delta);
 assert_eq!(restored, new_state);
 ```
 
-## Client Prediction
+## 客户端预测
 
 ### PredictionState\<T\>
 
-Generic state history buffer for client-side prediction and server reconciliation:
+用于客户端预测和服务器校正的泛型状态历史缓冲区：
 
-| Method | Description |
+| 方法 | 说明 |
 |--------|-------------|
-| `push(tick, state)` | Store a snapshot |
-| `get(tick) -> Option<&T>` | Retrieve state at a tick |
-| `rollback_to(tick)` | Remove all states after the given tick |
+| `push(tick, state)` | 存储一个快照 |
+| `get(tick) -> Option<&T>` | 获取某个 tick 的状态 |
+| `rollback_to(tick)` | 移除给定 tick 之后的所有状态 |
 
-### InputBuffer (Resource)
+### InputBuffer（Resource）
 
-Stores serialized inputs per tick for replay during reconciliation:
+存储每个 tick 的序列化输入，用于校正期间的重放：
 
-| Field | Type | Description |
+| 字段 | 类型 | 说明 |
 |-------|------|-------------|
-| `inputs` | `VecDeque<(u32, Vec<u8>)>` | (tick, serialized input) |
-| `current_tick` | `u32` | Current simulation tick |
+| `inputs` | `VecDeque<(u32, Vec<u8>)>` | (tick, 序列化输入) |
+| `current_tick` | `u32` | 当前模拟 tick |
 
 ## NetworkPlugin
 
-Registers all network resources and the `network_events_cleanup_system` in `PreUpdate`:
+在 `PreUpdate` 中注册所有网络资源和 `network_events_cleanup_system`：
 
 ```rust
 use anvilkit_ecs::network::NetworkPlugin;

@@ -1,11 +1,11 @@
 ---
-title: anvilkit-assets
-description: Asset pipeline — glTF loading, animation, procedural meshes
+title: 资源管理
+description: 资源管理 — glTF 加载、动画、程序化网格
 ---
 
-`anvilkit-assets` provides asset loading and management, including glTF models, skeletal animation, and procedural mesh generation.
+`anvilkit-assets` 提供资产加载与管理功能，包括 glTF 模型、骨骼动画和程序化网格生成。
 
-## glTF Loading
+## glTF 加载
 
 ```rust
 use anvilkit_assets::gltf_loader::GltfLoader;
@@ -20,15 +20,15 @@ for mesh in &scene.meshes {
 }
 ```
 
-## Skeletal Animation
+## 骨骼动画
 
-Three interpolation modes are supported:
+支持三种插值模式：
 
-| Mode | Description |
+| 模式 | 说明 |
 |------|-------------|
-| `Linear` | Linear interpolation (lerp for translation/scale, slerp for rotation) |
-| `Step` | Step function, no transition |
-| `CubicSpline` | Cubic spline interpolation for smoother curves |
+| `Linear` | 线性插值（平移/缩放使用 lerp，旋转使用 slerp） |
+| `Step` | 阶跃函数，无过渡 |
+| `CubicSpline` | 三次样条插值，曲线更平滑 |
 
 ```rust
 use anvilkit_assets::animation::*;
@@ -39,7 +39,7 @@ player.update(dt);
 let joint_transforms = player.joint_transforms();
 ```
 
-## Procedural Meshes
+## 程序化网格
 
 ```rust
 use anvilkit_assets::procedural::*;
@@ -49,10 +49,10 @@ let sphere = create_sphere(0.5, 32, 16);
 let plane = create_plane(10.0, 10.0);
 let cylinder = create_cylinder(0.5, 2.0, 16);
 
-mesh_data.validate()?; // Check attribute array consistency
+mesh_data.validate()?; // 检查属性数组一致性
 ```
 
-## Materials
+## 材质
 
 ```rust
 use anvilkit_assets::material::Material;
@@ -67,46 +67,46 @@ let material = Material {
 };
 ```
 
-## Asset Server
+## 资产服务器
 
-Supports both synchronous and asynchronous loading:
+支持同步和异步加载：
 
 ```rust
 use anvilkit_assets::asset_server::AssetServer;
 
 let mut server = AssetServer::new("assets/");
 
-// Synchronous: register intent (no I/O)
+// 同步：注册加载意图（无 I/O）
 let handle = server.load::<Mesh>("models/tree.glb");
 
-// Asynchronous: load file in background thread
+// 异步：在后台线程中加载文件
 let async_handle = server.load_async::<Vec<u8>>("textures/atlas.png");
 
-// In your game loop: poll for completed loads
+// 在游戏循环中：轮询已完成的加载
 server.process_completed();
 for result in server.drain_completed() {
     match result.data {
-        Ok(bytes) => { /* Parse and use the loaded data */ },
-        Err(err) => { /* Handle error */ },
+        Ok(bytes) => { /* 解析并使用加载的数据 */ },
+        Err(err) => { /* 处理错误 */ },
     }
 }
 ```
 
-## Hot Reload
+## 热重载
 
-File watching for automatic asset refresh during development (requires `hot-reload` feature):
+文件监视功能，用于开发期间自动刷新资产（需要 `hot-reload` feature）：
 
 ```rust
 use anvilkit_assets::hot_reload::FileWatcher;
 
 let watcher = FileWatcher::new("assets").unwrap();
 
-// In your game loop:
+// 在游戏循环中：
 for path in watcher.poll_changes() {
     if FileWatcher::is_shader(&path) {
-        // Rebuild render pipeline with new shader
+        // 使用新着色器重建渲染管线
     } else if FileWatcher::is_texture(&path) {
-        // Re-upload texture to GPU
+        // 将纹理重新上传到 GPU
     }
 }
 ```

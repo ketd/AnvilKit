@@ -1,53 +1,53 @@
 ---
-title: PBR & Shadows
-description: Cook-Torrance PBR, Cascade Shadow Maps, skeletal animation
+title: PBR 与阴影
+description: Cook-Torrance PBR、级联阴影贴图、骨骼动画
 ---
 
-## Cascade Shadow Maps
+## 级联阴影贴图
 
-3-level cascade shadow maps replacing the single-level shadow map for distance-dependent shadow quality.
+3 级级联阴影贴图替代单级阴影贴图，实现距离相关的阴影质量。
 
-**How it works**: The camera frustum is split into 3 slices at 10%, 30%, and 100% of the far plane. Each slice gets its own orthographic projection tightly fit around the frustum corners. The PBR fragment shader selects the tightest cascade per-fragment based on view-space Z depth.
+**工作原理**：相机视锥体在远平面的 10%、30% 和 100% 处被分割为 3 个区域。每个区域拥有独立的正交投影，紧密贴合视锥体角点。PBR 片段着色器根据视空间 Z 深度为每个片段选择最紧密的级联。
 
-| Cascade | Coverage | Quality |
-|---------|----------|---------|
-| 0 | Near (0–10% of far) | Highest resolution |
-| 1 | Mid (10–30% of far) | Medium resolution |
-| 2 | Far (30–100% of far) | Lowest resolution |
+| 级联 | 覆盖范围 | 质量 |
+|------|----------|------|
+| 0 | 近处（远平面的 0–10%） | 最高分辨率 |
+| 1 | 中距（远平面的 10–30%） | 中等分辨率 |
+| 2 | 远处（远平面的 30–100%） | 最低分辨率 |
 
-**GPU Layout** (`PbrSceneUniform`):
+**GPU 布局** (`PbrSceneUniform`)：
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `cascade_view_projs` | `[mat4×4; 3]` | Per-cascade light-space view-projection matrices |
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `cascade_view_projs` | `[mat4×4; 3]` | 每级级联的光空间视图投影矩阵 |
 | `cascade_splits` | `[f32; 4]` | `[split0, split1, split2, shadow_texel_size]` |
-| `emissive_factor.w` | `f32` | Cascade count (3.0) |
+| `emissive_factor.w` | `f32` | 级联数量 (3.0) |
 
-Shadow map texture: `Depth32Float`, `2048×2048`, `depth_or_array_layers = 3` (`D2Array`).
+阴影贴图纹理：`Depth32Float`，`2048×2048`，`depth_or_array_layers = 3` (`D2Array`)。
 
-**Files**: `events.rs` (`compute_cascade_matrices`), `pbr.wgsl` (`calculate_shadow`)
+**文件**：`events.rs` (`compute_cascade_matrices`)、`pbr.wgsl` (`calculate_shadow`)
 
-## PBR Material System
+## PBR 材质系统
 
-Cook-Torrance specular BRDF with GGX distribution, Smith geometry, Fresnel-Schlick.
+Cook-Torrance 镜面 BRDF，使用 GGX 分布、Smith 几何函数、Fresnel-Schlick 近似。
 
-**Bind Groups**:
+**绑定组**：
 
-| Group | Contents |
-|-------|----------|
-| 0 | Scene uniform (992 bytes): model, view_proj, normal_matrix, camera_pos, lights[8], cascade matrices |
-| 1 | Material textures: base color, normal map, metallic-roughness, AO, emissive (5 textures + 5 samplers) |
-| 2 | IBL + Shadow: BRDF LUT, linear sampler, CSM shadow map array, comparison sampler |
-| 3 | Joint matrices (skinned only): `storage<array<mat4×4, 128>>` |
+| 组 | 内容 |
+|----|------|
+| 0 | 场景 uniform（992 字节）：model、view_proj、normal_matrix、camera_pos、lights[8]、级联矩阵 |
+| 1 | 材质纹理：基础颜色、法线贴图、金属度-粗糙度、AO、自发光（5 个纹理 + 5 个采样器） |
+| 2 | IBL + 阴影：BRDF LUT、线性采样器、CSM 阴影贴图数组、比较采样器 |
+| 3 | 关节矩阵（仅蒙皮）：`storage<array<mat4×4, 128>>` |
 
-## Skeletal Animation
+## 骨骼动画
 
-GPU Linear Blend Skinning with up to 128 joints per skeleton.
+GPU 线性混合蒙皮，每个骨架最多支持 128 个关节。
 
-**Vertex format** (`SkinnedVertex`, 72 bytes):
+**顶点格式** (`SkinnedVertex`，72 字节)：
 
-| Attribute | Type | Location |
-|-----------|------|----------|
+| 属性 | 类型 | 位置 |
+|------|------|------|
 | `position` | `vec3<f32>` | 0 |
 | `normal` | `vec3<f32>` | 1 |
 | `texcoord` | `vec2<f32>` | 2 |
@@ -55,13 +55,13 @@ GPU Linear Blend Skinning with up to 128 joints per skeleton.
 | `joint_indices` | `u16×4` | 4 |
 | `joint_weights` | `f32×4` | 5 |
 
-**Skinning equation** (in `skinned_pbr.wgsl`):
+**蒙皮方程**（在 `skinned_pbr.wgsl` 中）：
 ```
 skinned_pos = Σ(weight[i] × joints[index[i]] × position)  for i in 0..4
 ```
 
-**Runtime flow**:
-1. `AnimationPlayer::advance(dt)` updates `current_time`
-2. `compute_bone_matrices(skeleton, player)` computes per-joint `global × inverse_bind`
-3. Upload `BoneMatrices` to storage buffer (bind group 3)
-4. Vertex shader applies LBS before model/view-proj transform
+**运行时流程**：
+1. `AnimationPlayer::advance(dt)` 更新 `current_time`
+2. `compute_bone_matrices(skeleton, player)` 计算每个关节的 `global × inverse_bind`
+3. 将 `BoneMatrices` 上传到存储缓冲区（绑定组 3）
+4. 顶点着色器在 model/view-proj 变换之前应用线性混合蒙皮

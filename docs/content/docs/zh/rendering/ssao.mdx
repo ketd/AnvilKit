@@ -1,23 +1,23 @@
 ---
 title: SSAO
-description: Screen-space ambient occlusion
+description: 屏幕空间环境光遮蔽
 ---
 
 ## SSAO
 
-Screen-space ambient occlusion using hemisphere kernel sampling with depth-reconstructed normals.
+使用半球核采样和深度重建法线的屏幕空间环境光遮蔽。
 
-**Pipeline**: Depth buffer → reconstruct view-space normals (cross-product of screen-space derivatives) → hemisphere sampling with 4×4 noise texture rotation → half-resolution AO → 4×4 box blur → multiply into scene in tonemap.
+**管线**：深度缓冲 → 重建视空间法线（屏幕空间导数的叉积） → 使用 4×4 噪声纹理旋转的半球采样 → 半分辨率 AO → 4×4 盒式模糊 → 在色调映射中乘入场景。
 
-**Configuration** (`SsaoSettings` ECS resource):
+**配置** (`SsaoSettings` ECS 资源)：
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `enabled` | `true` | Toggle SSAO on/off |
-| `quality` | `Medium` | Sample count: `Low`=16, `Medium`=32, `High`=64 |
-| `radius` | `0.5` | Sampling hemisphere radius in view-space units |
-| `bias` | `0.025` | Depth bias to prevent self-occlusion on flat surfaces |
-| `intensity` | `1.0` | AO darkness multiplier (higher = stronger occlusion) |
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `enabled` | `true` | 开关 SSAO |
+| `quality` | `Medium` | 采样数：`Low`=16、`Medium`=32、`High`=64 |
+| `radius` | `0.5` | 视空间单位的采样半球半径 |
+| `bias` | `0.025` | 深度偏移，防止平面上的自遮蔽 |
+| `intensity` | `1.0` | AO 暗度乘数（越高遮蔽越强） |
 
 ```rust
 use anvilkit_render::renderer::ssao::{SsaoSettings, SsaoQuality};
@@ -29,4 +29,4 @@ app.insert_resource(SsaoSettings {
 });
 ```
 
-**Files**: `ssao.rs`, `ssao.wgsl`, `ssao_blur.wgsl`
+**文件**：`ssao.rs`、`ssao.wgsl`、`ssao_blur.wgsl`
