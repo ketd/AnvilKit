@@ -1,0 +1,488 @@
+//! # Demo DOF — 景深效果演示
+//!
+//! 低角度慢速轨道相机，用于演示景深效果。
+//!
+//! ```bash
+//! cargo run -p anvilkit-render --features capture --example demo_dof -- \
+//!     --capture-dir /tmp/frames/dof --capture-frames 120
+//! ```
+
+use std::time::Instant;
+use anvilkit_render::prelude::*;
+use anvilkit_render::window::pack_lights;
+use anvilkit_render::renderer::{
+    RenderPipelineBuilder, DEPTH_FORMAT, HDR_FORMAT,
+    buffer::{PbrVertex, Vertex, create_uniform_buffer,
+             create_depth_texture_msaa, create_hdr_render_target, create_hdr_msaa_texture,
+             create_texture, create_texture_linear, create_sampler,
+             create_csm_shadow_map, create_shadow_sampler, SHADOW_MAP_SIZE, MSAA_SAMPLE_COUNT},
+    assets::RenderAssets,
+    draw::{ActiveCamera, DrawCommandList, SceneLights, DirectionalLight, PointLight, MaterialParams},
+    ibl::generate_brdf_lut,
+    bloom::{BloomResources, BloomSettings},
+};
+use anvilkit_render::plugin::CameraComponent;
+use anvilkit_render::renderer::capture::{CaptureState, CaptureResources, save_png};
+use anvilkit_assets::gltf_loader::load_gltf_scene;
+
+const SHADER_SOURCE: &str = include_str!("../../shaders/pbr.wgsl");
+const TONEMAP_SHADER: &str = include_str!("../../shaders/tonemap.wgsl");
+
+#[derive(Resource)]
+struct FrameTime(Instant);
+
+fn main() {
+    env_logger::init();
+
+    let capture = CaptureState::from_args();
+
+    let scene = load_gltf_scene("assets/damaged_helmet.glb")
+        .expect("Failed to load DamagedHelmet.glb");
+
+    let mesh_vertices: Vec<PbrVertex> = (0..scene.mesh.vertex_count())
+        .map(|i| PbrVertex {
+            position: scene.mesh.positions[i].into(),
+            normal: scene.mesh.normals[i].into(),
+            texcoord: scene.mesh.texcoords[i].into(),
+            tangent: scene.mesh.tangents[i],
+        })
+        .collect();
+
+    let mut app = App::new();
+    app.add_plugins(RenderPlugin::new().with_window_config(
+        WindowConfig::new()
+            .with_title("Demo: Depth of Field")
+            .with_size(640, 480),
+    ));
+    app.insert_resource(FrameTime(Instant::now()));
+    app.insert_resource(SceneLights {
+        directional: DirectionalLight {
+            direction: glam::Vec3::new(-0.4, -0.7, 0.5).normalize(),
+            color: glam::Vec3::new(1.0, 0.95, 0.85),
+            intensity: 4.0,
+        },
+        point_lights: vec![
+            PointLight { position: glam::Vec3::new(3.0, 2.0, -2.0), color: glam::Vec3::new(1.0, 0.6, 0.3), intensity: 12.0, range: 10.0 },
+            PointLight { position: glam::Vec3::new(-3.0, 1.0, -1.0), color: glam::Vec3::new(0.3, 0.5, 1.0), intensity: 8.0, range: 10.0 },
+        ],
+        spot_lights: vec![],
+    });
+
+    let event_loop = EventLoop::new().unwrap();
+    let config = WindowConfig::new().with_title("Demo: Depth of Field").with_size(640, 480);
+
+    event_loop.run_app(&mut DemoDofApp {
+        render_app: RenderApp::new(config),
+        app,
+        capture,
+        initialized: false,
+        capture_resources: None,
+        scene_ub: None,
+        scene_bg: None,
+        depth_view: None,
+        hdr_view: None,
+        hdr_msaa_view: None,
+        tonemap_pipeline: None,
+        tonemap_bg: None,
+        ibl_bg: None,
+        bloom: None,
+        mesh_vertices,
+        mesh_indices: scene.mesh.indices,
+        material: scene.material,
+    }).unwrap();
+}
+
+struct DemoDofApp {
+    render_app: RenderApp,
+    app: App,
+    capture: CaptureState,
+    initialized: bool,
+    capture_resources: Option<CaptureResources>,
+    scene_ub: Option<wgpu::Buffer>,
+    scene_bg: Option<wgpu::BindGroup>,
+    depth_view: Option<wgpu::TextureView>,
+    hdr_view: Option<wgpu::TextureView>,
+    hdr_msaa_view: Option<wgpu::TextureView>,
+    tonemap_pipeline: Option<wgpu::RenderPipeline>,
+    tonemap_bg: Option<wgpu::BindGroup>,
+    ibl_bg: Option<wgpu::BindGroup>,
+    bloom: Option<BloomResources>,
+    mesh_vertices: Vec<PbrVertex>,
+    mesh_indices: Vec<u32>,
+    material: anvilkit_assets::material::MaterialData,
+}
+
+impl DemoDofApp {
+    fn init_scene(&mut self) {
+        if self.initialized { return; }
+        let Some(device) = self.render_app.render_device() else { return };
+        let Some(format) = self.render_app.surface_format() else { return };
+        let (w, h) = self.render_app.window_state().size();
+
+        // Scene uniform
+        let initial = PbrSceneUniform::default();
+        let ub = create_uniform_buffer(device, "Scene UB", bytemuck::bytes_of(&initial));
+        let scene_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Scene BGL"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0, visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                count: None,
+            }],
+        });
+        let scene_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Scene BG"), layout: &scene_bgl,
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: ub.as_entire_binding() }],
+        });
+        let (_, depth_view) = create_depth_texture_msaa(device, w, h, "Depth");
+
+        // Material textures
+        let tex = |t: &Option<anvilkit_assets::material::TextureData>, label, fb: &[u8; 4], srgb: bool| {
+            if let Some(ref tex) = t {
+                if srgb { create_texture(device, tex.width, tex.height, &tex.data, label).1 }
+                else { create_texture_linear(device, tex.width, tex.height, &tex.data, label).1 }
+            } else {
+                if srgb { create_texture(device, 1, 1, fb, label).1 }
+                else { create_texture_linear(device, 1, 1, fb, label).1 }
+            }
+        };
+        let bc = tex(&self.material.base_color_texture, "BaseColor", &[255,255,255,255], true);
+        let nm = tex(&self.material.normal_texture, "Normal", &[128,128,255,255], false);
+        let mr = tex(&self.material.metallic_roughness_texture, "MR", &[255,255,255,255], false);
+        let ao = tex(&self.material.occlusion_texture, "AO", &[255,255,255,255], false);
+        let em = tex(&self.material.emissive_texture, "Emissive", &[255,255,255,255], true);
+        let sampler = create_sampler(device, "Sampler");
+
+        let tex_entry = |b: u32| wgpu::BindGroupLayoutEntry {
+            binding: b, visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2, multisampled: false,
+            }, count: None,
+        };
+        let mat_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Mat BGL"),
+            entries: &[tex_entry(0), tex_entry(1), tex_entry(2), tex_entry(3), tex_entry(4),
+                wgpu::BindGroupLayoutEntry { binding: 5, visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None }],
+        });
+        let mat_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Mat BG"), layout: &mat_bgl,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&bc) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&nm) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&mr) },
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&ao) },
+                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&em) },
+                wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::Sampler(&sampler) },
+            ],
+        });
+
+        // IBL + Shadow
+        let brdf_data = generate_brdf_lut(256);
+        let (_, brdf_view) = create_texture_linear(device, 256, 256, &brdf_data, "BRDF LUT");
+        let (_shadow_tex, shadow_view, _shadow_cascade_views) = create_csm_shadow_map(device, SHADOW_MAP_SIZE, 3, "Shadow Map");
+        let shadow_samp = create_shadow_sampler(device, "Shadow Sampler");
+        let ibl_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("IBL+Shadow BGL"),
+            entries: &[tex_entry(0),
+                wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None },
+                wgpu::BindGroupLayoutEntry { binding: 2, visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2Array, multisampled: false }, count: None },
+                wgpu::BindGroupLayoutEntry { binding: 3, visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison), count: None }],
+        });
+        let ibl_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("IBL+Shadow BG"), layout: &ibl_bgl,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&brdf_view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&shadow_view) },
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&shadow_samp) },
+            ],
+        });
+
+        // PBR pipeline
+        let pipeline = RenderPipelineBuilder::new()
+            .with_vertex_shader(SHADER_SOURCE)
+            .with_fragment_shader(SHADER_SOURCE)
+            .with_format(HDR_FORMAT)
+            .with_vertex_layouts(vec![PbrVertex::layout()])
+            .with_depth_format(DEPTH_FORMAT)
+            .with_multisample_count(MSAA_SAMPLE_COUNT)
+            .with_bind_group_layouts(vec![scene_bgl, mat_bgl, ibl_bgl])
+            .with_label("PBR Pipeline")
+            .build(device).expect("Failed to create PBR pipeline");
+
+        // HDR + Bloom + Tonemap
+        let (_, hdr_view) = create_hdr_render_target(device, w, h, "HDR RT");
+        let (_, hdr_msaa_view) = create_hdr_msaa_texture(device, w, h, "HDR MSAA");
+        let bloom = BloomResources::new(device, w, h, 5);
+        let bloom_view = if bloom.mip_views.is_empty() { &hdr_view } else { &bloom.mip_views[0] };
+
+        let tm_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Tonemap BGL"),
+            entries: &[tex_entry(0),
+                wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None },
+                tex_entry(2)],
+        });
+        let tm_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Tonemap BG"), layout: &tm_bgl,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&hdr_view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(bloom_view) },
+            ],
+        });
+        let tm_bgl2 = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("TM BGL2"),
+            entries: &[tex_entry(0),
+                wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None },
+                tex_entry(2)],
+        });
+        let tm_pipe = RenderPipelineBuilder::new()
+            .with_vertex_shader(TONEMAP_SHADER).with_fragment_shader(TONEMAP_SHADER)
+            .with_format(format).with_vertex_layouts(vec![])
+            .with_bind_group_layouts(vec![tm_bgl2]).with_label("Tonemap")
+            .build(device).expect("Tonemap pipeline");
+
+        // Upload mesh
+        let mut assets = self.app.world.resource_mut::<RenderAssets>();
+        let mesh_h = assets.upload_mesh_u32(device, &self.mesh_vertices, &self.mesh_indices, "Helmet");
+        let mat_h = assets.create_material(pipeline.into_pipeline(), mat_bg);
+
+        self.app.world.spawn((
+            mesh_h, mat_h,
+            MaterialParams {
+                metallic: self.material.metallic_factor,
+                roughness: self.material.roughness_factor,
+                normal_scale: self.material.normal_scale,
+                emissive_factor: self.material.emissive_factor,
+            },
+            Transform::default(),
+            GlobalTransform::default(),
+        ));
+
+        // Camera
+        let eye = glam::Vec3::new(0.0, 0.5, -3.0);
+        let look_dir = (glam::Vec3::ZERO - eye).normalize();
+        let cam_rot = glam::Quat::from_rotation_arc(glam::Vec3::Z, look_dir);
+        self.app.world.spawn((
+            CameraComponent { fov: 45.0, near: 0.1, far: 100.0, is_active: true, aspect_ratio: w as f32 / h.max(1) as f32 },
+            Transform::from_xyz(eye.x, eye.y, eye.z).with_rotation(cam_rot),
+            GlobalTransform::default(),
+        ));
+
+        // Capture resources
+        self.capture_resources = Some(CaptureResources::new(device.device(), w, h, format));
+
+        self.scene_ub = Some(ub);
+        self.scene_bg = Some(scene_bg);
+        self.depth_view = Some(depth_view);
+        self.hdr_view = Some(hdr_view);
+        self.hdr_msaa_view = Some(hdr_msaa_view);
+        self.tonemap_pipeline = Some(tm_pipe.into_pipeline());
+        self.tonemap_bg = Some(tm_bg);
+        self.ibl_bg = Some(ibl_bg);
+        self.bloom = Some(bloom);
+        self.initialized = true;
+        println!("Demo DOF initialized (capture: {})", self.capture.recording);
+    }
+
+    fn render_frame(&mut self) {
+        let Some(device) = self.render_app.render_device() else { return };
+        let Some(ub) = &self.scene_ub else { return };
+        let Some(scene_bg) = &self.scene_bg else { return };
+        let Some(depth_view) = &self.depth_view else { return };
+        let Some(hdr_view) = &self.hdr_view else { return };
+        let Some(hdr_msaa_view) = &self.hdr_msaa_view else { return };
+        let Some(tm_pipe) = &self.tonemap_pipeline else { return };
+        let Some(tm_bg) = &self.tonemap_bg else { return };
+        let Some(ibl_bg) = &self.ibl_bg else { return };
+        let Some(cam) = self.app.world.get_resource::<ActiveCamera>() else { return };
+        let Some(dl) = self.app.world.get_resource::<DrawCommandList>() else { return };
+        let Some(ra) = self.app.world.get_resource::<RenderAssets>() else { return };
+        if dl.commands.is_empty() { return; }
+
+        let Some(frame) = self.render_app.get_current_frame() else { return };
+        let swapchain = frame.texture.create_view(&Default::default());
+
+        let def_lights = SceneLights::default();
+        let lights = self.app.world.get_resource::<SceneLights>().unwrap_or(&def_lights);
+        let (gpu_lights, lc) = pack_lights(lights);
+        let ld = lights.directional.direction.normalize();
+        let lp = -ld * 15.0;
+        let lv = glam::Mat4::look_at_lh(lp, glam::Vec3::ZERO, glam::Vec3::Y);
+        let lproj = glam::Mat4::orthographic_lh(-10.0, 10.0, -10.0, 10.0, 0.1, 30.0);
+        let svp = lproj * lv;
+
+        // Scene pass -> HDR MSAA
+        for (i, cmd) in dl.commands.iter().enumerate() {
+            let Some(gm) = ra.get_mesh(&cmd.mesh) else { continue };
+            let Some(gmat) = ra.get_material(&cmd.material) else { continue };
+            let m = cmd.model_matrix;
+            let u = PbrSceneUniform {
+                model: m.to_cols_array_2d(),
+                view_proj: cam.view_proj.to_cols_array_2d(),
+                normal_matrix: m.inverse().transpose().to_cols_array_2d(),
+                camera_pos: [cam.camera_pos.x, cam.camera_pos.y, cam.camera_pos.z, 0.0],
+                light_dir: [ld.x, ld.y, ld.z, 0.0],
+                light_color: [lights.directional.color.x, lights.directional.color.y, lights.directional.color.z, lights.directional.intensity],
+                material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, lc as f32],
+                lights: gpu_lights,
+                cascade_view_projs: [svp.to_cols_array_2d(); 3],
+                cascade_splits: [10.0, 30.0, 100.0, 1.0 / 2048.0],
+                emissive_factor: [cmd.emissive_factor[0], cmd.emissive_factor[1], cmd.emissive_factor[2], 3.0],
+            };
+            device.queue().write_buffer(ub, 0, bytemuck::bytes_of(&u));
+
+            let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Scene") });
+            {
+                let cl = if i == 0 { wgpu::LoadOp::Clear(wgpu::Color { r: 0.02, g: 0.02, b: 0.04, a: 1.0 }) } else { wgpu::LoadOp::Load };
+                let dl_op = if i == 0 { wgpu::LoadOp::Clear(1.0) } else { wgpu::LoadOp::Load };
+                let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Scene Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: hdr_msaa_view, resolve_target: Some(hdr_view),
+                        ops: wgpu::Operations { load: cl, store: wgpu::StoreOp::Store },
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: depth_view,
+                        depth_ops: Some(wgpu::Operations { load: dl_op, store: wgpu::StoreOp::Store }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None, occlusion_query_set: None,
+                });
+                let pipeline = ra.get_pipeline(&gmat.pipeline_handle).unwrap();
+                rp.set_pipeline(pipeline);
+                rp.set_bind_group(0, scene_bg, &[]);
+                rp.set_bind_group(1, &gmat.bind_group, &[]);
+                rp.set_bind_group(2, ibl_bg, &[]);
+                rp.set_vertex_buffer(0, gm.vertex_buffer.slice(..));
+                rp.set_index_buffer(gm.index_buffer.slice(..), gm.index_format);
+                rp.draw_indexed(0..gm.index_count, 0, 0..1);
+            }
+            device.queue().submit(std::iter::once(enc.finish()));
+        }
+
+        // Bloom
+        if let Some(ref bloom) = self.bloom {
+            let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Bloom") });
+            bloom.execute(device, &mut enc, hdr_view, &BloomSettings::default());
+            device.queue().submit(std::iter::once(enc.finish()));
+        }
+
+        // Tonemap -> swapchain + capture
+        {
+            let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Tonemap") });
+            {
+                let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Tonemap"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &swapchain, resolve_target: None,
+                        ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                    })],
+                    depth_stencil_attachment: None, timestamp_writes: None, occlusion_query_set: None,
+                });
+                rp.set_pipeline(tm_pipe);
+                rp.set_bind_group(0, tm_bg, &[]);
+                rp.draw(0..3, 0..1);
+            }
+
+            // Capture: extra tonemap → capture texture
+            if self.capture.should_capture() {
+                if let Some(ref cr) = self.capture_resources {
+                    {
+                        let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            label: Some("Capture Tonemap"),
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                view: &cr.capture_view, resolve_target: None,
+                                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                            })],
+                            depth_stencil_attachment: None, timestamp_writes: None, occlusion_query_set: None,
+                        });
+                        rp.set_pipeline(tm_pipe);
+                        rp.set_bind_group(0, tm_bg, &[]);
+                        rp.draw(0..3, 0..1);
+                    }
+                    cr.encode_copy(&mut enc);
+                }
+            }
+
+            device.queue().submit(std::iter::once(enc.finish()));
+        }
+
+        // Read back capture
+        if self.capture.should_capture() {
+            if let Some(ref cr) = self.capture_resources {
+                if let Some(path) = self.capture.current_output_path() {
+                    let pixels = cr.read_pixels(device.device());
+                    save_png(&pixels, cr.width, cr.height, &path);
+                }
+            }
+            self.capture.on_frame_captured();
+        }
+
+        frame.present();
+    }
+}
+
+impl ApplicationHandler for DemoDofApp {
+    fn resumed(&mut self, el: &ActiveEventLoop) {
+        self.render_app.resumed(el);
+        self.init_scene();
+    }
+
+    fn window_event(&mut self, el: &ActiveEventLoop, wid: WindowId, ev: WindowEvent) {
+        match &ev {
+            WindowEvent::CloseRequested => el.exit(),
+            WindowEvent::RedrawRequested if self.initialized => {
+                self.render_frame();
+                return;
+            }
+            _ => {}
+        }
+        self.render_app.window_event(el, wid, ev);
+    }
+
+    fn device_event(&mut self, el: &ActiveEventLoop, did: winit::event::DeviceId, ev: winit::event::DeviceEvent) {
+        self.render_app.device_event(el, did, ev);
+    }
+
+    fn about_to_wait(&mut self, el: &ActiveEventLoop) {
+        // Orbit camera
+        if let Some(ft) = self.app.world.get_resource::<FrameTime>() {
+            let t = ft.0.elapsed().as_secs_f32();
+            let radius = 5.0;
+            let height = 0.3;
+            let speed = 0.15;
+            let angle = t * speed + 1.2; // ~69° — 3/4 front view of visor
+            let eye = glam::Vec3::new(
+                angle.sin() * radius,
+                height + (t * speed * 0.3).sin() * 0.2,
+                angle.cos() * radius,
+            );
+            let target = glam::Vec3::ZERO;
+            let look_dir = (target - eye).normalize();
+            let cam_rot = glam::Quat::from_rotation_arc(glam::Vec3::Z, look_dir);
+            for (cam, mut transform) in self.app.world.query::<(&CameraComponent, &mut Transform)>().iter_mut(&mut self.app.world) {
+                if cam.is_active {
+                    transform.translation = eye;
+                    transform.rotation = cam_rot;
+                }
+            }
+        }
+        self.app.update();
+        if let Some(w) = self.render_app.window() { w.request_redraw(); }
+
+        // Auto-exit after capture
+        if self.capture.exit_requested {
+            println!("Capture complete ({} frames)", self.capture.frame_count);
+            el.exit();
+        }
+    }
+}

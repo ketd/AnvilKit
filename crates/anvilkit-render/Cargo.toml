@@ -41,6 +41,9 @@ taffy = "0.4"
 # 日志记录
 log = "0.4"
 
+# 帧捕获（可选）
+image = { workspace = true, optional = true }
+
 # 序列化支持（可选）
 # serde = { workspace = true, optional = true }
 
@@ -58,6 +61,9 @@ debug = []
 
 # 开发模式特性
 dev = ["debug"]
+
+# 帧捕获（截图/录帧）
+capture = ["image"]
 
 [dev-dependencies]
 env_logger = "0.10"
@@ -81,3 +87,78 @@ path = "../../examples/demo.rs"
 [[example]]
 name = "game"
 path = "../../examples/game.rs"
+
+[[example]]
+name = "demo_showcase"
+path = "../../examples/demos/demo_showcase.rs"
+required-features = ["capture"]
+
+[[example]]
+name = "demo_bloom"
+path = "../../examples/demos/demo_bloom.rs"
+required-features = ["capture"]
+
+[[example]]
+name = "demo_ibl"
+path = "../../examples/demos/demo_ibl.rs"
+required-features = ["capture"]
+
+[[example]]
+name = "demo_multi_light"
+path = "../../examples/demos/demo_multi_light.rs"
+required-features = ["capture"]
+
+[[example]]
+name = "demo_pbr"
+path = "../../examples/demos/demo_pbr.rs"
+required-features = ["capture"]
+
+[[example]]
+name = "demo_shadows"
+path = "../../examples/demos/demo_shadows.rs"
+required-features = ["capture"]
+
+[[example]]
+name = "demo_ssao"
+path = "../../examples/demos/demo_ssao.rs"
+required-features = ["capture"]
+
+[[example]]
+name = "demo_dof"
+path = "../../examples/demos/demo_dof.rs"
+required-features = ["capture"]
+
+[[example]]
+name = "demo_motion_blur"
+path = "../../examples/demos/demo_motion_blur.rs"
+required-features = ["capture"]
+
+[[example]]
+name = "demo_color_grading"
+path = "../../examples/demos/demo_color_grading.rs"
+required-features = ["capture"]
+
+[[example]]
+name = "demo_particles"
+path = "../../examples/demos/demo_particles.rs"
+required-features = ["capture"]
+
+[[example]]
+name = "demo_physics"
+path = "../../examples/demos/demo_physics.rs"
+required-features = ["capture"]
+
+[[example]]
+name = "demo_navmesh"
+path = "../../examples/demos/demo_navmesh.rs"
+required-features = ["capture"]
+
+[[example]]
+name = "demo_debug_renderer"
+path = "../../examples/demos/demo_debug_renderer.rs"
+required-features = ["capture"]
+
+[[example]]
+name = "demo_camera_effects"
+path = "../../examples/demos/demo_camera_effects.rs"
+required-features = ["capture"]

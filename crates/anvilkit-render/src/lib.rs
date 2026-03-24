@@ -49,6 +49,10 @@ pub mod prelude {
     pub use crate::renderer::draw::{ActiveCamera, Aabb, DrawCommandList, Frustum, InstanceData, SceneLights, DirectionalLight, PointLight, SpotLight, MaterialParams};
     pub use crate::renderer::state::{RenderState, PbrSceneUniform, GpuLight, MAX_LIGHTS};
 
+    // 帧捕获
+    #[cfg(feature = "capture")]
+    pub use crate::renderer::capture::{CaptureState, CaptureResources, save_png};
+
     // 重新导出核心依赖的常用类型
     pub use wgpu::{
         Device, Queue, Surface, SurfaceConfiguration, TextureFormat,

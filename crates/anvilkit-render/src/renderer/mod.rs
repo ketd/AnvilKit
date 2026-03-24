@@ -37,6 +37,8 @@ pub mod dof;
 pub mod motion_blur;
 pub mod color_grading;
 pub mod debug_renderer;
+#[cfg(feature = "capture")]
+pub mod capture;
 
 // 重新导出主要类型
 pub use device::RenderDevice;

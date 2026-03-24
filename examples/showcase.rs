@@ -21,7 +21,7 @@ use anvilkit_render::renderer::{
     buffer::{PbrVertex, Vertex, create_uniform_buffer,
              create_depth_texture_msaa, create_hdr_render_target, create_hdr_msaa_texture,
              create_texture, create_texture_linear, create_sampler,
-             create_shadow_map, create_shadow_sampler, SHADOW_MAP_SIZE, MSAA_SAMPLE_COUNT},
+             create_csm_shadow_map, create_shadow_sampler, SHADOW_MAP_SIZE, MSAA_SAMPLE_COUNT},
     assets::RenderAssets,
     draw::{ActiveCamera, DrawCommandList, SceneLights, DirectionalLight, PointLight, MaterialParams},
     state::GpuLight,
@@ -212,7 +212,7 @@ impl ShowcaseApp {
         // IBL + Shadow (group 2)
         let brdf_data = generate_brdf_lut(256);
         let (_, brdf_view) = create_texture_linear(device, 256, 256, &brdf_data, "BRDF LUT");
-        let (_, shadow_view) = create_shadow_map(device, SHADOW_MAP_SIZE, "Shadow Map");
+        let (_shadow_tex, shadow_view, _shadow_cascade_views) = create_csm_shadow_map(device, SHADOW_MAP_SIZE, 3, "Shadow Map");
         let shadow_samp = create_shadow_sampler(device, "Shadow Sampler");
         let ibl_bgl = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("IBL+Shadow BGL"),
@@ -222,7 +222,7 @@ impl ShowcaseApp {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None },
                 wgpu::BindGroupLayoutEntry { binding: 2, visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth,
-                        view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }, count: None },
+                        view_dimension: wgpu::TextureViewDimension::D2Array, multisampled: false }, count: None },
                 wgpu::BindGroupLayoutEntry { binding: 3, visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison), count: None },
             ],
@@ -289,6 +289,7 @@ impl ShowcaseApp {
                 emissive_factor: self.material.emissive_factor,
             },
             Transform::default(),
+            GlobalTransform::default(),
         ));
 
         // Camera (will orbit)
@@ -298,6 +299,7 @@ impl ShowcaseApp {
         self.app.world.spawn((
             CameraComponent { fov: 45.0, near: 0.1, far: 100.0, is_active: true, aspect_ratio: w as f32 / h.max(1) as f32 },
             Transform::from_xyz(eye.x, eye.y, eye.z).with_rotation(cam_rot),
+            GlobalTransform::default(),
         ));
 
         self.scene_ub = Some(ub);

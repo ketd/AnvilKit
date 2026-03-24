@@ -11,7 +11,7 @@ use anvilkit_render::renderer::{
     buffer::{PbrVertex, Vertex, create_uniform_buffer,
              create_depth_texture_msaa, create_hdr_render_target, create_hdr_msaa_texture,
              create_texture, create_texture_linear, create_sampler,
-             create_shadow_map, create_shadow_sampler, SHADOW_MAP_SIZE, MSAA_SAMPLE_COUNT},
+             create_csm_shadow_map, create_shadow_sampler, SHADOW_MAP_SIZE, MSAA_SAMPLE_COUNT},
     assets::RenderAssets,
     draw::{ActiveCamera, DrawCommandList, SceneLights, DirectionalLight, PointLight, MaterialParams},
     state::GpuLight,
@@ -222,7 +222,7 @@ impl PbrEcsApp {
         // IBL + Shadow bind group (group 2: BRDF LUT + shadow map)
         let brdf_lut_data = generate_brdf_lut(256);
         let (_, brdf_lut_view) = create_texture_linear(device, 256, 256, &brdf_lut_data, "BRDF LUT");
-        let (_, shadow_map_view) = create_shadow_map(device, SHADOW_MAP_SIZE, "Shadow Map");
+        let (_shadow_tex, shadow_map_view, _shadow_cascade_views) = create_csm_shadow_map(device, SHADOW_MAP_SIZE, 3, "Shadow Map");
         let shadow_sampler = create_shadow_sampler(device, "Shadow Sampler");
 
         let ibl_bgl = device.device().create_bind_group_layout(
@@ -246,7 +246,7 @@ impl PbrEcsApp {
                         binding: 2, visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
                             sample_type: wgpu::TextureSampleType::Depth,
-                            view_dimension: wgpu::TextureViewDimension::D2,
+                            view_dimension: wgpu::TextureViewDimension::D2Array,
                             multisampled: false,
                         }, count: None,
                     },
@@ -343,6 +343,7 @@ impl PbrEcsApp {
                 emissive_factor: self.material.emissive_factor,
             },
             Transform::default(),
+            GlobalTransform::default(),
         ));
 
         // Spawn camera
@@ -353,6 +354,7 @@ impl PbrEcsApp {
         self.app.world.spawn((
             CameraComponent { fov: 45.0, near: 0.1, far: 100.0, is_active: true, aspect_ratio: w as f32 / h.max(1) as f32 },
             Transform::from_xyz(eye.x, eye.y, eye.z).with_rotation(cam_rotation),
+            GlobalTransform::default(),
         ));
 
         self.scene_uniform_buffer = Some(ub);

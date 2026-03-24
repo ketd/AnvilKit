@@ -106,6 +106,12 @@ impl Plugin for RenderPlugin {
         app.insert_resource(InputState::new());
         app.init_resource::<DeltaTime>();
 
+        // 帧捕获资源（capture feature）
+        #[cfg(feature = "capture")]
+        {
+            app.init_resource::<crate::renderer::capture::CaptureState>();
+        }
+
         // 添加真实 ECS 渲染系统到 PostUpdate 阶段
         app.add_systems(
             AnvilKitSchedule::PostUpdate,

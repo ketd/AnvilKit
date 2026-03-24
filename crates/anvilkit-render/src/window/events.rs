@@ -218,6 +218,10 @@ pub struct RenderApp {
 
     /// 上一帧时间戳，用于计算真实帧时间
     last_frame_time: Instant,
+
+    /// 帧捕获资源（capture feature 启用时）
+    #[cfg(feature = "capture")]
+    capture_resources: Option<crate::renderer::capture::CaptureResources>,
 }
 
 impl RenderApp {
@@ -248,6 +252,8 @@ impl RenderApp {
             app: None,
             gpu_initialized: false,
             last_frame_time: Instant::now(),
+            #[cfg(feature = "capture")]
+            capture_resources: None,
         }
     }
 
@@ -856,10 +862,88 @@ impl RenderApp {
             rp.draw(0..3, 0..1); // Fullscreen triangle
         }
 
+        // --- Capture: 额外 tonemap pass → capture texture → staging buffer ---
+        #[cfg(feature = "capture")]
+        let capture_active = {
+            use crate::renderer::capture::{CaptureState, CaptureResources};
+
+            let should_capture = app.world.get_resource::<CaptureState>()
+                .map(|s| s.should_capture())
+                .unwrap_or(false);
+
+            if should_capture {
+                let (sw, sh) = render_state.surface_size;
+                let fmt = surface.format();
+
+                // 延迟初始化或 resize capture resources
+                if self.capture_resources.is_none() {
+                    self.capture_resources = Some(CaptureResources::new(device.device(), sw, sh, fmt));
+                }
+                if let Some(ref mut cr) = self.capture_resources {
+                    cr.resize(device.device(), sw, sh);
+                }
+
+                if let Some(ref cr) = self.capture_resources {
+                    // 额外 tonemap pass 写入 capture_view
+                    {
+                        let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            label: Some("Capture Tonemap Pass"),
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                view: &cr.capture_view,
+                                resolve_target: None,
+                                ops: wgpu::Operations {
+                                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                    store: wgpu::StoreOp::Store,
+                                },
+                            })],
+                            depth_stencil_attachment: None,
+                            timestamp_writes: None,
+                            occlusion_query_set: None,
+                        });
+                        rp.set_pipeline(&render_state.tonemap_pipeline);
+                        rp.set_bind_group(0, &render_state.tonemap_bind_group, &[]);
+                        rp.draw(0..3, 0..1);
+                    }
+
+                    // copy capture texture → staging buffer
+                    cr.encode_copy(&mut encoder);
+                }
+            }
+
+            should_capture
+        };
+
         // Single submit for all passes
         device.queue().submit(std::iter::once(encoder.finish()));
 
+        // --- Capture: 回读像素并保存 ---
+        #[cfg(feature = "capture")]
+        if capture_active {
+            use crate::renderer::capture::save_png;
+
+            if let Some(ref cr) = self.capture_resources {
+                let output_path = app.world.get_resource::<crate::renderer::capture::CaptureState>()
+                    .and_then(|s| s.current_output_path());
+
+                let pixels = cr.read_pixels(device.device());
+
+                if let Some(path) = output_path {
+                    save_png(&pixels, cr.width, cr.height, &path);
+                }
+            }
+        }
+
         frame.present();
+
+        // 更新 CaptureState（需要 &mut self.app）
+        #[cfg(feature = "capture")]
+        if capture_active {
+            if let Some(ref mut app) = self.app {
+                if let Some(mut state) = app.world.get_resource_mut::<crate::renderer::capture::CaptureState>() {
+                    state.on_frame_captured();
+                }
+            }
+        }
     }
 
     /// 执行渲染（ECS 路径）
@@ -1042,11 +1126,24 @@ impl ApplicationHandler for RenderApp {
     }
 
     /// 即将等待事件
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+    #[allow(unused_variables)]
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         // 使用 tick() 统一处理：DeltaTime → app.update() → end_frame → request_redraw
         // 注意：需要临时取出 app 以满足借用检查（tick 需要 &mut self 和 &mut App）
         if let Some(mut app) = self.app.take() {
             self.tick(&mut app);
+
+            // 检查 capture auto_exit
+            #[cfg(feature = "capture")]
+            {
+                if let Some(state) = app.world.get_resource::<crate::renderer::capture::CaptureState>() {
+                    if state.exit_requested {
+                        info!("帧捕获完成，自动退出");
+                        event_loop.exit();
+                    }
+                }
+            }
+
             self.app = Some(app);
         }
     }
