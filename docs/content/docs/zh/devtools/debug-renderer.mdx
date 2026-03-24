@@ -1,0 +1,96 @@
+---
+title: Debug Renderer
+description: Wireframe debug visualization — lines, boxes, spheres, points
+---
+
+## Overview
+
+`DebugRenderer` provides immediate-mode wireframe debug drawing for visualizing collision bounds, rays, spawn points, and other spatial data. All primitives are rendered as colored line segments using a single `LineList` draw call per frame.
+
+The renderer is provided by the `anvilkit-render` crate:
+
+```rust
+use anvilkit_render::renderer::debug_renderer::DebugRenderer;
+```
+
+The maximum number of debug vertices per frame is capped at `MAX_DEBUG_VERTICES` (65,536). Excess vertices are silently truncated.
+
+## DebugDrawCommand
+
+`DebugDrawCommand` is an enum representing the four supported primitive types:
+
+| Variant | Fields | Description |
+|---------|--------|-------------|
+| `Line` | `start: Vec3`, `end: Vec3`, `color: [f32; 4]` | A single line segment |
+| `Box` | `center: Vec3`, `half_extents: Vec3`, `color: [f32; 4]` | A wireframe box (12 edges) |
+| `Sphere` | `center: Vec3`, `radius: f32`, `color: [f32; 4]`, `segments: u32` | A wireframe sphere (3 axis-aligned circles) |
+| `Point` | `position: Vec3`, `color: [f32; 4]`, `size: f32` | A point rendered as a 3-axis cross |
+
+## DebugRenderer API
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `new` | `(device: &RenderDevice) -> Self` | Create a new debug renderer, allocating GPU buffers and compiling the line shader pipeline |
+| `draw_line` | `(&mut self, start: Vec3, end: Vec3, color: [f32; 4])` | Queue a line segment |
+| `draw_box` | `(&mut self, center: Vec3, half_extents: Vec3, color: [f32; 4])` | Queue a wireframe box |
+| `draw_sphere` | `(&mut self, center: Vec3, radius: f32, color: [f32; 4], segments: u32)` | Queue a wireframe sphere (minimum 8 segments) |
+| `draw_point` | `(&mut self, position: Vec3, color: [f32; 4], size: f32)` | Queue a point (3-axis cross with given half-arm length) |
+| `prepare` | `(&mut self)` | Convert all queued commands into line vertices, truncating at `MAX_DEBUG_VERTICES` |
+| `render` | `(&self, device: &RenderDevice, encoder: &mut CommandEncoder, target_view: &TextureView, depth_view: &TextureView, view_proj: &[[f32; 4]; 4])` | Upload vertices and render all debug lines in a single pass |
+| `clear` | `(&mut self)` | Clear all commands and vertices |
+| `command_count` | `(&self) -> usize` | Number of accumulated draw commands |
+| `vertex_count` | `(&self) -> usize` | Number of line vertices after `prepare()` |
+
+## Usage Example
+
+```rust
+use anvilkit_render::renderer::debug_renderer::DebugRenderer;
+use glam::Vec3;
+
+fn debug_draw_system(debug: &mut DebugRenderer) {
+    // Draw a red line
+    debug.draw_line(
+        Vec3::ZERO,
+        Vec3::new(10.0, 0.0, 0.0),
+        [1.0, 0.0, 0.0, 1.0],
+    );
+
+    // Draw a green bounding box
+    debug.draw_box(
+        Vec3::new(5.0, 1.0, 5.0),
+        Vec3::new(1.0, 1.0, 1.0),
+        [0.0, 1.0, 0.0, 1.0],
+    );
+
+    // Draw a blue sphere
+    debug.draw_sphere(
+        Vec3::new(0.0, 3.0, 0.0),
+        2.0,
+        [0.0, 0.0, 1.0, 1.0],
+        16,
+    );
+
+    // Draw a white point
+    debug.draw_point(
+        Vec3::new(0.0, 5.0, 0.0),
+        [1.0, 1.0, 1.0, 1.0],
+        0.1,
+    );
+}
+
+// In the render loop:
+debug.prepare();
+debug.render(&device, &mut encoder, &target_view, &depth_view, &view_proj);
+debug.clear();
+```
+
+## DebugVertex Format
+
+Each debug vertex is a `#[repr(C)]` struct suitable for GPU upload via `bytemuck`:
+
+| Field | Type | Offset | Shader Location | Description |
+|-------|------|--------|-----------------|-------------|
+| `position` | `[f32; 3]` | 0 | 0 | World-space position |
+| `color` | `[f32; 4]` | 12 | 1 | RGBA color |
+
+Total stride: 28 bytes per vertex. The vertex buffer layout uses `VertexStepMode::Vertex`.

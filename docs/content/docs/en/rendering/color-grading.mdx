@@ -1,0 +1,43 @@
+---
+title: Color Grading
+description: Exposure, contrast, saturation, white balance, and 3D LUT color grading
+---
+
+## Color Grading
+
+Final-stage color grading applied after tonemapping. Adjusts exposure, contrast, saturation, and white balance, with optional 3D LUT support for cinematic color transforms. The pass runs as a single fullscreen draw that reads the HDR buffer and writes the graded result.
+
+**Configuration** (`ColorGradingSettings` ECS resource):
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `enabled` | `false` | Toggle color grading on/off (zero GPU cost when off) |
+| `exposure` | `1.0` | Exposure multiplier (1.0 = no change) |
+| `contrast` | `1.0` | Contrast multiplier (1.0 = no change) |
+| `saturation` | `1.0` | Saturation multiplier (1.0 = no change, 0.0 = grayscale) |
+| `temperature` | `0.0` | Color temperature offset (-1.0 cool .. 1.0 warm) |
+| `tint` | `0.0` | Green-magenta tint (-1.0 .. 1.0) |
+| `lut_contribution` | `0.0` | LUT contribution blend (0.0 = none, 1.0 = full LUT) |
+
+### 3D LUT
+
+The color grading pipeline uses a 32x32x32 3D lookup table (`Rgba8Unorm`) for arbitrary color transforms. On initialization, an identity LUT is generated (each texel maps to its own coordinate as a color), producing no visible change. To apply a custom color grade, replace the LUT texture data with an exported `.cube` or baked LUT image.
+
+The `lut_contribution` parameter controls how much the LUT affects the final image, allowing smooth blending between the analytical color adjustments and the LUT-based grade.
+
+```rust
+use anvilkit_render::renderer::color_grading::ColorGradingSettings;
+
+// Warm cinematic look
+app.insert_resource(ColorGradingSettings {
+    enabled: true,
+    exposure: 1.1,
+    contrast: 1.05,
+    saturation: 0.9,
+    temperature: 0.2,
+    tint: 0.0,
+    lut_contribution: 0.0,
+});
+```
+
+**Files**: `color_grading.rs`, `color_grading.wgsl`

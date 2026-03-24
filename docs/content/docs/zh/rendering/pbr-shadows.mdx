@@ -1,0 +1,67 @@
+---
+title: PBR & Shadows
+description: Cook-Torrance PBR, Cascade Shadow Maps, skeletal animation
+---
+
+## Cascade Shadow Maps
+
+3-level cascade shadow maps replacing the single-level shadow map for distance-dependent shadow quality.
+
+**How it works**: The camera frustum is split into 3 slices at 10%, 30%, and 100% of the far plane. Each slice gets its own orthographic projection tightly fit around the frustum corners. The PBR fragment shader selects the tightest cascade per-fragment based on view-space Z depth.
+
+| Cascade | Coverage | Quality |
+|---------|----------|---------|
+| 0 | Near (0–10% of far) | Highest resolution |
+| 1 | Mid (10–30% of far) | Medium resolution |
+| 2 | Far (30–100% of far) | Lowest resolution |
+
+**GPU Layout** (`PbrSceneUniform`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cascade_view_projs` | `[mat4×4; 3]` | Per-cascade light-space view-projection matrices |
+| `cascade_splits` | `[f32; 4]` | `[split0, split1, split2, shadow_texel_size]` |
+| `emissive_factor.w` | `f32` | Cascade count (3.0) |
+
+Shadow map texture: `Depth32Float`, `2048×2048`, `depth_or_array_layers = 3` (`D2Array`).
+
+**Files**: `events.rs` (`compute_cascade_matrices`), `pbr.wgsl` (`calculate_shadow`)
+
+## PBR Material System
+
+Cook-Torrance specular BRDF with GGX distribution, Smith geometry, Fresnel-Schlick.
+
+**Bind Groups**:
+
+| Group | Contents |
+|-------|----------|
+| 0 | Scene uniform (992 bytes): model, view_proj, normal_matrix, camera_pos, lights[8], cascade matrices |
+| 1 | Material textures: base color, normal map, metallic-roughness, AO, emissive (5 textures + 5 samplers) |
+| 2 | IBL + Shadow: BRDF LUT, linear sampler, CSM shadow map array, comparison sampler |
+| 3 | Joint matrices (skinned only): `storage<array<mat4×4, 128>>` |
+
+## Skeletal Animation
+
+GPU Linear Blend Skinning with up to 128 joints per skeleton.
+
+**Vertex format** (`SkinnedVertex`, 72 bytes):
+
+| Attribute | Type | Location |
+|-----------|------|----------|
+| `position` | `vec3<f32>` | 0 |
+| `normal` | `vec3<f32>` | 1 |
+| `texcoord` | `vec2<f32>` | 2 |
+| `tangent` | `vec4<f32>` | 3 |
+| `joint_indices` | `u16×4` | 4 |
+| `joint_weights` | `f32×4` | 5 |
+
+**Skinning equation** (in `skinned_pbr.wgsl`):
+```
+skinned_pos = Σ(weight[i] × joints[index[i]] × position)  for i in 0..4
+```
+
+**Runtime flow**:
+1. `AnimationPlayer::advance(dt)` updates `current_time`
+2. `compute_bone_matrices(skeleton, player)` computes per-joint `global × inverse_bind`
+3. Upload `BoneMatrices` to storage buffer (bind group 3)
+4. Vertex shader applies LBS before model/view-proj transform

@@ -1,0 +1,105 @@
+---
+title: Physics
+description: Built-in AABB physics and Rapier 3D integration
+---
+
+AnvilKit provides two physics options: a lightweight built-in AABB system (default) and full rigid-body simulation via `rapier3d` (feature-gated).
+
+## Built-in AABB Physics (default)
+
+`PhysicsPlugin` registers velocity integration and N-squared AABB collision detection in `Update`.
+
+| Type | Kind | Description |
+|------|------|-------------|
+| `DeltaTime` | Resource | Frame delta in seconds (default 1/60) |
+| `Velocity` | Component | `linear: Vec3`, `angular: Vec3` |
+| `AabbCollider` | Component | `half_extents: Vec3` |
+| `CollisionEvents` | Resource | `Vec<CollisionEvent>` populated each frame |
+| `CollisionEvent` | Struct | `a: Entity`, `b: Entity` |
+
+| System | Description |
+|--------|-------------|
+| `velocity_integration_system` | `transform.translation += velocity.linear * dt` |
+| `collision_detection_system` | N-squared AABB overlap test, writes `CollisionEvents` |
+
+```rust
+use anvilkit_ecs::prelude::*;
+use anvilkit_ecs::physics::*;
+
+fn setup_physics(mut commands: Commands) {
+    // Dynamic moving box
+    commands.spawn((
+        Transform::from_xyz(0.0, 10.0, 0.0),
+        Velocity::linear(Vec3::new(0.0, -5.0, 0.0)),
+        AabbCollider::cube(0.5),
+    ));
+
+    // Static ground
+    commands.spawn((
+        Transform::from_xyz(0.0, 0.0, 0.0),
+        AabbCollider::new(Vec3::new(50.0, 0.1, 50.0)),
+    ));
+}
+
+fn read_collisions(events: Res<CollisionEvents>) {
+    for event in events.iter() {
+        log::info!("Hit: {:?} <-> {:?}", event.a, event.b);
+    }
+}
+```
+
+## Rapier Integration (feature `"rapier"`)
+
+Enable the `rapier` feature for full rigid-body simulation with `rapier3d`.
+
+`RapierPhysicsPlugin` registers four systems in `Update`:
+
+| System | Order | Description |
+|--------|-------|-------------|
+| `sync_to_rapier_system` | 1st | Creates rapier bodies from ECS `RigidBody`+`Collider`+`Transform` |
+| `step_physics_system` | 2nd | Steps the rapier simulation one tick |
+| `sync_from_rapier_system` | 3rd | Writes rapier positions back to ECS `Transform` |
+| `extract_collision_events_system` | 3rd | Populates `CollisionEvents` from rapier narrow-phase |
+
+| Type | Description |
+|------|-------------|
+| `RapierContext` | Resource holding all rapier state (rigid body set, collider set, pipeline, etc.) |
+| `RigidBody` | Component: `body_type`, `mass`, `gravity_scale`, `is_sensor`, damping |
+| `Collider` | Component: `shape` (Sphere/Cuboid/Capsule/TriMesh), `friction`, `restitution` |
+| `RaycastHit` | Result struct: `entity`, `point`, `normal`, `distance` |
+
+```rust
+use anvilkit_ecs::prelude::*;
+use anvilkit_ecs::physics::*;
+
+fn setup_rapier(mut commands: Commands) {
+    // Dynamic sphere
+    commands.spawn((
+        Transform::from_xyz(0.0, 10.0, 0.0),
+        RigidBody::dynamic(),
+        Collider::sphere(0.5),
+        Velocity::default(),
+    ));
+
+    // Static ground
+    commands.spawn((
+        Transform::default(),
+        RigidBody::fixed(),
+        Collider::cuboid(Vec3::new(50.0, 0.1, 50.0)),
+    ));
+}
+
+// Raycast query
+fn shoot_ray(ctx: Res<RapierContext>) {
+    if let Some(hit) = ctx.raycast(
+        Vec3::new(0.0, 5.0, 0.0), // origin
+        Vec3::NEG_Y,               // direction
+        100.0,                     // max distance
+    ) {
+        log::info!(
+            "Hit entity {:?} at {} (distance {})",
+            hit.entity, hit.point, hit.distance
+        );
+    }
+}
+```

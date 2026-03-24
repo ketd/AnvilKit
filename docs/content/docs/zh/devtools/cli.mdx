@@ -1,0 +1,80 @@
+---
+title: AnvilKit CLI
+description: Command-line tool — project scaffolding, code generation, diagnostics
+---
+
+`anvilkit-cli` is the AnvilKit developer command-line tool, providing project creation, code generation, and engineering diagnostics.
+
+## Installation
+
+```bash
+cargo install --path tools/anvilkit-cli
+```
+
+## Commands
+
+### new — Create New Project
+
+```bash
+anvilkit new my_game --template 3d-basic
+```
+
+| Template | Description |
+|----------|-------------|
+| `empty` | Empty project |
+| `3d-basic` | Basic 3D scene |
+| `topdown` | Top-down 2D |
+| `first-person` | First-person 3D |
+
+Automatically:
+1. Creates directory structure under `games/my_game/`
+2. Generates `main.rs`, `components.rs`, `resources.rs`, etc. from template
+3. Adds to workspace members
+4. Runs `cargo check` to verify
+
+### generate — Code Generation
+
+```bash
+# Generate a component
+anvilkit generate component PlayerHealth --fields "current:f32,max:f32"
+
+# Generate a resource
+anvilkit generate resource GameSettings
+
+# Generate a system
+anvilkit generate system apply_damage
+```
+
+Code generation includes identifier validation (Rust keyword checking, naming conventions).
+
+### run — Run Game
+
+```bash
+anvilkit run my_game
+# Equivalent to cargo run -p my_game
+```
+
+### doctor — Engineering Diagnostics
+
+```bash
+anvilkit doctor
+```
+
+Checks:
+- Rust toolchain version
+- Workspace configuration
+- Dependency health
+- Compilation check
+
+### check — Quick Check
+
+```bash
+anvilkit check
+# Equivalent to cargo check --workspace
+```
+
+### build — Build
+
+```bash
+anvilkit build my_game --release
+```

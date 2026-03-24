@@ -1,0 +1,152 @@
+---
+title: ECS & Plugins
+description: Application lifecycle, Plugin system, Schedules, Systems, and Bundles
+---
+
+`anvilkit-ecs` provides application lifecycle management, a Plugin system, System scheduling, and component bundles, all built on top of `bevy_ecs`.
+
+## App Lifecycle
+
+`App` is the application entry point. The typical setup flow is:
+
+```
+App::new() → add_plugins() → insert_resource() → add_systems() → run() / update()
+```
+
+```rust
+use anvilkit_ecs::prelude::*;
+use anvilkit_ecs::schedule::AnvilKitSchedule;
+
+let mut app = App::new();
+
+// 1. Register plugins (order matters — dependencies first)
+app.add_plugins(AnvilKitEcsPlugin);
+app.add_plugins(TransformPlugin);
+app.add_plugins(PhysicsPlugin);
+
+// 2. Insert global resources
+app.insert_resource(MyConfig { difficulty: 3 });
+app.init_resource::<Score>();          // uses Default
+
+// 3. Register systems into schedules
+app.add_systems(AnvilKitSchedule::Startup, setup_scene);
+app.add_systems(AnvilKitSchedule::Update, (player_input, enemy_ai));
+app.add_systems(AnvilKitSchedule::PostUpdate, cleanup);
+
+// 4a. Blocking main loop (calls update() in a loop)
+app.run();
+
+// 4b. Or drive updates manually
+for _ in 0..60 {
+    app.update(); // one frame
+}
+```
+
+### App API
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `new` | `() -> Self` | Create an App with all engine schedules pre-registered |
+| `add_plugins` | `<P: Plugin>(P) -> &mut Self` | Register a plugin (unique plugins are deduplicated) |
+| `add_systems` | `(impl ScheduleLabel, impl IntoSystemConfigs) -> &mut Self` | Add systems to a schedule |
+| `insert_resource` | `<R: Resource>(R) -> &mut Self` | Insert a typed global resource |
+| `init_resource` | `<R: Resource + FromWorld>() -> &mut Self` | Insert a resource using its Default/FromWorld impl |
+| `run` | `(&mut self)` | Blocking main loop until `exit()` is called |
+| `update` | `(&mut self)` | Execute one frame: Startup (first call only), then PreUpdate -> Update -> PostUpdate |
+| `exit` | `(&mut self)` | Signal the app to stop after the current frame |
+
+## Plugin
+
+Plugins encapsulate reusable engine functionality. Implement the `Plugin` trait:
+
+```rust
+pub struct PhysicsPlugin;
+
+impl Plugin for PhysicsPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<DeltaTime>()
+           .init_resource::<CollisionEvents>()
+           .add_systems(AnvilKitSchedule::Update, (
+               velocity_integration_system,
+               collision_detection_system.after(velocity_integration_system),
+           ));
+    }
+}
+```
+
+Unique plugins (default) are registered at most once; duplicate `add_plugins` calls are silently skipped.
+
+## Schedule Phases
+
+`App::update()` runs schedules in the following order every frame:
+
+| Schedule | Variant | Runs | Typical use |
+|----------|---------|------|-------------|
+| **Startup** | `AnvilKitSchedule::Startup` | Once, on first `update()` | Scene setup, asset loading |
+| **PreUpdate** | `AnvilKitSchedule::PreUpdate` | Every frame | Input polling, time update |
+| **Update** | `AnvilKitSchedule::Update` | Every frame | Game logic, AI, physics |
+| **PostUpdate** | `AnvilKitSchedule::PostUpdate` | Every frame | Transform propagation, render prep |
+| **Cleanup** | `AnvilKitSchedule::Cleanup` | Every frame | Temp data cleanup, diagnostics |
+
+## SystemSet
+
+Within a schedule, systems can be grouped by `AnvilKitSystemSet` for ordering:
+
+| SystemSet | Purpose |
+|-----------|---------|
+| `Input` | Keyboard, mouse, gamepad processing |
+| `Time` | Time/timer updates, frame-rate tracking |
+| `Physics` | Velocity integration, collision detection, physics step |
+| `GameLogic` | AI, state machines, game rules |
+| `Transform` | Hierarchy propagation, coordinate sync |
+| `Render` | Visibility culling, material updates, draw prep |
+| `Audio` | Sound playback, volume control |
+| `UI` | Layout, event handling, widget updates |
+| `Network` | Replication, serialization, connection management |
+| `Debug` | Gizmos, performance overlay, logging |
+
+```rust
+app.add_systems(AnvilKitSchedule::Update, (
+    apply_gravity.in_set(AnvilKitSystemSet::Physics),
+    check_collisions.in_set(AnvilKitSystemSet::Physics)
+        .after(apply_gravity),
+    handle_input.in_set(AnvilKitSystemSet::Input),
+));
+```
+
+## System
+
+Systems are plain functions whose parameters declare data access:
+
+```rust
+fn move_system(
+    time: Res<Time>,
+    mut query: Query<(&Velocity, &mut Transform)>,
+) {
+    let dt = time.delta_seconds();
+    for (vel, mut transform) in &mut query {
+        transform.translation += vel.linear * dt;
+    }
+}
+
+fn collision_handler(events: Res<CollisionEvents>) {
+    for event in events.iter() {
+        println!("Collision: {:?} <-> {:?}", event.a, event.b);
+    }
+}
+```
+
+## Bundle
+
+Bundles group components for batch spawning:
+
+```rust
+#[derive(Bundle)]
+struct PlayerBundle {
+    transform: Transform,
+    global_transform: GlobalTransform,
+    velocity: Velocity,
+    collider: AabbCollider,
+    player: Player,
+}
+```

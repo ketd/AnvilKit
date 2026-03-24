@@ -1,0 +1,32 @@
+---
+title: SSAO
+description: Screen-space ambient occlusion
+---
+
+## SSAO
+
+Screen-space ambient occlusion using hemisphere kernel sampling with depth-reconstructed normals.
+
+**Pipeline**: Depth buffer → reconstruct view-space normals (cross-product of screen-space derivatives) → hemisphere sampling with 4×4 noise texture rotation → half-resolution AO → 4×4 box blur → multiply into scene in tonemap.
+
+**Configuration** (`SsaoSettings` ECS resource):
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `enabled` | `true` | Toggle SSAO on/off |
+| `quality` | `Medium` | Sample count: `Low`=16, `Medium`=32, `High`=64 |
+| `radius` | `0.5` | Sampling hemisphere radius in view-space units |
+| `bias` | `0.025` | Depth bias to prevent self-occlusion on flat surfaces |
+| `intensity` | `1.0` | AO darkness multiplier (higher = stronger occlusion) |
+
+```rust
+use anvilkit_render::renderer::ssao::{SsaoSettings, SsaoQuality};
+
+app.insert_resource(SsaoSettings {
+    quality: SsaoQuality::High,
+    radius: 0.3,
+    ..Default::default()
+});
+```
+
+**Files**: `ssao.rs`, `ssao.wgsl`, `ssao_blur.wgsl`

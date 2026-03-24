@@ -1,0 +1,120 @@
+---
+title: Networking
+description: Network abstraction — config, events, reliable transport, ECS replication, client prediction
+---
+
+The networking module provides in-process abstractions for multiplayer game networking: configuration, event dispatch, reliable/unreliable channels, ECS state replication with delta compression, and client-side prediction with rollback.
+
+## Configuration
+
+### NetworkConfig (Resource)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `role` | `NetworkRole` | `Server` | `Server` or `Client` |
+| `bind_addr` | `String` | `"0.0.0.0:7777"` | Bind address |
+| `server_addr` | `Option<String>` | `None` | Server address (clients only) |
+| `tick_rate` | `u32` | `20` | Server ticks per second |
+| `max_clients` | `u32` | `32` | Maximum connected clients |
+
+### NetworkState (Resource)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `connected` | `bool` | Whether the connection is established |
+| `client_id` | `Option<u64>` | Assigned client ID |
+| `rtt_ms` | `f32` | Round-trip time (ms) |
+| `bytes_sent` / `bytes_received` | `u64` | Traffic counters |
+
+## Events
+
+`NetworkEvents` resource collects events each frame (cleared automatically by `network_events_cleanup_system`):
+
+| Event | Fields |
+|-------|--------|
+| `Connected` | `client_id: u64` |
+| `Disconnected` | `client_id: u64` |
+| `DataReceived` | `client_id: u64, channel: u8, data: Vec<u8>` |
+
+```rust
+use anvilkit_ecs::network::{NetworkEvents, NetworkEvent};
+
+fn handle_events(events: Res<NetworkEvents>) {
+    for event in events.iter() {
+        match event {
+            NetworkEvent::Connected { client_id } => { /* ... */ }
+            NetworkEvent::Disconnected { client_id } => { /* ... */ }
+            NetworkEvent::DataReceived { client_id, channel, data } => { /* ... */ }
+        }
+    }
+}
+```
+
+## Transport Channels
+
+### ReliableChannel
+
+Tracks sent packets with sequence numbers and ACK bitfields. Supports timeout-based retransmission.
+
+| Method | Description |
+|--------|-------------|
+| `send(data, current_time) -> PacketHeader` | Assign sequence, queue for ACK tracking |
+| `receive_ack(ack, ack_bitfield)` | Remove acknowledged packets |
+| `get_resend_packets(current_time, timeout)` | Get packets needing retransmission |
+
+### UnreliableChannel
+
+Assigns sequence numbers without ACK tracking — fire-and-forget delivery.
+
+## ECS Replication
+
+| Type | Description |
+|------|-------------|
+| `Replicated` | Marker component for entities to replicate |
+| `NetworkId` | Component with unique `id: u64` |
+| `ReplicationBuffer` | Resource collecting `(network_id, delta_bytes)` changes |
+
+### Delta Compression
+
+`DeltaEncoder` provides simple XOR-based delta compression:
+
+```rust
+use anvilkit_ecs::network::DeltaEncoder;
+
+let old_state = vec![10, 20, 30, 40];
+let new_state = vec![10, 25, 30, 50];
+let delta = DeltaEncoder::encode(&old_state, &new_state);
+let restored = DeltaEncoder::decode(&old_state, &delta);
+assert_eq!(restored, new_state);
+```
+
+## Client Prediction
+
+### PredictionState\<T\>
+
+Generic state history buffer for client-side prediction and server reconciliation:
+
+| Method | Description |
+|--------|-------------|
+| `push(tick, state)` | Store a snapshot |
+| `get(tick) -> Option<&T>` | Retrieve state at a tick |
+| `rollback_to(tick)` | Remove all states after the given tick |
+
+### InputBuffer (Resource)
+
+Stores serialized inputs per tick for replay during reconciliation:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `inputs` | `VecDeque<(u32, Vec<u8>)>` | (tick, serialized input) |
+| `current_tick` | `u32` | Current simulation tick |
+
+## NetworkPlugin
+
+Registers all network resources and the `network_events_cleanup_system` in `PreUpdate`:
+
+```rust
+use anvilkit_ecs::network::NetworkPlugin;
+
+app.add_plugins(NetworkPlugin);
+```

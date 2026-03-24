@@ -1,0 +1,112 @@
+---
+title: anvilkit-assets
+description: Asset pipeline — glTF loading, animation, procedural meshes
+---
+
+`anvilkit-assets` provides asset loading and management, including glTF models, skeletal animation, and procedural mesh generation.
+
+## glTF Loading
+
+```rust
+use anvilkit_assets::gltf_loader::GltfLoader;
+
+let scene = GltfLoader::load("assets/models/character.glb")?;
+
+for mesh in &scene.meshes {
+    println!("Mesh: {} vertices, {} triangles",
+        mesh.positions.len(),
+        mesh.indices.len() / 3
+    );
+}
+```
+
+## Skeletal Animation
+
+Three interpolation modes are supported:
+
+| Mode | Description |
+|------|-------------|
+| `Linear` | Linear interpolation (lerp for translation/scale, slerp for rotation) |
+| `Step` | Step function, no transition |
+| `CubicSpline` | Cubic spline interpolation for smoother curves |
+
+```rust
+use anvilkit_assets::animation::*;
+
+let mut player = AnimationPlayer::new();
+player.play(animation_clip, true); // loop = true
+player.update(dt);
+let joint_transforms = player.joint_transforms();
+```
+
+## Procedural Meshes
+
+```rust
+use anvilkit_assets::procedural::*;
+
+let cube = create_cube(1.0);
+let sphere = create_sphere(0.5, 32, 16);
+let plane = create_plane(10.0, 10.0);
+let cylinder = create_cylinder(0.5, 2.0, 16);
+
+mesh_data.validate()?; // Check attribute array consistency
+```
+
+## Materials
+
+```rust
+use anvilkit_assets::material::Material;
+
+let material = Material {
+    base_color: [1.0, 0.8, 0.6, 1.0],
+    metallic: 0.0,
+    roughness: 0.7,
+    albedo_texture: Some(texture_handle),
+    normal_texture: None,
+    metallic_roughness_texture: None,
+};
+```
+
+## Asset Server
+
+Supports both synchronous and asynchronous loading:
+
+```rust
+use anvilkit_assets::asset_server::AssetServer;
+
+let mut server = AssetServer::new("assets/");
+
+// Synchronous: register intent (no I/O)
+let handle = server.load::<Mesh>("models/tree.glb");
+
+// Asynchronous: load file in background thread
+let async_handle = server.load_async::<Vec<u8>>("textures/atlas.png");
+
+// In your game loop: poll for completed loads
+server.process_completed();
+for result in server.drain_completed() {
+    match result.data {
+        Ok(bytes) => { /* Parse and use the loaded data */ },
+        Err(err) => { /* Handle error */ },
+    }
+}
+```
+
+## Hot Reload
+
+File watching for automatic asset refresh during development (requires `hot-reload` feature):
+
+```rust
+use anvilkit_assets::hot_reload::FileWatcher;
+
+let watcher = FileWatcher::new("assets").unwrap();
+
+// In your game loop:
+for path in watcher.poll_changes() {
+    if FileWatcher::is_shader(&path) {
+        // Rebuild render pipeline with new shader
+    } else if FileWatcher::is_texture(&path) {
+        // Re-upload texture to GPU
+    }
+}
+```

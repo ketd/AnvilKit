@@ -1,0 +1,41 @@
+---
+title: Pipeline Overview
+description: Multi-pass HDR rendering pipeline architecture
+---
+
+`anvilkit-render` is AnvilKit's core rendering module, providing unified 2D/3D rendering capabilities based on `wgpu 0.19`.
+
+## Render Pipeline
+
+The engine runs a multi-pass HDR pipeline per frame:
+
+```
+Pass 0  CSM Shadow (×3 cascades)     → D2Array depth texture
+Pass 1  HDR Scene (PBR + MSAA 4×)    → Rgba16Float RT (resolve)
+Pass 2  SSAO (half-res + blur)        → R8Unorm AO texture
+Pass 3  Bloom (downsample ×5 + upsample ×4) → Rgba16Float mip[0]
+Pass 4  Tonemap (HDR × AO + Bloom → ACES Filmic → sRGB) → Swapchain
+```
+
+All passes share a single `CommandEncoder` per frame for minimal CPU overhead.
+
+## Resource Management
+
+`RenderAssets` manages GPU resources through a Handle system:
+
+```rust
+let handle = render_assets.upload_texture(device, queue, &texture_data);
+let mesh_handle = render_assets.upload_mesh(device, &mesh_data);
+
+if let Some(texture) = render_assets.get_texture(handle) {
+    // Use texture
+}
+```
+
+`BufferPool` provides efficient GPU buffer reuse:
+
+```rust
+let (buffer, capacity) = pool.acquire(device, needed_size, BufferUsages::VERTEX);
+// ... use buffer ...
+pool.release(buffer, capacity, BufferUsages::VERTEX);
+```

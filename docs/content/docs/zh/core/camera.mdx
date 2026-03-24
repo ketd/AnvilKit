@@ -1,0 +1,47 @@
+---
+title: anvilkit-camera
+description: Camera system — controllers, effects, gimbal lock protection
+---
+
+`anvilkit-camera` provides a flexible camera control system.
+
+## CameraController
+
+```rust
+use anvilkit_camera::controller::CameraController;
+
+let controller = CameraController {
+    mode: CameraMode::FirstPerson,
+    move_speed: 10.0,
+    mouse_sensitivity: 0.003,
+    base_fov: 70.0, // Base field of view (degrees)
+    ..Default::default()
+};
+```
+
+The built-in `camera_controller_system` reads mouse delta from `InputState::mouse_delta()`, which the engine populates automatically from `DeviceEvent::MouseMotion`. No manual mouse delta management is needed.
+
+## Camera Modes
+
+| Mode | Description |
+|------|-------------|
+| `FirstPerson` | First-person — camera follows player's viewpoint |
+| `ThirdPerson` | Third-person — camera follows target with offset |
+| `Free` | Free fly — unconstrained 6DOF movement |
+
+## Camera Effects
+
+`CameraEffects` provides head bob, screen shake, and FOV transitions:
+
+```rust
+use anvilkit_camera::effects::CameraEffects;
+
+let mut fx = CameraEffects::default();
+fx.head_bob_enabled = true;
+fx.add_shake(0.2);          // Landing impact
+fx.fov_target = 10.0;       // Sprint FOV offset (smoothly interpolated)
+```
+
+## Gimbal Lock Protection
+
+Third-person look-at automatically handles gimbal lock — when the camera approaches directly above or below the target, an alternative up vector is used to prevent flipping.

@@ -5,11 +5,16 @@
     "index",
     "getting-started",
     "architecture",
-    "---模块---",
-    "...crates",
+    "---渲染---",
+    "...rendering",
+    "---游戏性---",
+    "...gameplay",
+    "---核心---",
+    "...core",
+    "---开发工具---",
+    "...devtools",
     "---游戏示例---",
     "...games",
-    "---工具---",
-    "...tools"
+    "api-reference"
   ]
 }

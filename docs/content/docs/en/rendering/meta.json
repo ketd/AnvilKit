@@ -1,0 +1,4 @@
+{
+  "title": "Rendering",
+  "pages": ["pipeline", "pbr-shadows", "bloom", "ssao", "dof", "motion-blur", "color-grading"]
+}

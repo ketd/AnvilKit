@@ -1,0 +1,34 @@
+---
+title: Motion Blur
+description: Velocity-buffer based per-pixel motion blur
+---
+
+## Motion Blur
+
+Per-pixel motion blur derived from a screen-space velocity buffer. The effect reconstructs per-pixel motion vectors from the current and previous frame's view-projection matrices, then blurs the HDR image along those vectors for a cinematic look during fast camera or object movement.
+
+**Pipeline**: 2-pass fullscreen process:
+
+1. **Velocity Pass** -- Reads the depth buffer and reprojects each pixel using the previous frame's view-projection matrix and the current frame's inverse view-projection matrix. Outputs per-pixel screen-space velocity into an `Rg16Float` texture at full resolution.
+2. **Blur Pass** -- Samples the HDR color buffer along the velocity vector for each pixel, accumulating `samples` taps scaled by `intensity`. Writes the blurred result to an `Rgba16Float` output texture.
+
+**Configuration** (`MotionBlurSettings` ECS resource):
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `enabled` | `false` | Toggle motion blur on/off (zero GPU cost when off) |
+| `intensity` | `0.5` | Blur intensity multiplier (higher = longer streaks) |
+| `samples` | `8` | Number of samples along the velocity vector per pixel |
+
+```rust
+use anvilkit_render::renderer::motion_blur::MotionBlurSettings;
+
+// Enable motion blur with higher sample count
+app.insert_resource(MotionBlurSettings {
+    enabled: true,
+    intensity: 0.6,
+    samples: 12,
+});
+```
+
+**Files**: `motion_blur.rs`, `motion_blur.wgsl`

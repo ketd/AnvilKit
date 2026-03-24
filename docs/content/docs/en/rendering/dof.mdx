@@ -1,0 +1,37 @@
+---
+title: Depth of Field
+description: Circle-of-confusion based depth of field post-processing
+---
+
+## Depth of Field
+
+Depth of field (DOF) simulates camera lens defocus blur, keeping a focal plane sharp while smoothly blurring foreground and background objects based on their distance from the focus point. The implementation uses a Circle of Confusion (CoC) approach.
+
+**Pipeline**: 3-pass fullscreen process:
+
+1. **CoC Pass** -- Reads the depth buffer and computes a per-pixel Circle of Confusion radius into an `R16Float` texture at full resolution. Pixels at `focus_distance` get zero CoC; pixels further from the focal plane receive larger values.
+2. **Bokeh Blur Pass** -- Samples the HDR color buffer weighted by the CoC texture and writes to a half-resolution `Rgba16Float` blur target, producing the characteristic bokeh disc shape.
+3. **Composite Pass** -- Blends the sharp HDR image with the blurred result using the CoC as an interpolation mask, producing the final DOF output.
+
+**Configuration** (`DofSettings` ECS resource):
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `enabled` | `false` | Toggle DOF on/off (zero GPU cost when off) |
+| `focus_distance` | `10.0` | Distance to the focus plane in world units |
+| `focus_range` | `5.0` | Range around `focus_distance` that remains in sharp focus |
+| `bokeh_radius` | `4.0` | Maximum blur radius in pixels |
+
+```rust
+use anvilkit_render::renderer::dof::DofSettings;
+
+// Enable DOF with custom focus
+app.insert_resource(DofSettings {
+    enabled: true,
+    focus_distance: 8.0,
+    focus_range: 3.0,
+    bokeh_radius: 6.0,
+});
+```
+
+**Files**: `dof.rs`, `dof.wgsl`

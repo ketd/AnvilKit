@@ -1,0 +1,89 @@
+---
+title: Scene & Serialization
+description: Transform hierarchy, scene save/load with RON format
+---
+
+## Transform Hierarchy
+
+`TransformPlugin` registers `sync_simple_transforms` and `propagate_transforms` in **PostUpdate** under `AnvilKitSystemSet::Transform`.
+
+### Core Components
+
+| Component | Description |
+|-----------|-------------|
+| `Transform` | Local transform relative to parent (translation, rotation, scale) |
+| `GlobalTransform` | World-space transform matrix, computed by the propagation system |
+| `Parent(Entity)` | Reference to parent entity |
+| `Children` | List of child entities |
+
+### Spawning a Parent-Child Hierarchy
+
+```rust
+use anvilkit_ecs::prelude::*;
+use glam::Vec3;
+
+fn setup_hierarchy(mut commands: Commands) {
+    // Spawn parent at world position (10, 0, 0)
+    let parent = commands.spawn((
+        Transform::from_xyz(10.0, 0.0, 0.0),
+        GlobalTransform::default(),
+        Children::empty(),
+    )).id();
+
+    // Spawn child offset (5, 0, 0) from parent
+    let child = commands.spawn((
+        Transform::from_xyz(5.0, 0.0, 0.0),
+        GlobalTransform::default(),
+        Parent::new(parent),
+    )).id();
+
+    // After propagation, child's GlobalTransform.translation() == (15, 0, 0)
+}
+```
+
+### TransformHierarchy Utilities
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `set_parent` | `(Commands, child: Entity, parent: Entity)` | Establish parent-child relationship |
+| `remove_parent` | `(Commands, child: Entity)` | Detach child from parent |
+| `get_ancestors` | `(&World, Entity) -> Vec<Entity>` | Walk up the hierarchy to root |
+| `get_descendants` | `(&World, Entity) -> Vec<Entity>` | Recursively collect all descendants |
+
+## Scene Serialization (feature `"serde"`)
+
+`SceneSerializer` saves/loads entities marked with the `Serializable` component to RON files.
+
+| Type | Description |
+|------|-------------|
+| `Serializable` | Marker component -- only entities with this are serialized |
+| `SceneSerializer::save` | `(&mut World, path: &str) -> Result<usize, String>` -- returns entity count |
+| `SceneSerializer::load` | `(&mut World, path: &str) -> Result<usize, String>` -- spawns entities, returns count |
+
+```rust
+use anvilkit_ecs::prelude::*;
+use anvilkit_ecs::scene::{SceneSerializer, Serializable};
+
+// Mark entities for serialization
+fn setup(mut commands: Commands) {
+    commands.spawn((
+        Transform::from_xyz(1.0, 2.0, 3.0),
+        GlobalTransform::default(),
+        Serializable,
+    ));
+}
+
+// Save the scene
+fn save_game(world: &mut World) {
+    let count = SceneSerializer::save(world, "scene.ron").unwrap();
+    log::info!("Saved {} entities", count);
+}
+
+// Load into a fresh world
+fn load_game(world: &mut World) {
+    let count = SceneSerializer::load(world, "scene.ron").unwrap();
+    log::info!("Loaded {} entities", count);
+}
+```
+
+The RON file stores a `SerializedScene { version: u32, entities: Vec<SerializedEntity> }` where each entity captures its `Transform` as `TransformData { translation: [f32; 3], rotation: [f32; 4], scale: [f32; 3] }`.

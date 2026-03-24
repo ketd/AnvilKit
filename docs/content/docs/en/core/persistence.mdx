@@ -1,0 +1,158 @@
+---
+title: Persistence
+description: Settings, SaveManager, and WorldStorage for game data
+---
+
+## Persistence (feature `"persistence"`)
+
+The persistence module provides three layers: player **Settings**, multi-slot **SaveManager**, and raw key-value **WorldStorage**.
+
+### Settings
+
+Typed configuration stored as RON. Falls back to defaults when the file is missing or corrupt.
+
+#### Sub-structs
+
+**GraphicsSettings**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `width` | `u32` | `1280` | Window width |
+| `height` | `u32` | `720` | Window height |
+| `fullscreen` | `bool` | `false` | Fullscreen mode |
+| `vsync` | `bool` | `true` | Vertical sync |
+| `msaa` | `u32` | `4` | MSAA samples (1/2/4) |
+| `bloom` | `bool` | `true` | Bloom post-process |
+| `ssao` | `bool` | `true` | Screen-space AO |
+| `shadow_quality` | `u32` | `2` | 0=off, 1=low, 2=med, 3=high |
+
+**AudioSettings**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `master_volume` | `f32` | `1.0` | Master volume 0.0..1.0 |
+| `music_volume` | `f32` | `0.8` | Music volume 0.0..1.0 |
+| `sfx_volume` | `f32` | `1.0` | SFX volume 0.0..1.0 |
+
+**InputSettings**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `mouse_sensitivity` | `f32` | `0.003` | Mouse sensitivity multiplier |
+| `invert_y` | `bool` | `false` | Invert Y axis |
+| `action_overrides` | `HashMap<String, String>` | `{}` | Custom key rebindings |
+
+#### Settings API
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `load` | `(path: &Path) -> Self` | Load from RON; returns defaults on error |
+| `save` | `(&self, path: &Path) -> Result<(), String>` | Write to RON (creates dirs) |
+| `default_path` | `() -> PathBuf` | `"config/settings.ron"` |
+
+```rust
+use anvilkit_core::persistence::Settings;
+
+// Load (or default)
+let mut settings = Settings::load(&Settings::default_path());
+settings.graphics.vsync = false;
+settings.audio.master_volume = 0.7;
+settings.save(&Settings::default_path()).unwrap();
+```
+
+### SaveManager
+
+Manages multiple save slots, each with metadata (`meta.ron`) and a `data/` directory for `WorldStorage`.
+
+#### Directory Layout
+
+```
+saves/
+  quick/
+    meta.ron
+    data/        <-- WorldStorage root
+  slot_1/
+    meta.ron
+    data/
+```
+
+#### SaveSlotInfo Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `String` | Slot name (e.g. `"quick"`, `"slot_1"`) |
+| `timestamp` | `u64` | Unix timestamp (seconds) |
+| `play_time_secs` | `f64` | Cumulative play time |
+| `game_version` | `String` | Game version string |
+| `metadata` | `HashMap<String, String>` | Game-specific metadata |
+
+#### SaveManager API
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `new` | `(dir: impl AsRef<Path>, version: &str) -> Result<Self, String>` | Create/open saves directory |
+| `save` | `(&self, slot: &str, play_time: f64, metadata: HashMap) -> Result<PathBuf, String>` | Write metadata, return `data/` path |
+| `list_saves` | `(&self) -> Vec<SaveSlotInfo>` | All slots sorted newest-first |
+| `get_save_info` | `(&self, slot: &str) -> Option<SaveSlotInfo>` | Read one slot's metadata |
+| `delete` | `(&self, slot: &str) -> Result<(), String>` | Remove slot directory recursively |
+| `slot_data_path` | `(&self, slot: &str) -> PathBuf` | Get `data/` path without writing metadata |
+
+```rust
+use anvilkit_core::persistence::SaveManager;
+use std::collections::HashMap;
+
+let mgr = SaveManager::new("saves", "1.0.0").unwrap();
+
+// Create a save
+let mut meta = HashMap::new();
+meta.insert("level".into(), "3".into());
+let data_path = mgr.save("slot_1", 3600.0, meta).unwrap();
+
+// List saves
+for info in mgr.list_saves() {
+    println!("{}: played {}s", info.name, info.play_time_secs);
+}
+
+// Delete
+mgr.delete("slot_1").unwrap();
+```
+
+### WorldStorage
+
+File-system key-value store. Each key maps to a file under the base directory. Slashes in keys create subdirectories. Writes are atomic (write to `.tmp` then rename).
+
+#### API
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `open` | `(path: impl AsRef<Path>) -> Result<Self, String>` | Open/create the storage directory |
+| `get` | `(&self, key: &str) -> Option<Vec<u8>>` | Read value; `None` if missing |
+| `put` | `(&self, key: &str, value: &[u8]) -> Result<(), String>` | Write atomically (tmp + rename) |
+| `delete` | `(&self, key: &str) -> Result<(), String>` | Remove a key |
+| `keys_with_prefix` | `(&self, prefix: &str) -> Vec<String>` | List keys starting with prefix |
+| `batch_put` | `(&self, entries: &[(&str, &[u8])]) -> Result<(), String>` | Write multiple keys (each atomic) |
+| `path` | `(&self) -> &Path` | Base directory |
+
+```rust
+use anvilkit_core::persistence::WorldStorage;
+
+let storage = WorldStorage::open("saves/slot_1/data").unwrap();
+
+// Store chunk data
+storage.put("chunk/0/0", &bincode::serialize(&chunk).unwrap()).unwrap();
+
+// Read it back
+if let Some(data) = storage.get("chunk/0/0") {
+    let chunk: Chunk = bincode::deserialize(&data).unwrap();
+}
+
+// Enumerate all chunks
+let keys = storage.keys_with_prefix("chunk/");
+println!("Stored {} chunks", keys.len());
+
+// Batch write
+storage.batch_put(&[
+    ("meta/version", b"1"),
+    ("meta/seed", b"42"),
+]).unwrap();
+```

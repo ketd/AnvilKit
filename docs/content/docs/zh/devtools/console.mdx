@@ -1,0 +1,107 @@
+---
+title: Debug Console
+description: In-game debug console with command registration and execution
+---
+
+## Overview
+
+`DebugConsole` is an in-game debug console that allows registering and executing named commands at runtime. Output is stored in a scrollable log with categorized entries (info, warning, error, command result). The console can be toggled visible/hidden for overlay rendering.
+
+The console is provided by the `anvilkit-ecs` crate:
+
+```rust
+use anvilkit_ecs::console::DebugConsole;
+```
+
+`DebugConsole` is an ECS `Resource` that stores registered commands, command history, and an output log.
+
+## Built-in Commands
+
+| Command | Description |
+|---------|-------------|
+| `help` | List all available commands with descriptions |
+| `clear` | Clear the console output log |
+
+## DebugConsole API
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `new` | `() -> Self` | Create a new console with built-in `help` and `clear` commands |
+| `register` | `(&mut self, name: &str, description: &str, handler: F)` | Register a command. `handler` is `Fn(&[&str]) -> String + Send + Sync + 'static` |
+| `execute` | `(&mut self, input: &str)` | Execute a command string (command name followed by space-separated arguments) |
+| `toggle` | `(&mut self)` | Toggle console visibility on/off |
+| `log` | `(&mut self, text: &str)` | Log an informational message to the output |
+| `warn` | `(&mut self, text: &str)` | Log a warning message to the output |
+| `error` | `(&mut self, text: &str)` | Log an error message to the output |
+
+### Public Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commands` | `HashMap<String, ConsoleCommand>` | Registered commands keyed by name |
+| `history` | `Vec<String>` | Command input history (most recent last) |
+| `output` | `Vec<ConsoleOutput>` | Output log entries |
+| `visible` | `bool` | Whether the console overlay is visible |
+| `input_buffer` | `String` | Current input buffer text |
+| `max_history` | `usize` | Maximum history entries (default: 100) |
+| `max_output` | `usize` | Maximum output entries (default: 200) |
+
+## OutputKind
+
+`OutputKind` categorizes console output entries:
+
+| Variant | Description |
+|---------|-------------|
+| `Info` | Informational message |
+| `Warning` | Warning message |
+| `Error` | Error message |
+| `CommandResult` | Result of a command execution |
+
+## ConsolePlugin
+
+`ConsolePlugin` is an ECS `Plugin` that inserts a `DebugConsole` resource into the world on build:
+
+```rust
+use anvilkit_ecs::console::ConsolePlugin;
+
+app.add_plugin(ConsolePlugin);
+```
+
+## Usage Example
+
+```rust
+use anvilkit_ecs::console::DebugConsole;
+
+let mut console = DebugConsole::new();
+
+// Register custom commands
+console.register("greet", "Say hello to someone", |args| {
+    if let Some(name) = args.first() {
+        format!("Hello, {}!", name)
+    } else {
+        "Hello, world!".to_string()
+    }
+});
+
+console.register("tp", "Teleport to x y z", |args| {
+    if args.len() == 3 {
+        format!("Teleported to ({}, {}, {})", args[0], args[1], args[2])
+    } else {
+        "Usage: tp <x> <y> <z>".to_string()
+    }
+});
+
+// Execute commands
+console.execute("greet Claude");   // Output: "Hello, Claude!"
+console.execute("help");           // Lists all commands
+console.execute("unknown_cmd");    // Output: "Unknown command: 'unknown_cmd'" (Error)
+
+// Log messages
+console.log("Game started");
+console.warn("Low FPS detected");
+console.error("Failed to load asset");
+
+// Toggle visibility
+console.toggle(); // Show
+console.toggle(); // Hide
+```
