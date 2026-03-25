@@ -47,7 +47,7 @@ pub fn ball_collision_system(
 
                 // Only resolve if balls are approaching
                 if rel_speed > 0.0 {
-                    let impulse = normal * rel_speed * restitution;
+                    let impulse = normal * rel_speed * (1.0 + restitution) / 2.0;
                     data[i].2 -= impulse;
                     data[j].2 += impulse;
                 }

@@ -365,7 +365,13 @@ impl UiLayoutEngine {
 
         for (entity, node) in nodes {
             let style = Self::convert_style(&node.style, node);
-            let taffy_node = self.taffy.new_leaf(style).unwrap();
+            let taffy_node = match self.taffy.new_leaf(style) {
+                Ok(node) => node,
+                Err(e) => {
+                    log::error!("Taffy layout error: {:?}", e);
+                    continue;
+                }
+            };
             children.push((*entity, taffy_node));
         }
 
@@ -382,7 +388,13 @@ impl UiLayoutEngine {
                 ..Default::default()
             },
             &child_ids,
-        ).unwrap();
+        ).unwrap_or_else(|e| {
+            log::error!("Taffy root layout error: {:?}", e);
+            // Return a fallback node — create an empty leaf as a placeholder root
+            self.taffy.new_leaf(tf::Style::default()).unwrap_or_else(|_| {
+                panic!("Taffy failed to create even a fallback leaf node");
+            })
+        });
 
         let available = tf::Size {
             width: tf::AvailableSpace::Definite(container_width),
@@ -617,7 +629,7 @@ impl UiRenderer {
                 needed,
             ));
         }
-        let vb = &self.cached_vb.as_ref().unwrap().0;
+        let vb = &self.cached_vb.as_ref().expect("buffer must be initialized above").0;
         device.queue().write_buffer(vb, 0, data);
 
         {

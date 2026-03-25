@@ -70,7 +70,7 @@ pub struct App {
     /// Startup 是否已经运行
     has_started: bool,
     /// 已注册的唯一插件类型名（防止重复注册）
-    registered_plugins: HashSet<String>,
+    pub(crate) registered_plugins: HashSet<String>,
 }
 
 impl Default for App {
@@ -94,12 +94,6 @@ impl App {
 
         // 初始化基础调度器
         world.init_resource::<Schedules>();
-
-        // Pre-register all engine schedules so try_run_schedule doesn't fail
-        world.add_schedule(Schedule::new(AnvilKitSchedule::Startup));
-        world.add_schedule(Schedule::new(AnvilKitSchedule::PreUpdate));
-        world.add_schedule(Schedule::new(AnvilKitSchedule::Update));
-        world.add_schedule(Schedule::new(AnvilKitSchedule::PostUpdate));
 
         Self {
             world,
@@ -248,7 +242,6 @@ impl App {
     /// }
     /// ```
     pub fn update(&mut self) {
-        // 首次调用运行 Startup
         if !self.has_started {
             self.has_started = true;
             if let Err(e) = self.world.try_run_schedule(AnvilKitSchedule::Startup) {
@@ -256,7 +249,9 @@ impl App {
             }
         }
 
-        // 每帧运行 PreUpdate → Update → PostUpdate
+        if let Err(e) = self.world.try_run_schedule(AnvilKitSchedule::Main) {
+            log::error!("Main schedule 执行失败: {:?}", e);
+        }
         if let Err(e) = self.world.try_run_schedule(AnvilKitSchedule::PreUpdate) {
             log::error!("PreUpdate schedule 执行失败: {:?}", e);
         }
@@ -265,6 +260,14 @@ impl App {
         }
         if let Err(e) = self.world.try_run_schedule(AnvilKitSchedule::PostUpdate) {
             log::error!("PostUpdate schedule 执行失败: {:?}", e);
+        }
+        if let Err(e) = self.world.try_run_schedule(AnvilKitSchedule::Cleanup) {
+            log::error!("Cleanup schedule 执行失败: {:?}", e);
+        }
+
+        // Check AppExit resource and propagate to App::should_exit
+        if self.world.get_resource::<AppExit>().map_or(false, |e| e.should_exit()) {
+            self.should_exit = true;
         }
     }
 

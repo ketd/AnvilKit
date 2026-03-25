@@ -5,6 +5,7 @@
 use serde::{Serialize, Deserialize};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+use crate::error::AnvilKitError;
 
 /// 存档槽位信息（元数据，不含完整数据）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,10 +47,10 @@ pub struct SaveManager {
 
 impl SaveManager {
     /// 创建存档管理器。
-    pub fn new(saves_dir: impl AsRef<Path>, game_version: &str) -> Result<Self, String> {
+    pub fn new(saves_dir: impl AsRef<Path>, game_version: &str) -> Result<Self, AnvilKitError> {
         let saves_dir = saves_dir.as_ref().to_path_buf();
         std::fs::create_dir_all(&saves_dir)
-            .map_err(|e| format!("Failed to create saves dir: {}", e))?;
+            .map_err(|e| AnvilKitError::generic(format!("Failed to create saves dir: {}", e)))?;
         Ok(Self {
             saves_dir,
             game_version: game_version.to_string(),
@@ -83,11 +84,11 @@ impl SaveManager {
         slot_name: &str,
         play_time_secs: f64,
         metadata: std::collections::HashMap<String, String>,
-    ) -> Result<PathBuf, String> {
+    ) -> Result<PathBuf, AnvilKitError> {
         let slot_dir = self.saves_dir.join(slot_name);
         let data_dir = slot_dir.join("data");
         std::fs::create_dir_all(&data_dir)
-            .map_err(|e| format!("Failed to create save slot dir: {}", e))?;
+            .map_err(|e| AnvilKitError::generic(format!("Failed to create save slot dir: {}", e)))?;
 
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -103,9 +104,9 @@ impl SaveManager {
         };
 
         let ron_str = ron::ser::to_string_pretty(&info, ron::ser::PrettyConfig::default())
-            .map_err(|e| format!("Save meta serialize failed: {}", e))?;
+            .map_err(|e| AnvilKitError::serialization(format!("Save meta serialize failed: {}", e)))?;
         std::fs::write(slot_dir.join("meta.ron"), ron_str)
-            .map_err(|e| format!("Failed to write save meta: {}", e))?;
+            .map_err(|e| AnvilKitError::generic(format!("Failed to write save meta: {}", e)))?;
 
         Ok(data_dir)
     }
@@ -123,11 +124,11 @@ impl SaveManager {
     }
 
     /// 删除存档槽位（包括所有数据）。
-    pub fn delete(&self, slot_name: &str) -> Result<(), String> {
+    pub fn delete(&self, slot_name: &str) -> Result<(), AnvilKitError> {
         let slot_dir = self.saves_dir.join(slot_name);
         if slot_dir.exists() {
             std::fs::remove_dir_all(&slot_dir)
-                .map_err(|e| format!("Failed to delete save '{}': {}", slot_name, e))?;
+                .map_err(|e| AnvilKitError::generic(format!("Failed to delete save '{}': {}", slot_name, e)))?;
         }
         Ok(())
     }

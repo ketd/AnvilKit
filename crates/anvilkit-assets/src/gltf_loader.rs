@@ -227,7 +227,10 @@ pub fn load_gltf_scene_multi(path: impl AsRef<Path>) -> Result<crate::scene::Mul
 
             let normals: Vec<Vec3> = reader.read_normals()
                 .map(|n| n.map(Vec3::from).collect())
-                .unwrap_or_else(|| vec![Vec3::Z; positions.len()]);
+                .unwrap_or_else(|| {
+                    log::warn!("Mesh missing normals, using default up direction");
+                    vec![Vec3::Y; positions.len()]
+                });
 
             let texcoords: Vec<Vec2> = reader.read_tex_coords(0)
                 .map(|tc| tc.into_f32().map(Vec2::from).collect())
@@ -375,12 +378,33 @@ fn convert_to_rgba8(image: &gltf::image::Data) -> Option<Vec<u8>> {
         gltf::image::Format::R8G8B8A8 => Some(image.pixels.clone()),
         gltf::image::Format::R8G8B8 => {
             // RGB -> RGBA
-            let pixel_count = (image.width * image.height) as usize;
-            let mut rgba = Vec::with_capacity(pixel_count * 4);
-            for chunk in image.pixels.chunks(3) {
+            let mut rgba = Vec::with_capacity(image.pixels.len() / 3 * 4);
+            for chunk in image.pixels.chunks_exact(3) {
                 rgba.push(chunk[0]);
                 rgba.push(chunk[1]);
                 rgba.push(chunk[2]);
+                rgba.push(255);
+            }
+            Some(rgba)
+        }
+        gltf::image::Format::R8 => {
+            // Grayscale → RGBA
+            let mut rgba = Vec::with_capacity(image.pixels.len() * 4);
+            for &v in &image.pixels {
+                rgba.push(v);
+                rgba.push(v);
+                rgba.push(v);
+                rgba.push(255);
+            }
+            Some(rgba)
+        }
+        gltf::image::Format::R8G8 => {
+            // RG → RGBA (common for metallic-roughness)
+            let mut rgba = Vec::with_capacity(image.pixels.len() * 2);
+            for chunk in image.pixels.chunks_exact(2) {
+                rgba.push(chunk[0]);
+                rgba.push(chunk[1]);
+                rgba.push(0);
                 rgba.push(255);
             }
             Some(rgba)

@@ -490,7 +490,7 @@ impl SpriteRenderer {
                 needed,
             ));
         }
-        let vb = &self.cached_vb.as_ref().unwrap().0;
+        let vb = &self.cached_vb.as_ref().expect("buffer must be initialized above").0;
         device.queue().write_buffer(vb, 0, data);
 
         {

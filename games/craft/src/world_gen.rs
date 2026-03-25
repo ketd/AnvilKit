@@ -40,9 +40,9 @@ impl WorldGenerator {
                 let wz = (base_z + lz as i32) as f64;
 
                 // Two-octave simplex: base height + amplitude modulation
-                let h1 = self.noise_height.get([wx * 0.005, wz * 0.005]);
-                let amp = self.noise_detail.get([wx * 0.01, wz * 0.01]);
-                let h = 32.0 + h1 * 16.0 + amp * 8.0;
+                let h1 = self.noise_height.get([wx * config::NOISE_HEIGHT_SCALE, wz * config::NOISE_HEIGHT_SCALE]);
+                let amp = self.noise_detail.get([wx * config::NOISE_DETAIL_SCALE, wz * config::NOISE_DETAIL_SCALE]);
+                let h = config::BASE_HEIGHT + h1 * config::HEIGHT_AMP1 + amp * config::HEIGHT_AMP2;
                 height_map[lx][lz] = h as i32;
             }
         }
@@ -99,8 +99,8 @@ impl WorldGenerator {
                     }
                     // Preserve bedrock layer (y=0..1)
                     let wy = y as f64;
-                    let cave_val = self.noise_cave.get([wx * 0.05, wy * 0.05, wz * 0.05]);
-                    if cave_val > 0.3 {
+                    let cave_val = self.noise_cave.get([wx * config::CAVE_NOISE_SCALE, wy * config::CAVE_NOISE_SCALE, wz * config::CAVE_NOISE_SCALE]);
+                    if cave_val > config::CAVE_THRESHOLD {
                         // Carve cave: fill with water if below water level, else air
                         if yi <= water_level {
                             chunk.set(lx, y, lz, BlockType::Water);
@@ -122,8 +122,8 @@ impl WorldGenerator {
                     continue;
                 }
 
-                let tree_val = self.noise_tree.get([wx * 0.3, wz * 0.3]);
-                if tree_val > 0.84 {
+                let tree_val = self.noise_tree.get([wx * config::TREE_NOISE_SCALE, wz * config::TREE_NOISE_SCALE]);
+                if tree_val > config::TREE_THRESHOLD {
                     self.place_tree(&mut chunk, lx, (h + 1) as usize, lz);
                 }
             }
@@ -163,8 +163,8 @@ impl WorldGenerator {
             for lz in 0..CHUNK_SIZE {
                 let wx = (base_x + lx as i32) as f64;
                 let wz = (base_z + lz as i32) as f64;
-                let cloud_val = self.noise_cloud.get([wx * 0.01, wz * 0.01]);
-                if cloud_val > 0.75 {
+                let cloud_val = self.noise_cloud.get([wx * config::CLOUD_NOISE_SCALE, wz * config::CLOUD_NOISE_SCALE]);
+                if cloud_val > config::CLOUD_THRESHOLD {
                     for cy in config::CLOUD_Y_MIN..config::CLOUD_Y_MAX {
                         chunk.set(lx, cy, lz, BlockType::Cloud);
                     }
@@ -176,7 +176,7 @@ impl WorldGenerator {
     }
 
     fn place_tree(&self, chunk: &mut ChunkData, x: usize, base_y: usize, z: usize) {
-        let trunk_height = 5;
+        let trunk_height = config::TRUNK_HEIGHT;
         // Trunk
         for dy in 0..trunk_height {
             let y = base_y + dy;
@@ -186,7 +186,7 @@ impl WorldGenerator {
         }
         // Leaves sphere (radius 3, centered at top of trunk)
         let center_y = base_y + trunk_height;
-        let r = 3i32;
+        let r = config::LEAF_RADIUS;
         for dx in -r..=r {
             for dy in -r..=r {
                 for dz in -r..=r {

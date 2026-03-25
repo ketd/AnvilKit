@@ -205,6 +205,7 @@ fn main() {
         scene_gpu: None,
         line_renderer: None,
         text_renderer: None,
+        last_frame_time: std::time::Instant::now(),
     }).unwrap();
 }
 
@@ -222,6 +223,7 @@ struct BilliardApp {
     scene_gpu: Option<setup::SceneGpu>,
     line_renderer: Option<LineRenderer>,
     text_renderer: Option<TextRenderer>,
+    last_frame_time: std::time::Instant,
 }
 
 impl BilliardApp {
@@ -231,7 +233,7 @@ impl BilliardApp {
         let Some(format) = self.render_app.surface_format() else { return };
         let (w, h) = self.render_app.window_state().size();
 
-        let config = BilliardConfig::default();
+        let config = { let c = self.app.world.resource::<BilliardConfig>(); c.clone() };
         let mut assets = self.app.world.resource_mut::<RenderAssets>();
         let gpu = setup::init_scene(device, format, w, h, &mut assets, &config);
 
@@ -523,6 +525,11 @@ impl ApplicationHandler for BilliardApp {
 
     fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
         // Update real DeltaTime
+        let now = std::time::Instant::now();
+        let dt = now.duration_since(self.last_frame_time).as_secs_f32().clamp(0.001, 0.1);
+        self.last_frame_time = now;
+        self.app.world.insert_resource(DeltaTime(dt));
+
         self.app.update();
         if let Some(mut input_state) = self.app.world.get_resource_mut::<InputState>() {
             input_state.end_frame();
@@ -533,7 +540,7 @@ impl ApplicationHandler for BilliardApp {
 
 impl BilliardApp {
     fn reset_game(&mut self) {
-        let config = BilliardConfig::default();
+        let config = { let c = self.app.world.resource::<BilliardConfig>(); c.clone() };
         let rack_pos = rack_positions(&config);
         // Reset cue ball
         if let Some(cue_e) = self.ball_entities.first() {

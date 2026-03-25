@@ -46,6 +46,10 @@ const BLOCK_PALETTE: [BlockType; 9] = [
     BlockType::Plank,
 ];
 
+fn window_config() -> WindowConfig {
+    WindowConfig::new().with_title("Craft").with_size(1280, 720)
+}
+
 fn main() {
     env_logger::init();
     println!("Craft — powered by AnvilKit");
@@ -55,11 +59,7 @@ fn main() {
     println!("  F5 = toggle 1st/3rd person, F1 = cycle filter, Ctrl+W = sprint");
 
     let mut app = App::new();
-    app.add_plugins(RenderPlugin::new().with_window_config(
-        WindowConfig::new()
-            .with_title("Craft")
-            .with_size(1280, 720),
-    ));
+    app.add_plugins(RenderPlugin::new().with_window_config(window_config()));
 
     app.insert_resource(InputState::new());
     app.insert_resource(DeltaTime(1.0 / 60.0)); // updated each frame by RenderApp::tick()
@@ -121,7 +121,7 @@ fn main() {
 
     // Spawn worker thread pool for chunk generation
     let num_workers = thread::available_parallelism()
-        .map(|n| n.get().saturating_sub(1).clamp(1, 8))
+        .map(|n| n.get().saturating_sub(1).clamp(1, config::MAX_WORKER_THREADS))
         .unwrap_or(2);
     for _ in 0..num_workers {
         let rx = request_rx.clone();
@@ -140,7 +140,7 @@ fn main() {
     drop(result_tx);
 
     let event_loop = EventLoop::new().unwrap();
-    let wconfig = WindowConfig::new().with_title("Craft").with_size(1280, 720);
+    let wconfig = window_config();
     event_loop
         .run_app(&mut CraftApp {
             render_app: RenderApp::new(wconfig),
@@ -887,7 +887,7 @@ impl CraftApp {
             let player = self.app.world.resource::<PlayerState>();
             if let Some(cam) = self.app.world.get_resource::<ActiveCamera>() {
                 let p = cam.camera_pos;
-                println!(
+                log::debug!(
                     "[F{}] pos=({:.1},{:.1},{:.1}) vel=({:.1},{:.1},{:.1}) fly={} gnd={}",
                     self.frame_count,
                     p.x, p.y, p.z,

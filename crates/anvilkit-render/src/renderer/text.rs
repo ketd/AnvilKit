@@ -305,7 +305,7 @@ impl TextRenderer {
                 needed,
             ));
         }
-        let vertex_buffer = &self.cached_vb.as_ref().unwrap().0;
+        let vertex_buffer = &self.cached_vb.as_ref().expect("buffer must be initialized above").0;
         device.queue().write_buffer(vertex_buffer, 0, data);
 
         {

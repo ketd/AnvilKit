@@ -366,7 +366,8 @@ impl RenderDevice {
     /// # }
     /// ```
     pub fn get_preferred_format(&self, surface: &Surface<'_>) -> TextureFormat {
-        surface.get_capabilities(&self.adapter).formats[0]
+        let caps = surface.get_capabilities(&self.adapter);
+        caps.formats.first().copied().unwrap_or(TextureFormat::Bgra8UnormSrgb)
     }
 }
 

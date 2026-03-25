@@ -3,6 +3,7 @@ use bevy_ecs::prelude::*;
 
 use crate::block::BlockType;
 use crate::chunk::{ChunkData, CHUNK_SIZE, CHUNK_HEIGHT};
+use crate::config;
 
 /// Stores all loaded chunk data keyed by (cx, cz).
 #[derive(Resource, Default)]
@@ -104,7 +105,7 @@ impl Default for DayNightCycle {
     fn default() -> Self {
         Self {
             time: 0.15, // start near morning
-            cycle_duration: 600.0, // 10 minutes
+            cycle_duration: config::DAY_NIGHT_DURATION, // 10 minutes
         }
     }
 }
@@ -206,6 +207,6 @@ pub struct WorldSeed(pub u32);
 
 impl Default for WorldSeed {
     fn default() -> Self {
-        Self(42)
+        Self(config::DEFAULT_SEED)
     }
 }

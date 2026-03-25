@@ -263,27 +263,26 @@ impl UtilitySystems {
     /// }
     /// ```
     pub fn visibility_filter_system(
-        mut query: Query<(Entity, &mut Visibility, Option<&Parent>), (With<Transform>, Changed<Visibility>)>,
+        mut query: Query<(Entity, &mut Visibility, Option<&Parent>), With<Transform>>,
     ) {
-        // Collect inherited entities first to avoid borrow conflicts
+        // Collect inherited entities to resolve
         let to_resolve: Vec<(Entity, Option<Entity>)> = query.iter()
             .filter(|(_, vis, _)| vis.is_inherited())
             .map(|(e, _, parent)| (e, parent.map(|p| p.get())))
             .collect();
 
         for (entity, parent_entity) in to_resolve {
-            // Look up parent's visibility from the same query (if parent also has Transform)
             let parent_visible = parent_entity
                 .and_then(|pe| query.get(pe).ok())
                 .map(|(_, vis, _)| vis.is_visible())
                 .unwrap_or(true);
 
             if let Ok((_, mut vis, _)) = query.get_mut(entity) {
-                *vis = if parent_visible {
-                    Visibility::Visible
+                if parent_visible {
+                    *vis = Visibility::Visible;
                 } else {
-                    Visibility::Hidden
-                };
+                    *vis = Visibility::Hidden;
+                }
             }
         }
     }

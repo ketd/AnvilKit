@@ -43,7 +43,7 @@ pub const MAX_LIGHTS: usize = 8;
 /// Cascade Shadow Maps 级数
 pub const CSM_CASCADE_COUNT: usize = 3;
 
-/// PBR 场景 Uniform (1072 字节)
+/// PBR 场景 Uniform (992 字节)
 ///
 /// 包含 per-object 变换、材质参数、多光源数据和 CSM 矩阵。
 /// 前 256 字节与旧布局兼容（light_dir/light_color 保留但多光源路径不使用）。

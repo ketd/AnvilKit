@@ -88,11 +88,16 @@ pub fn mesh_chunk(chunk: &ChunkData, neighbors: &ChunkNeighbors, ox: f32, oz: f3
         (Face::Back,   0,  0, -1),
     ];
 
+    // Pre-allocate mask once; max dimension is CHUNK_SIZE * CHUNK_HEIGHT
+    let max_mask_size = CHUNK_SIZE * CHUNK_HEIGHT;
+    let mut mask = vec![FaceCell::EMPTY; max_mask_size];
+
     for &(face, ndx, ndy, ndz) in &face_dirs {
         greedy_face(
             chunk, neighbors, ox, oz, face, ndx, ndy, ndz,
             &mut vertices, &mut indices,
             &mut water_vertices, &mut water_indices,
+            &mut mask,
         );
     }
 
@@ -113,6 +118,7 @@ fn greedy_face(
     indices: &mut Vec<u32>,
     water_vertices: &mut Vec<BlockVertex>,
     water_indices: &mut Vec<u32>,
+    mask: &mut Vec<FaceCell>,
 ) {
     // For each face direction, we iterate slices perpendicular to the normal.
     // The "depth" axis is the normal direction; u,v are the two tangent axes.
@@ -136,12 +142,12 @@ fn greedy_face(
         }
     };
 
-    // Allocate mask once, clear per slice to avoid per-slice allocation
-    let mut mask = vec![FaceCell::EMPTY; u_max * v_max];
+    // Resize mask to fit this face's slice dimensions; reuses the caller's allocation
+    mask.resize(u_max * v_max, FaceCell::EMPTY);
 
     for d in 0..depth_max {
         // Clear the mask for this slice
-        mask.fill(FaceCell::EMPTY);
+        mask[..u_max * v_max].fill(FaceCell::EMPTY);
 
         // Build the 2D mask for this slice
         for v in 0..v_max {

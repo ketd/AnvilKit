@@ -160,7 +160,7 @@ impl RenderSurface {
         }
         
         // 回退到第一个可用格式
-        let format = formats[0];
+        let format = formats.first().copied().unwrap_or(TextureFormat::Bgra8UnormSrgb);
         debug!("回退到纹理格式: {:?}", format);
         format
     }

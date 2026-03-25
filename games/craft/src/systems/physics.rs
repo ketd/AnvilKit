@@ -4,24 +4,18 @@ use anvilkit_ecs::physics::DeltaTime;
 use anvilkit_render::plugin::CameraComponent;
 
 use crate::components::FpsCamera;
+use crate::config;
 use crate::resources::{PlayerState, VoxelWorld};
-
-const PLAYER_WIDTH: f32 = 0.6;
-const PLAYER_HEIGHT: f32 = 1.8;
-const EYE_OFFSET: f32 = 1.6;
-const GRAVITY: f32 = 20.0;
-const JUMP_VEL: f32 = 8.0;
-const TERMINAL_VELOCITY: f32 = 50.0;
 
 /// Check if an AABB (defined by eye position) collides with any solid block.
 fn collides_aabb(world: &VoxelWorld, eye_pos: glam::Vec3) -> bool {
-    let half_w = PLAYER_WIDTH * 0.5;
-    let feet_y = eye_pos.y - EYE_OFFSET;
+    let half_w = config::PLAYER_WIDTH * 0.5;
+    let feet_y = eye_pos.y - config::EYE_OFFSET;
 
     let min_x = (eye_pos.x - half_w).floor() as i32;
     let max_x = (eye_pos.x + half_w).floor() as i32;
     let min_y = feet_y.floor() as i32;
-    let max_y = (feet_y + PLAYER_HEIGHT).floor() as i32;
+    let max_y = (feet_y + config::PLAYER_HEIGHT).floor() as i32;
     let min_z = (eye_pos.z - half_w).floor() as i32;
     let max_z = (eye_pos.z + half_w).floor() as i32;
 
@@ -40,7 +34,7 @@ fn collides_aabb(world: &VoxelWorld, eye_pos: glam::Vec3) -> bool {
                     let px_min = eye_pos.x - half_w;
                     let px_max = eye_pos.x + half_w;
                     let py_min = feet_y;
-                    let py_max = feet_y + PLAYER_HEIGHT;
+                    let py_max = feet_y + config::PLAYER_HEIGHT;
                     let pz_min = eye_pos.z - half_w;
                     let pz_max = eye_pos.z + half_w;
 
@@ -72,12 +66,12 @@ pub fn player_physics_system(
 
     // Only apply gravity when airborne
     if !player.on_ground {
-        player.velocity.y = (player.velocity.y - GRAVITY * delta).max(-TERMINAL_VELOCITY);
+        player.velocity.y = (player.velocity.y - config::GRAVITY * delta).max(-config::TERMINAL_VELOCITY);
     }
 
     // Jump
     if player.on_ground && player.jump_requested {
-        player.velocity.y = JUMP_VEL;
+        player.velocity.y = config::JUMP_VEL;
         player.on_ground = false;
     }
     player.jump_requested = false;
@@ -110,9 +104,9 @@ pub fn player_physics_system(
                 if player.velocity.y < 0.0 {
                     // Landing: snap feet to just above the block top
                     // (epsilon prevents floating-point boundary oscillation)
-                    let feet_y = new_y - EYE_OFFSET;
+                    let feet_y = new_y - config::EYE_OFFSET;
                     let block_top = feet_y.floor() + 1.0;
-                    transform.translation.y = block_top + EYE_OFFSET + 0.001;
+                    transform.translation.y = block_top + config::EYE_OFFSET + 0.001;
                     player.on_ground = true;
                 }
                 // else: hit ceiling
@@ -127,7 +121,7 @@ pub fn player_physics_system(
             if !collides_aabb(&world, below) {
                 player.on_ground = false;
                 // Start falling
-                player.velocity.y = -GRAVITY * delta;
+                player.velocity.y = -config::GRAVITY * delta;
             }
         }
 

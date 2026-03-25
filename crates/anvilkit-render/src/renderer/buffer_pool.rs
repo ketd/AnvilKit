@@ -21,8 +21,8 @@ use wgpu::{Buffer, BufferUsages, Device};
 /// **Important**: Buffers are matched by both size AND usage flags.
 /// A vertex buffer will never be returned for an index buffer request.
 pub struct BufferPool {
-    /// 可用缓冲区池 (buffer, capacity_bytes, usage)
-    available: Vec<(Buffer, u64, BufferUsages)>,
+    /// 可用缓冲区池 (buffer, capacity_bytes, usage, last_used)
+    available: Vec<(Buffer, u64, BufferUsages, std::time::Instant)>,
     /// 本帧使用中的缓冲区数量（用于统计）
     in_use_count: usize,
     /// 池上限
@@ -52,7 +52,7 @@ impl BufferPool {
         label: &str,
     ) -> Buffer {
         // 查找 usage 匹配且足够大的缓冲区
-        if let Some(idx) = self.available.iter().position(|(_, cap, u)| *u == usage && *cap >= min_size) {
+        if let Some(idx) = self.available.iter().position(|(_, cap, u, _)| *u == usage && *cap >= min_size) {
             self.in_use_count += 1;
             return self.available.remove(idx).0;
         }
@@ -73,25 +73,19 @@ impl BufferPool {
     pub fn release(&mut self, buffer: Buffer, capacity: u64, usage: BufferUsages) {
         self.in_use_count = self.in_use_count.saturating_sub(1);
 
-        // 如果池已满，丢弃最小的缓冲区
+        // 如果池已满，丢弃最久未使用的缓冲区
         if self.available.len() >= self.max_pool_size {
-            // 找到最小的缓冲区
-            if let Some(min_idx) = self.available.iter()
+            // 找到最久未使用（oldest）的缓冲区
+            if let Some(oldest_idx) = self.available.iter()
                 .enumerate()
-                .min_by_key(|(_, (_, cap, _))| *cap)
+                .min_by_key(|(_, (_, _, _, last_used))| *last_used)
                 .map(|(i, _)| i)
             {
-                if self.available[min_idx].1 < capacity {
-                    // 新缓冲区更大，替换最小的
-                    self.available.remove(min_idx);
-                } else {
-                    // 新缓冲区是最小的，直接丢弃
-                    return;
-                }
+                self.available.remove(oldest_idx);
             }
         }
 
-        self.available.push((buffer, capacity, usage));
+        self.available.push((buffer, capacity, usage, std::time::Instant::now()));
     }
 
     /// 当前池中可用缓冲区数量

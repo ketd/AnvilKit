@@ -33,32 +33,31 @@ impl NavMesh {
         Self { vertices, triangles, adjacency }
     }
 
-    /// Build adjacency list: two triangles are adjacent if they share exactly 2 vertices (an edge).
+    /// Build adjacency list: two triangles are adjacent if they share an edge.
+    /// Uses an edge hash map for O(n) complexity instead of O(n^2).
     fn build_adjacency(triangles: &[[u32; 3]]) -> Vec<Vec<usize>> {
         let n = triangles.len();
         let mut adj = vec![Vec::new(); n];
-        for i in 0..n {
-            for j in (i + 1)..n {
-                let shared = Self::shared_vertex_count(&triangles[i], &triangles[j]);
-                if shared >= 2 {
-                    adj[i].push(j);
-                    adj[j].push(i);
+        let mut edge_map: std::collections::HashMap<(u32, u32), Vec<usize>> =
+            std::collections::HashMap::new();
+
+        for (tri_idx, tri) in triangles.iter().enumerate() {
+            for k in 0..3 {
+                let (a, b) = (tri[k], tri[(k + 1) % 3]);
+                let edge = if a < b { (a, b) } else { (b, a) };
+                edge_map.entry(edge).or_default().push(tri_idx);
+            }
+        }
+
+        for (_edge, tris) in &edge_map {
+            for i in 0..tris.len() {
+                for j in (i + 1)..tris.len() {
+                    adj[tris[i]].push(tris[j]);
+                    adj[tris[j]].push(tris[i]);
                 }
             }
         }
         adj
-    }
-
-    fn shared_vertex_count(a: &[u32; 3], b: &[u32; 3]) -> usize {
-        let mut count = 0;
-        for &va in a {
-            for &vb in b {
-                if va == vb {
-                    count += 1;
-                }
-            }
-        }
-        count
     }
 
     /// Compute the centroid of triangle `idx`.
@@ -97,7 +96,11 @@ impl NavMesh {
         let dot11 = v1.dot(v1);
         let dot12 = v1.dot(v2);
 
-        let inv_denom = 1.0 / (dot00 * dot11 - dot01 * dot01);
+        let denom = dot00 * dot11 - dot01 * dot01;
+        if denom.abs() < 1e-10 {
+            return false; // Degenerate triangle
+        }
+        let inv_denom = 1.0 / denom;
         let u = (dot11 * dot02 - dot01 * dot12) * inv_denom;
         let v = (dot00 * dot12 - dot01 * dot02) * inv_denom;
 

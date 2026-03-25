@@ -214,6 +214,14 @@ impl Default for DeltaTime {
     fn default() -> Self { Self(1.0 / 60.0) }
 }
 
+/// Syncs DeltaTime from the core Time resource.
+pub fn update_delta_time_system(
+    time: Res<anvilkit_core::time::Time>,
+    mut dt: ResMut<DeltaTime>,
+) {
+    dt.0 = time.delta_seconds();
+}
+
 /// 碰撞事件
 #[derive(Debug, Clone, Copy)]
 pub struct CollisionEvent {
@@ -278,11 +286,11 @@ pub fn collision_detection_system(
             let (ea, ta, ca) = &entities[i];
             let (eb, tb, cb) = &entities[j];
 
-            // World-space AABB
-            let a_min = ta.translation - ca.half_extents;
-            let a_max = ta.translation + ca.half_extents;
-            let b_min = tb.translation - cb.half_extents;
-            let b_max = tb.translation + cb.half_extents;
+            // World-space AABB (note: rotation is not handled, only translation + scale)
+            let a_min = ta.translation - ca.half_extents * ta.scale;
+            let a_max = ta.translation + ca.half_extents * ta.scale;
+            let b_min = tb.translation - cb.half_extents * tb.scale;
+            let b_max = tb.translation + cb.half_extents * tb.scale;
 
             if a_min.x <= b_max.x && a_max.x >= b_min.x
                 && a_min.y <= b_max.y && a_max.y >= b_min.y
@@ -304,7 +312,8 @@ impl crate::plugin::Plugin for PhysicsPlugin {
         app.add_systems(
             AnvilKitSchedule::Update,
             (
-                velocity_integration_system,
+                update_delta_time_system,
+                velocity_integration_system.after(update_delta_time_system),
                 collision_detection_system.after(velocity_integration_system),
             ),
         );
@@ -338,6 +347,8 @@ pub mod rapier_integration {
         pub ccd_solver: rp::CCDSolver,
         /// ECS Entity → rapier RigidBodyHandle mapping
         pub entity_to_body: HashMap<Entity, rp::RigidBodyHandle>,
+        /// rapier RigidBodyHandle → ECS Entity reverse mapping
+        pub body_to_entity: HashMap<rp::RigidBodyHandle, Entity>,
     }
 
     impl Default for RapierContext {
@@ -355,6 +366,7 @@ pub mod rapier_integration {
                 multibody_joint_set: rp::MultibodyJointSet::new(),
                 ccd_solver: rp::CCDSolver::new(),
                 entity_to_body: HashMap::new(),
+                body_to_entity: HashMap::new(),
             }
         }
     }
@@ -395,9 +407,24 @@ pub mod rapier_integration {
                 ColliderShape::Capsule { half_height, radius } => {
                     rp::ColliderBuilder::capsule_y(*half_height, *radius)
                 }
-                ColliderShape::TriMesh { .. } => {
-                    // Fallback to unit ball for trimesh (full trimesh conversion is complex)
-                    rp::ColliderBuilder::ball(1.0)
+                ColliderShape::TriMesh { vertices, .. } => {
+                    // Compute a bounding sphere radius from mesh vertices if available
+                    let radius = if vertices.is_empty() {
+                        log::warn!(
+                            "TriMesh collider has no vertices; falling back to unit ball"
+                        );
+                        1.0
+                    } else {
+                        let max_r = vertices.iter()
+                            .map(|v| v.length())
+                            .fold(0.0f32, f32::max);
+                        log::warn!(
+                            "TriMesh collider not fully supported; falling back to bounding sphere (r={:.3})",
+                            max_r
+                        );
+                        if max_r < f32::EPSILON { 1.0 } else { max_r }
+                    };
+                    rp::ColliderBuilder::ball(radius)
                 }
             }
             .friction(col.friction)
@@ -407,6 +434,7 @@ pub mod rapier_integration {
             let c = &mut *ctx;
             c.collider_set.insert_with_parent(collider, body_handle, &mut c.rigid_body_set);
             ctx.entity_to_body.insert(entity, body_handle);
+            ctx.body_to_entity.insert(body_handle, entity);
             commands.entity(entity).insert(RapierSynced);
         }
     }
@@ -491,11 +519,7 @@ pub mod rapier_integration {
                     if best.as_ref().map_or(true, |b| hit.toi < b.1) {
                         // Find the entity for this collider's parent body
                         let entity = collider.parent()
-                            .and_then(|bh| {
-                                self.entity_to_body.iter()
-                                    .find(|(_, &h)| h == bh)
-                                    .map(|(&e, _)| e)
-                            });
+                            .and_then(|bh| self.body_to_entity.get(&bh).copied());
                         if let Some(entity) = entity {
                             let point = ray.point_at(hit.toi);
                             best = Some((
@@ -529,10 +553,10 @@ pub mod rapier_integration {
             if pair.has_any_active_contact {
                 let entity_a = ctx.collider_set.get(pair.collider1)
                     .and_then(|c| c.parent())
-                    .and_then(|bh| ctx.entity_to_body.iter().find(|(_, &h)| h == bh).map(|(&e, _)| e));
+                    .and_then(|bh| ctx.body_to_entity.get(&bh).copied());
                 let entity_b = ctx.collider_set.get(pair.collider2)
                     .and_then(|c| c.parent())
-                    .and_then(|bh| ctx.entity_to_body.iter().find(|(_, &h)| h == bh).map(|(&e, _)| e));
+                    .and_then(|bh| ctx.body_to_entity.get(&bh).copied());
 
                 if let (Some(a), Some(b)) = (entity_a, entity_b) {
                     events.push(CollisionEvent { a, b });

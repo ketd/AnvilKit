@@ -36,14 +36,19 @@ impl Aabb {
     }
 
     /// 从顶点位置列表计算 AABB
-    pub fn from_points(points: &[Vec3]) -> Self {
+    ///
+    /// 如果 `points` 为空，返回 `None`。
+    pub fn from_points(points: &[Vec3]) -> Option<Self> {
+        if points.is_empty() {
+            return None;
+        }
         let mut min = Vec3::splat(f32::MAX);
         let mut max = Vec3::splat(f32::MIN);
         for &p in points {
             min = min.min(p);
             max = max.max(p);
         }
-        Self { min, max }
+        Some(Self { min, max })
     }
 
     /// 中心点
@@ -398,11 +403,16 @@ mod tests {
         let aabb = Aabb::from_points(&[
             Vec3::new(-1.0, -2.0, -3.0),
             Vec3::new(4.0, 5.0, 6.0),
-        ]);
+        ]).expect("non-empty points should return Some");
         assert_eq!(aabb.min, Vec3::new(-1.0, -2.0, -3.0));
         assert_eq!(aabb.max, Vec3::new(4.0, 5.0, 6.0));
         assert_eq!(aabb.center(), Vec3::new(1.5, 1.5, 1.5));
         assert_eq!(aabb.half_extents(), Vec3::new(2.5, 3.5, 4.5));
+    }
+
+    #[test]
+    fn test_aabb_from_points_empty() {
+        assert!(Aabb::from_points(&[]).is_none());
     }
 
     #[test]

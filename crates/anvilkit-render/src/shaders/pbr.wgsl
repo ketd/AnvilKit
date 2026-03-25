@@ -108,7 +108,7 @@ fn hemisphere_specular(R: vec3<f32>, roughness: f32) -> vec3<f32> {
 fn calculate_shadow(world_pos: vec3<f32>) -> f32 {
     // Compute view-space depth for cascade selection
     let view_pos = scene.view_proj * vec4<f32>(world_pos, 1.0);
-    let view_z = view_pos.w; // w contains the linear view-space depth after perspective
+    let view_z = view_pos.w; // clip-space w = -view_z (RH convention), positive for objects in front of camera
 
     // Determine cascade index from split distances
     let cascade_count = u32(scene.emissive_factor.w);
@@ -125,9 +125,10 @@ fn calculate_shadow(world_pos: vec3<f32>) -> f32 {
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth > 1.0) { return 1.0; }
 
     let ts = scene.cascade_splits.w; // shadow texel size
+    let shadow_bias = ts * 5.0; // Scale bias by texel size
     var s = 0.0;
     for (var x = -1; x <= 1; x++) { for (var y = -1; y <= 1; y++) {
-        s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(f32(x), f32(y)) * ts, cascade_idx, depth - 0.005);
+        s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(f32(x), f32(y)) * ts, cascade_idx, depth - shadow_bias);
     }}
     return s / 9.0;
 }

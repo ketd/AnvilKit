@@ -4,6 +4,7 @@
 //! 每个 key 对应一个文件，支持前缀枚举和批量写入。
 
 use std::path::{Path, PathBuf};
+use crate::error::AnvilKitError;
 
 /// 文件系统 KV 存储
 ///
@@ -24,10 +25,10 @@ pub struct WorldStorage {
 
 impl WorldStorage {
     /// 打开或创建一个存储目录。
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, String> {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, AnvilKitError> {
         let base_dir = path.as_ref().to_path_buf();
         std::fs::create_dir_all(&base_dir)
-            .map_err(|e| format!("Failed to create storage dir: {}", e))?;
+            .map_err(|e| AnvilKitError::generic(format!("Failed to create storage dir: {}", e)))?;
         Ok(Self { base_dir })
     }
 
@@ -38,27 +39,27 @@ impl WorldStorage {
     }
 
     /// 写入 key-value 对。自动创建中间目录。
-    pub fn put(&self, key: &str, value: &[u8]) -> Result<(), String> {
+    pub fn put(&self, key: &str, value: &[u8]) -> Result<(), AnvilKitError> {
         let path = self.key_path(key);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create dir for key '{}': {}", key, e))?;
+                .map_err(|e| AnvilKitError::generic(format!("Failed to create dir for key '{}': {}", key, e)))?;
         }
         // 写入临时文件再 rename，确保原子性
         let tmp_path = path.with_extension("tmp");
         std::fs::write(&tmp_path, value)
-            .map_err(|e| format!("Failed to write key '{}': {}", key, e))?;
+            .map_err(|e| AnvilKitError::generic(format!("Failed to write key '{}': {}", key, e)))?;
         std::fs::rename(&tmp_path, &path)
-            .map_err(|e| format!("Failed to rename for key '{}': {}", key, e))?;
+            .map_err(|e| AnvilKitError::generic(format!("Failed to rename for key '{}': {}", key, e)))?;
         Ok(())
     }
 
     /// 删除 key。
-    pub fn delete(&self, key: &str) -> Result<(), String> {
+    pub fn delete(&self, key: &str) -> Result<(), AnvilKitError> {
         let path = self.key_path(key);
         if path.exists() {
             std::fs::remove_file(&path)
-                .map_err(|e| format!("Failed to delete key '{}': {}", key, e))?;
+                .map_err(|e| AnvilKitError::generic(format!("Failed to delete key '{}': {}", key, e)))?;
         }
         Ok(())
     }
@@ -78,7 +79,7 @@ impl WorldStorage {
     }
 
     /// 批量写入（非事务性，但保证每个 key 的原子性）。
-    pub fn batch_put(&self, entries: &[(&str, &[u8])]) -> Result<(), String> {
+    pub fn batch_put(&self, entries: &[(&str, &[u8])]) -> Result<(), AnvilKitError> {
         for (key, value) in entries {
             self.put(key, value)?;
         }

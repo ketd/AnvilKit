@@ -5,7 +5,6 @@
 
 use bevy_ecs::prelude::*;
 use crate::renderer::RenderDevice;
-use crate::renderer::RenderPipelineBuilder;
 
 const SSAO_SHADER: &str = include_str!("../shaders/ssao.wgsl");
 const SSAO_BLUR_SHADER: &str = include_str!("../shaders/ssao_blur.wgsl");
@@ -349,56 +348,70 @@ impl SsaoResources {
             ],
         });
 
-        // Build pipelines
-        let ssao_bgl_for_pipeline = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("SSAO Pipeline BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }, count: None },
-                wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering), count: None },
-                wgpu::BindGroupLayoutEntry { binding: 2, visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }, count: None },
-                wgpu::BindGroupLayoutEntry { binding: 3, visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None },
-                wgpu::BindGroupLayoutEntry { binding: 4, visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None },
-                wgpu::BindGroupLayoutEntry { binding: 5, visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
-            ],
+        // Build pipelines using the same BGL objects stored on the struct
+        let ssao_shader = device.device().create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("SSAO Shader"),
+            source: wgpu::ShaderSource::Wgsl(SSAO_SHADER.into()),
+        });
+        let ssao_pipeline_layout = device.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("SSAO PL"),
+            bind_group_layouts: &[&ssao_bgl],
+            push_constant_ranges: &[],
+        });
+        let ssao_pipeline = device.device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("SSAO Pipeline"),
+            layout: Some(&ssao_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &ssao_shader,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &ssao_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: SSAO_FORMAT,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview: None,
         });
 
-        let ssao_pipeline = RenderPipelineBuilder::new()
-            .with_vertex_shader(SSAO_SHADER)
-            .with_fragment_shader(SSAO_SHADER)
-            .with_format(SSAO_FORMAT)
-            .with_vertex_layouts(vec![])
-            .with_bind_group_layouts(vec![ssao_bgl_for_pipeline])
-            .with_label("SSAO Pipeline")
-            .build(device)
-            .expect("Failed to build SSAO pipeline")
-            .into_pipeline();
-
-        let blur_bgl_for_pipeline = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("SSAO Blur Pipeline BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }, count: None },
-                wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None },
-            ],
+        let blur_shader = device.device().create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("SSAO Blur Shader"),
+            source: wgpu::ShaderSource::Wgsl(SSAO_BLUR_SHADER.into()),
         });
-
-        let blur_pipeline = RenderPipelineBuilder::new()
-            .with_vertex_shader(SSAO_BLUR_SHADER)
-            .with_fragment_shader(SSAO_BLUR_SHADER)
-            .with_format(SSAO_FORMAT)
-            .with_vertex_layouts(vec![])
-            .with_bind_group_layouts(vec![blur_bgl_for_pipeline])
-            .with_label("SSAO Blur Pipeline")
-            .build(device)
-            .expect("Failed to build SSAO blur pipeline")
-            .into_pipeline();
+        let blur_pipeline_layout = device.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("SSAO Blur PL"),
+            bind_group_layouts: &[&blur_bgl],
+            push_constant_ranges: &[],
+        });
+        let blur_pipeline = device.device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("SSAO Blur Pipeline"),
+            layout: Some(&blur_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &blur_shader,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &blur_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: SSAO_FORMAT,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview: None,
+        });
 
         Self {
             ssao_texture,

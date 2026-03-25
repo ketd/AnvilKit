@@ -19,7 +19,7 @@
 //! console.execute("greet Claude");
 //! ```
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use bevy_ecs::prelude::Resource;
 use crate::app::App;
 use crate::plugin::Plugin;
@@ -65,9 +65,9 @@ pub struct DebugConsole {
     /// Registered commands, keyed by name.
     pub commands: HashMap<String, ConsoleCommand>,
     /// Command input history (most recent last).
-    pub history: Vec<String>,
+    pub history: VecDeque<String>,
     /// Output log entries.
-    pub output: Vec<ConsoleOutput>,
+    pub output: VecDeque<ConsoleOutput>,
     /// Whether the console overlay is visible.
     pub visible: bool,
     /// Current input buffer text.
@@ -83,8 +83,8 @@ impl DebugConsole {
     pub fn new() -> Self {
         let mut console = Self {
             commands: HashMap::new(),
-            history: Vec::new(),
-            output: Vec::new(),
+            history: VecDeque::new(),
+            output: VecDeque::new(),
             visible: false,
             input_buffer: String::new(),
             max_history: 100,
@@ -143,9 +143,9 @@ impl DebugConsole {
         }
 
         // Store in history
-        self.history.push(input.to_string());
+        self.history.push_back(input.to_string());
         if self.history.len() > self.max_history {
-            self.history.remove(0);
+            self.history.pop_front();
         }
 
         // Parse command and args
@@ -208,9 +208,9 @@ impl DebugConsole {
 
     /// Internal helper to push an output entry and enforce the max_output limit.
     fn push_output(&mut self, text: String, kind: OutputKind) {
-        self.output.push(ConsoleOutput { text, kind });
+        self.output.push_back(ConsoleOutput { text, kind });
         while self.output.len() > self.max_output {
-            self.output.remove(0);
+            self.output.pop_front();
         }
     }
 }

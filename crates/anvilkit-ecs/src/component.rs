@@ -341,7 +341,7 @@ impl Visibility {
         *self = match *self {
             Self::Visible => Self::Hidden,
             Self::Hidden => Self::Visible,
-            Self::Inherited => Self::Inherited, // 继承状态不变
+            Self::Inherited => Self::Visible, // Promote inherited to explicit visible
         };
     }
 }
@@ -415,12 +415,12 @@ impl Layer {
     /// assert_eq!(layer.value(), 3);
     /// ```
     pub fn increase(&mut self, delta: i32) {
-        self.0 += delta;
+        self.0 = self.0.saturating_add(delta);
     }
 
     /// 减少层级
     pub fn decrease(&mut self, delta: i32) {
-        self.0 -= delta;
+        self.0 = self.0.saturating_sub(delta);
     }
 }
 

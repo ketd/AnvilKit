@@ -91,15 +91,15 @@ pub struct SerializedScene {
 ///
 /// # 示例
 ///
-/// ```rust,no_run
+/// ```rust,ignore
 /// use anvilkit_ecs::prelude::*;
 /// use anvilkit_ecs::scene::{SceneSerializer, Serializable};
 ///
 /// let mut world = World::new();
 /// world.spawn((Transform::default(), GlobalTransform::default(), Serializable));
 ///
-/// // Save
-/// SceneSerializer::save(&world, "scene.ron").unwrap();
+/// // Save (requires "serde" feature)
+/// SceneSerializer::save(&mut world, "scene.ron").unwrap();
 ///
 /// // Load into a new world
 /// let mut new_world = World::new();
@@ -112,6 +112,9 @@ impl SceneSerializer {
     /// 保存场景到 RON 文件。
     ///
     /// 只包含具有 `Serializable` 组件的实体。
+    ///
+    /// Note: Takes `&mut World` because bevy_ecs query initialization requires it,
+    /// but this function is semantically read-only.
     pub fn save(world: &mut World, path: &str) -> Result<usize, String> {
         let mut query = world.query_filtered::<Option<&Transform>, With<Serializable>>();
         let mut entities = Vec::new();

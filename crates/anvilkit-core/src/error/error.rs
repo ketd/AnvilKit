@@ -3,6 +3,7 @@
 //! 定义 AnvilKit 的主要错误类型和错误分类系统。
 
 use thiserror::Error;
+use std::borrow::Cow;
 use std::fmt;
 
 /// AnvilKit 的主要错误类型
@@ -379,20 +380,20 @@ impl AnvilKitError {
     /// 获取错误消息
     ///
     /// 返回不包含错误类型前缀的纯错误消息。
-    pub fn message(&self) -> String {
+    pub fn message(&self) -> Cow<'_, str> {
         match self {
-            Self::Render { message, .. } => message.clone(),
-            Self::Physics { message, .. } => message.clone(),
-            Self::Asset { message, .. } => message.clone(),
-            Self::Audio { message, .. } => message.clone(),
-            Self::Input { message, .. } => message.clone(),
-            Self::Ecs { message, .. } => message.clone(),
-            Self::Window { message, .. } => message.clone(),
-            Self::Config { message, .. } => message.clone(),
-            Self::Network { message, .. } => message.clone(),
-            Self::Io(err) => err.to_string(),
-            Self::Serialization { message, .. } => message.clone(),
-            Self::Generic { message, .. } => message.clone(),
+            Self::Render { message, .. } => Cow::Borrowed(message),
+            Self::Physics { message, .. } => Cow::Borrowed(message),
+            Self::Asset { message, .. } => Cow::Borrowed(message),
+            Self::Audio { message, .. } => Cow::Borrowed(message),
+            Self::Input { message, .. } => Cow::Borrowed(message),
+            Self::Ecs { message, .. } => Cow::Borrowed(message),
+            Self::Window { message, .. } => Cow::Borrowed(message),
+            Self::Config { message, .. } => Cow::Borrowed(message),
+            Self::Network { message, .. } => Cow::Borrowed(message),
+            Self::Io(err) => Cow::Owned(err.to_string()),
+            Self::Serialization { message, .. } => Cow::Borrowed(message),
+            Self::Generic { message, .. } => Cow::Borrowed(message),
         }
     }
 
@@ -412,8 +413,8 @@ impl AnvilKitError {
     }
 
     /// 添加上下文信息
-    /// 
-    /// 返回一个包含额外上下文信息的新错误。
+    ///
+    /// 返回一个包含额外上下文信息的新错误，保留原始错误类别。
     pub fn with_context(self, context: impl Into<String>) -> Self {
         let context = context.into();
         match self {
@@ -421,9 +422,51 @@ impl AnvilKitError {
                 message: format!("{}: {}", context, message),
                 source,
             },
-            _ => Self::Generic {
-                message: format!("{}: {}", context, self),
-                source: Some(Box::new(self)),
+            Self::Render { message, source } => Self::Render {
+                message: format!("{}: {}", context, message),
+                source,
+            },
+            Self::Physics { message, source } => Self::Physics {
+                message: format!("{}: {}", context, message),
+                source,
+            },
+            Self::Asset { message, path, source } => Self::Asset {
+                message: format!("{}: {}", context, message),
+                path,
+                source,
+            },
+            Self::Audio { message, source } => Self::Audio {
+                message: format!("{}: {}", context, message),
+                source,
+            },
+            Self::Input { message, source } => Self::Input {
+                message: format!("{}: {}", context, message),
+                source,
+            },
+            Self::Ecs { message, source } => Self::Ecs {
+                message: format!("{}: {}", context, message),
+                source,
+            },
+            Self::Window { message, source } => Self::Window {
+                message: format!("{}: {}", context, message),
+                source,
+            },
+            Self::Config { message, key, source } => Self::Config {
+                message: format!("{}: {}", context, message),
+                key,
+                source,
+            },
+            Self::Network { message, source } => Self::Network {
+                message: format!("{}: {}", context, message),
+                source,
+            },
+            Self::Io(err) => Self::Generic {
+                message: format!("{}: {}", context, err),
+                source: Some(Box::new(Self::Io(err))),
+            },
+            Self::Serialization { message, source } => Self::Serialization {
+                message: format!("{}: {}", context, message),
+                source,
             },
         }
     }
@@ -539,9 +582,10 @@ mod tests {
         let original = AnvilKitError::asset("纹理加载失败");
         let with_ctx = original.with_context("初始化场景时");
 
-        // with_context 在非 Generic 错误上会创建一个新的 Generic 错误包裹源错误
-        assert_eq!(with_ctx.category(), ErrorCategory::Generic);
-        assert!(std::error::Error::source(&with_ctx).is_some());
+        // with_context 保留原始错误类别
+        assert_eq!(with_ctx.category(), ErrorCategory::Asset);
+        assert!(with_ctx.message().contains("初始化场景时"));
+        assert!(with_ctx.message().contains("纹理加载失败"));
     }
 
     #[test]

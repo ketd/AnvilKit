@@ -253,6 +253,14 @@ impl<T> Default for PluginGroup<T> {
 impl<T: Plugin> Plugin for PluginGroup<T> {
     fn build(&self, app: &mut App) {
         for plugin in &self.plugins {
+            let name = plugin.name().to_string();
+            if plugin.is_unique() && app.registered_plugins.contains(&name) {
+                log::warn!("Plugin '{}' already registered, skipping duplicate in PluginGroup", name);
+                continue;
+            }
+            if plugin.is_unique() {
+                app.registered_plugins.insert(name);
+            }
             plugin.build(app);
         }
     }
@@ -317,15 +325,15 @@ mod tests {
     #[test]
     fn test_plugin_group() {
         let mut app = App::new();
-        
+
         let plugin_group = PluginGroup::new()
             .add(TestPlugin { initial_value: 10 })
-            .add(TestPlugin { initial_value: 20 }); // 这会覆盖前一个
-        
+            .add(TestPlugin { initial_value: 20 }); // 唯一插件，第二个会被跳过
+
         plugin_group.build(&mut app);
-        
+
         let resource = app.world.get_resource::<TestResource>().unwrap();
-        assert_eq!(resource.value, 20); // 最后一个插件的值
+        assert_eq!(resource.value, 10); // 唯一插件只注册第一个
     }
 
     #[test]

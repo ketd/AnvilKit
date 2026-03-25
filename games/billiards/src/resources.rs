@@ -2,7 +2,7 @@ use bevy_ecs::prelude::*;
 use glam::Vec3;
 
 /// Game configuration constants.
-#[derive(Resource)]
+#[derive(Resource, Clone)]
 pub struct BilliardConfig {
     pub ball_radius: f32,
     pub table_half_width: f32,

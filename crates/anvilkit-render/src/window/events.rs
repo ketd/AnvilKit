@@ -379,7 +379,7 @@ impl RenderApp {
         let format = surface.format();
         let (w, h) = self.window_state.size();
 
-        // 创建 PBR 场景 Uniform 缓冲区 (256 字节)
+        // 创建 PBR 场景 Uniform 缓冲区 (992 字节)
         let initial_uniform = PbrSceneUniform::default();
         let scene_uniform_buffer = create_uniform_buffer(
             device,
@@ -710,29 +710,14 @@ impl RenderApp {
             &wgpu::CommandEncoderDescriptor { label: Some("ECS Frame Encoder") },
         );
 
-        // --- Pass 0: CSM Shadow passes (one per cascade) ---
+        // --- Pass 0: CSM Shadow passes (one per cascade, one sub-pass per object) ---
+        // Each object requires its own uniform data, so we use separate render passes
+        // with write_buffer between them to ensure correct per-object transforms.
         for cascade_idx in 0..render_state.shadow_cascade_views.len().min(CSM_CASCADE_COUNT) {
             let cascade_view = &render_state.shadow_cascade_views[cascade_idx];
             let cascade_vp = cascade_matrices[cascade_idx];
 
-            let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("CSM Shadow Pass"),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: cascade_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            rp.set_pipeline(&render_state.shadow_pipeline);
-            rp.set_bind_group(0, &render_state.scene_bind_group, &[]);
-
-            for cmd in draw_list.commands.iter() {
+            for (draw_idx, cmd) in draw_list.commands.iter().enumerate() {
                 let Some(gpu_mesh) = render_assets.get_mesh(&cmd.mesh) else { continue };
 
                 let shadow_uniform = PbrSceneUniform {
@@ -744,28 +729,85 @@ impl RenderApp {
                     &render_state.scene_uniform_buffer, 0, bytemuck::bytes_of(&shadow_uniform),
                 );
 
+                let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("CSM Shadow Pass"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: cascade_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: if draw_idx == 0 { wgpu::LoadOp::Clear(1.0) } else { wgpu::LoadOp::Load },
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                rp.set_pipeline(&render_state.shadow_pipeline);
+                rp.set_bind_group(0, &render_state.scene_bind_group, &[]);
                 rp.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
                 rp.set_index_buffer(gpu_mesh.index_buffer.slice(..), gpu_mesh.index_format);
                 rp.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);
             }
         }
 
-        // --- Pass 1: Scene → HDR render target ---
-        {
+        // --- Pass 1: Scene → HDR render target (one sub-pass per object) ---
+        // Each object gets its own render pass so that write_buffer takes effect
+        // before the draw call. First pass clears, subsequent passes load.
+        for (draw_idx, cmd) in draw_list.commands.iter().enumerate() {
+            let Some(gpu_mesh) = render_assets.get_mesh(&cmd.mesh) else { continue };
+            let Some(gpu_material) = render_assets.get_material(&cmd.material) else { continue };
+
+            let model = cmd.model_matrix;
+            // Normal matrix: inverse transpose of the model matrix.
+            // This correctly transforms normals for any scale (uniform or non-uniform).
+            let normal_matrix = model.inverse().transpose();
+
+            let uniform = PbrSceneUniform {
+                model: model.to_cols_array_2d(),
+                view_proj: view_proj.to_cols_array_2d(),
+                normal_matrix: normal_matrix.to_cols_array_2d(),
+                camera_pos: [camera_pos.x, camera_pos.y, camera_pos.z, 0.0],
+                light_dir: [light.direction.x, light.direction.y, light.direction.z, 0.0],
+                light_color: [light.color.x, light.color.y, light.color.z, light.intensity],
+                material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, light_count as f32],
+                lights: gpu_lights,
+                cascade_view_projs: [
+                    cascade_matrices[0].to_cols_array_2d(),
+                    cascade_matrices[1].to_cols_array_2d(),
+                    cascade_matrices[2].to_cols_array_2d(),
+                ],
+                cascade_splits: [cascade_splits[0], cascade_splits[1], cascade_splits[2], 1.0 / SHADOW_MAP_SIZE as f32],
+                emissive_factor: [cmd.emissive_factor[0], cmd.emissive_factor[1], cmd.emissive_factor[2], CSM_CASCADE_COUNT as f32],
+            };
+            device.queue().write_buffer(
+                &render_state.scene_uniform_buffer, 0, bytemuck::bytes_of(&uniform),
+            );
+
+            let Some(pipeline) = render_assets.get_pipeline(&gpu_material.pipeline_handle) else {
+                log::error!("材质引用了不存在的管线");
+                continue;
+            };
+
+            let is_first = draw_idx == 0;
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ECS HDR Scene Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &render_state.hdr_msaa_texture_view,
                     resolve_target: Some(&render_state.hdr_texture_view),
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.15, g: 0.3, b: 0.6, a: 1.0 }),
-                        store: wgpu::StoreOp::Discard,
+                        load: if is_first {
+                            wgpu::LoadOp::Clear(wgpu::Color { r: 0.15, g: 0.3, b: 0.6, a: 1.0 })
+                        } else {
+                            wgpu::LoadOp::Load
+                        },
+                        store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &render_state.depth_texture_view,
                     depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
+                        load: if is_first { wgpu::LoadOp::Clear(1.0) } else { wgpu::LoadOp::Load },
                         store: wgpu::StoreOp::Store,
                     }),
                     stencil_ops: None,
@@ -774,62 +816,13 @@ impl RenderApp {
                 occlusion_query_set: None,
             });
 
-            for cmd in draw_list.commands.iter() {
-                let Some(gpu_mesh) = render_assets.get_mesh(&cmd.mesh) else { continue };
-                let Some(gpu_material) = render_assets.get_material(&cmd.material) else { continue };
-
-                let model = cmd.model_matrix;
-                // Normal matrix: for uniform scale, transpose == inverse().transpose()
-                // but transpose is O(1) vs inverse is O(n³). Use inverse().transpose()
-                // only when non-uniform scale is detected.
-                let scale = glam::Vec3::new(
-                    model.x_axis.truncate().length(),
-                    model.y_axis.truncate().length(),
-                    model.z_axis.truncate().length(),
-                );
-                let normal_matrix = if (scale.x - scale.y).abs() < 0.001
-                    && (scale.y - scale.z).abs() < 0.001
-                {
-                    // Uniform scale — transpose is sufficient
-                    model.transpose()
-                } else {
-                    // Non-uniform scale — need full inverse transpose
-                    model.inverse().transpose()
-                };
-
-                let uniform = PbrSceneUniform {
-                    model: model.to_cols_array_2d(),
-                    view_proj: view_proj.to_cols_array_2d(),
-                    normal_matrix: normal_matrix.to_cols_array_2d(),
-                    camera_pos: [camera_pos.x, camera_pos.y, camera_pos.z, 0.0],
-                    light_dir: [light.direction.x, light.direction.y, light.direction.z, 0.0],
-                    light_color: [light.color.x, light.color.y, light.color.z, light.intensity],
-                    material_params: [cmd.metallic, cmd.roughness, cmd.normal_scale, light_count as f32],
-                    lights: gpu_lights,
-                    cascade_view_projs: [
-                        cascade_matrices[0].to_cols_array_2d(),
-                        cascade_matrices[1].to_cols_array_2d(),
-                        cascade_matrices[2].to_cols_array_2d(),
-                    ],
-                    cascade_splits: [cascade_splits[0], cascade_splits[1], cascade_splits[2], 1.0 / SHADOW_MAP_SIZE as f32],
-                    emissive_factor: [cmd.emissive_factor[0], cmd.emissive_factor[1], cmd.emissive_factor[2], CSM_CASCADE_COUNT as f32],
-                };
-                device.queue().write_buffer(
-                    &render_state.scene_uniform_buffer, 0, bytemuck::bytes_of(&uniform),
-                );
-
-                let Some(pipeline) = render_assets.get_pipeline(&gpu_material.pipeline_handle) else {
-                    log::error!("材质引用了不存在的管线");
-                    continue;
-                };
-                render_pass.set_pipeline(pipeline);
-                render_pass.set_bind_group(0, &render_state.scene_bind_group, &[]);
-                render_pass.set_bind_group(1, &gpu_material.bind_group, &[]);
-                render_pass.set_bind_group(2, &render_state.ibl_shadow_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
-                render_pass.set_index_buffer(gpu_mesh.index_buffer.slice(..), gpu_mesh.index_format);
-                render_pass.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);
-            }
+            render_pass.set_pipeline(pipeline);
+            render_pass.set_bind_group(0, &render_state.scene_bind_group, &[]);
+            render_pass.set_bind_group(1, &gpu_material.bind_group, &[]);
+            render_pass.set_bind_group(2, &render_state.ibl_shadow_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(gpu_mesh.index_buffer.slice(..), gpu_mesh.index_format);
+            render_pass.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);
         }
 
         // --- Bloom passes: downsample → upsample ---
@@ -925,10 +918,15 @@ impl RenderApp {
                 let output_path = app.world.get_resource::<crate::renderer::capture::CaptureState>()
                     .and_then(|s| s.current_output_path());
 
-                let pixels = cr.read_pixels(device.device());
-
-                if let Some(path) = output_path {
-                    save_png(&pixels, cr.width, cr.height, &path);
+                match cr.read_pixels(device.device()) {
+                    Ok(pixels) => {
+                        if let Some(path) = output_path {
+                            save_png(&pixels, cr.width, cr.height, &path);
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("帧捕获像素回读失败: {}", e);
+                    }
                 }
             }
         }

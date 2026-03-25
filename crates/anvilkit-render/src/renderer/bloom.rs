@@ -6,7 +6,6 @@
 use bevy_ecs::prelude::*;
 use crate::renderer::RenderDevice;
 use crate::renderer::buffer::{HDR_FORMAT, BLOOM_MIP_COUNT, create_bloom_mip_chain};
-use crate::renderer::RenderPipelineBuilder;
 
 const BLOOM_DOWNSAMPLE_SHADER: &str = include_str!("../shaders/bloom_downsample.wgsl");
 const BLOOM_UPSAMPLE_SHADER: &str = include_str!("../shaders/bloom_upsample.wgsl");
@@ -152,89 +151,10 @@ impl BloomResources {
                 });
 
         // Downsample pipeline — writes to mip N+1 (no blending)
-        let downsample_bgl =
-            device
-                .device()
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("Bloom Down BGL"),
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 2,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
-                        },
-                    ],
-                });
-
-        let downsample_pipeline = RenderPipelineBuilder::new()
-            .with_vertex_shader(BLOOM_DOWNSAMPLE_SHADER)
-            .with_fragment_shader(BLOOM_DOWNSAMPLE_SHADER)
-            .with_format(HDR_FORMAT)
-            .with_vertex_layouts(vec![])
-            .with_bind_group_layouts(vec![downsample_bgl])
-            .with_label("Bloom Downsample Pipeline")
-            .build(device)
-            .expect("Failed to build bloom downsample pipeline")
-            .into_pipeline();
+        let downsample_pipeline = Self::build_downsample_pipeline(device, &bind_group_layout);
 
         // Upsample pipeline — additive blending (src + dst)
-        let upsample_bgl =
-            device
-                .device()
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("Bloom Up BGL"),
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 2,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
-                        },
-                    ],
-                });
-
-        let upsample_pipeline = Self::build_upsample_pipeline(device, upsample_bgl);
+        let upsample_pipeline = Self::build_upsample_pipeline(device, &bind_group_layout);
 
         Self {
             mip_texture,
@@ -248,9 +168,55 @@ impl BloomResources {
         }
     }
 
+    fn build_downsample_pipeline(
+        device: &RenderDevice,
+        layout: &wgpu::BindGroupLayout,
+    ) -> wgpu::RenderPipeline {
+        let shader = device
+            .device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Bloom Downsample Shader"),
+                source: wgpu::ShaderSource::Wgsl(BLOOM_DOWNSAMPLE_SHADER.into()),
+            });
+
+        let pipeline_layout =
+            device
+                .device()
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Bloom Downsample PL"),
+                    bind_group_layouts: &[layout],
+                    push_constant_ranges: &[],
+                });
+
+        device
+            .device()
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Bloom Downsample Pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: "vs_main",
+                    buffers: &[],
+                },
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: "fs_main",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: HDR_FORMAT,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview: None,
+            })
+    }
+
     fn build_upsample_pipeline(
         device: &RenderDevice,
-        layout: wgpu::BindGroupLayout,
+        layout: &wgpu::BindGroupLayout,
     ) -> wgpu::RenderPipeline {
         let shader = device
             .device()
@@ -264,7 +230,7 @@ impl BloomResources {
                 .device()
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Bloom Upsample PL"),
-                    bind_group_layouts: &[&layout],
+                    bind_group_layouts: &[layout],
                     push_constant_ranges: &[],
                 });
 

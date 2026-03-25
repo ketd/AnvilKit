@@ -41,6 +41,8 @@
 //! // 子实体的全局位置将是 (15.0, 0.0, 0.0)
 //! ```
 
+use std::collections::HashSet;
+
 use bevy_ecs::prelude::*;
 // 重新导出 anvilkit-core 的变换类型
 pub use anvilkit_core::math::{Transform, GlobalTransform};
@@ -245,30 +247,49 @@ pub fn sync_simple_transforms(
     }
 }
 
+/// 父子关系同步系统
+///
+/// 检测新添加的 `Parent` 组件，并将对应的子实体添加到父实体的 `Children` 列表中。
+/// 如果父实体还没有 `Children` 组件，则自动插入一个。
+pub fn parent_child_sync_system(
+    query: Query<(Entity, &Parent), Added<Parent>>,
+    mut commands: Commands,
+    mut children_query: Query<&mut Children>,
+) {
+    for (child_entity, parent_component) in &query {
+        let parent_entity = parent_component.get();
+        if let Ok(mut children) = children_query.get_mut(parent_entity) {
+            // 父实体已有 Children，添加子实体（push 内部会去重）
+            children.push(child_entity);
+        } else {
+            // 父实体没有 Children 组件，插入新的
+            commands.entity(parent_entity).insert(Children::new(vec![child_entity]));
+        }
+    }
+}
+
 /// 传播变换系统
-/// 
+///
 /// 将父实体的全局变换传播到所有子实体。
 /// 
 /// 这个系统实现了变换层次的核心逻辑，确保子实体的全局变换
 /// 正确反映其在世界空间中的位置。
 pub fn propagate_transforms(
     mut root_query: Query<
-        (Entity, &Children, Ref<GlobalTransform>),
-        (Changed<GlobalTransform>, Without<Parent>),
+        (Entity, &Children, &GlobalTransform),
+        Without<Parent>,
     >,
     mut transform_query: Query<(&Transform, &mut GlobalTransform, Option<&Children>), With<Parent>>,
     children_query: Query<&Children, (With<Parent>, Without<GlobalTransform>)>,
 ) {
-    // 处理根实体的变换传播
+    // 处理根实体的变换传播（每帧对所有根实体传播，确保子实体本地变换变更也被捕获）
     for (_entity, children, global_transform) in &mut root_query {
-        if global_transform.is_changed() {
-            propagate_recursive(
-                &global_transform,
-                children,
-                &mut transform_query,
-                &children_query,
-            );
-        }
+        propagate_recursive(
+            global_transform,
+            children,
+            &mut transform_query,
+            &children_query,
+        );
     }
 }
 
@@ -288,8 +309,8 @@ fn propagate_recursive(
     transform_query: &mut Query<(&Transform, &mut GlobalTransform, Option<&Children>), With<Parent>>,
     children_query: &Query<&Children, (With<Parent>, Without<GlobalTransform>)>,
 ) {
-    // 收集需要递归处理的子实体
-    let mut to_recurse = Vec::new();
+    // 收集需要递归处理的子实体（仅复制 Entity ID，避免 clone 整个 Children）
+    let mut to_recurse: Vec<(GlobalTransform, Vec<Entity>)> = Vec::new();
 
     for &child_entity in children.iter() {
         // 尝试获取子实体的变换组件
@@ -300,18 +321,55 @@ fn propagate_recursive(
             let new_global = parent_global.mul_transform(&GlobalTransform::from(*transform));
             *global_transform = new_global;
 
-            // 如果子实体还有自己的子实体，记录下来稍后处理
+            // 如果子实体还有自己的子实体，收集 Entity ID 稍后处理
             if let Some(grandchildren) = child_children {
-                to_recurse.push((new_global, grandchildren.clone()));
+                let child_entities: Vec<Entity> = grandchildren.iter().copied().collect();
+                to_recurse.push((new_global, child_entities));
             }
         }
     }
 
     // 递归处理子实体
-    for (global_transform, grandchildren) in to_recurse {
-        propagate_recursive(
+    for (global_transform, child_entities) in to_recurse {
+        propagate_recursive_entities(
             &global_transform,
-            &grandchildren,
+            &child_entities,
+            transform_query,
+            children_query,
+        );
+    }
+}
+
+/// 递归传播变换（基于 Entity 切片）
+///
+/// 与 `propagate_recursive` 相同的逻辑，但接受 `&[Entity]` 而非 `&Children`，
+/// 避免在递归过程中 clone 整个 Children 组件。
+fn propagate_recursive_entities(
+    parent_global: &GlobalTransform,
+    child_entities: &[Entity],
+    transform_query: &mut Query<(&Transform, &mut GlobalTransform, Option<&Children>), With<Parent>>,
+    children_query: &Query<&Children, (With<Parent>, Without<GlobalTransform>)>,
+) {
+    let mut to_recurse: Vec<(GlobalTransform, Vec<Entity>)> = Vec::new();
+
+    for &child_entity in child_entities.iter() {
+        if let Ok((transform, mut global_transform, child_children)) =
+            transform_query.get_mut(child_entity) {
+
+            let new_global = parent_global.mul_transform(&GlobalTransform::from(*transform));
+            *global_transform = new_global;
+
+            if let Some(grandchildren) = child_children {
+                let entities: Vec<Entity> = grandchildren.iter().copied().collect();
+                to_recurse.push((new_global, entities));
+            }
+        }
+    }
+
+    for (global_transform, entities) in to_recurse {
+        propagate_recursive_entities(
+            &global_transform,
+            &entities,
             transform_query,
             children_query,
         );
@@ -356,13 +414,13 @@ impl TransformHierarchy {
     pub fn set_parent(commands: &mut Commands, child: Entity, parent: Entity) {
         // 为子实体添加 Parent 组件
         commands.entity(child).insert(Parent::new(parent));
-        
+
         // 为父实体添加或更新 Children 组件
         // 使用 try_insert 来避免重复插入
         commands.entity(parent).try_insert(Children::empty());
-        
-        // 这里需要一个系统来实际更新 Children 列表
-        // 在实际实现中，这通常通过专门的系统来处理
+
+        // 注意: parent_child_sync_system 负责在下一次系统运行时
+        // 将此子实体实际添加到父实体的 Children 列表中
     }
 
     /// 移除父子关系
@@ -401,13 +459,23 @@ impl TransformHierarchy {
     /// 祖先实体列表，从直接父实体到根实体
     pub fn get_ancestors(world: &World, entity: Entity) -> Vec<Entity> {
         let mut ancestors = Vec::new();
+        let mut visited = HashSet::new();
         let mut current = entity;
-        
+        visited.insert(current);
+
         while let Some(parent) = world.get::<Parent>(current) {
-            ancestors.push(parent.get());
-            current = parent.get();
+            let parent_entity = parent.get();
+            if !visited.insert(parent_entity) {
+                log::warn!(
+                    "Cycle detected in transform hierarchy at entity {:?} while traversing ancestors of {:?}",
+                    parent_entity, entity,
+                );
+                break;
+            }
+            ancestors.push(parent_entity);
+            current = parent_entity;
         }
-        
+
         ancestors
     }
 

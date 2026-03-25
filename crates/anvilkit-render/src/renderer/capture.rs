@@ -252,15 +252,17 @@ impl CaptureResources {
     /// 同步读取 staging buffer 中的像素数据（RGBA 格式）
     ///
     /// 调用此方法前必须已经 submit 了包含 copy 命令的 encoder。
-    pub fn read_pixels(&self, device: &wgpu::Device) -> Vec<u8> {
+    pub fn read_pixels(&self, device: &wgpu::Device) -> Result<Vec<u8>, String> {
         let buffer_slice = self.staging_buffer.slice(..);
 
         let (sender, receiver) = std::sync::mpsc::channel();
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            sender.send(result).unwrap();
+            let _ = sender.send(result);
         });
         device.poll(wgpu::Maintain::Wait);
-        receiver.recv().unwrap().unwrap();
+        receiver.recv()
+            .map_err(|e| format!("Buffer map channel error: {}", e))?
+            .map_err(|e| format!("Buffer map failed: {:?}", e))?;
 
         let data = buffer_slice.get_mapped_range();
 
@@ -291,7 +293,7 @@ impl CaptureResources {
         drop(data);
         self.staging_buffer.unmap();
 
-        pixels
+        Ok(pixels)
     }
 
     /// 窗口 resize 时重建资源

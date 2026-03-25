@@ -197,16 +197,15 @@ impl ReliableChannel {
     }
 
     /// Process an ACK: remove the acknowledged packet and any covered by the bitfield.
+    /// Uses wrapping arithmetic to handle sequence number wraparound.
     pub fn receive_ack(&mut self, ack: u32, ack_bitfield: u32) {
         self.pending_acks.retain(|p| {
             if p.sequence == ack {
                 return false;
             }
-            if ack > p.sequence {
-                let diff = ack - p.sequence;
-                if diff <= 32 && (ack_bitfield & (1 << (diff - 1))) != 0 {
-                    return false;
-                }
+            let diff = ack.wrapping_sub(p.sequence);
+            if diff > 0 && diff <= 32 && (ack_bitfield & (1 << (diff - 1))) != 0 {
+                return false;
             }
             true
         });
@@ -386,12 +385,17 @@ pub struct InputBuffer {
     pub inputs: VecDeque<(u32, Vec<u8>)>,
     /// Current simulation tick.
     pub current_tick: u32,
+    /// Maximum number of buffered inputs before eviction.
+    pub max_size: usize,
 }
 
 impl InputBuffer {
-    /// Push an input for the given tick.
+    /// Push an input for the given tick. Evicts oldest entries if buffer exceeds max_size.
     pub fn push_input(&mut self, tick: u32, input: Vec<u8>) {
         self.inputs.push_back((tick, input));
+        while self.inputs.len() > self.max_size {
+            self.inputs.pop_front();
+        }
     }
 
     /// Get the input at the given tick.
@@ -405,6 +409,7 @@ impl Default for InputBuffer {
         Self {
             inputs: VecDeque::new(),
             current_tick: 0,
+            max_size: 1024,
         }
     }
 }

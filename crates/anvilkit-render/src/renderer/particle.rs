@@ -435,7 +435,7 @@ impl ParticleRenderer {
                 needed,
             ));
         }
-        let instance_buffer = &self.cached_instance_buf.as_ref().unwrap().0;
+        let instance_buffer = &self.cached_instance_buf.as_ref().expect("buffer must be initialized above").0;
         device.queue().write_buffer(instance_buffer, 0, data);
 
         {

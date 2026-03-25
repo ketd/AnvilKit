@@ -243,12 +243,27 @@ pub struct AssetServer {
     async_tx: mpsc::Sender<AsyncLoadResult>,
     /// 已完成但未处理的加载结果（缓存在主线程）
     completed: Vec<AsyncLoadResult>,
+    /// 线程池任务发送端
+    task_tx: std::sync::mpsc::Sender<Box<dyn FnOnce() + Send>>,
 }
 
 impl AssetServer {
     /// 创建新的资产服务器
     pub fn new(asset_root: impl Into<PathBuf>) -> Self {
         let (tx, rx) = mpsc::channel();
+        let (task_tx, task_rx) = std::sync::mpsc::channel::<Box<dyn FnOnce() + Send>>();
+        let task_rx = std::sync::Arc::new(std::sync::Mutex::new(task_rx));
+        let worker_count = std::thread::available_parallelism()
+            .map(|n| n.get().clamp(1, 4))
+            .unwrap_or(2);
+        for _ in 0..worker_count {
+            let rx = task_rx.clone();
+            std::thread::spawn(move || {
+                while let Ok(task) = rx.lock().unwrap().recv() {
+                    task();
+                }
+            });
+        }
         Self {
             asset_root: asset_root.into(),
             path_to_id: HashMap::new(),
@@ -256,6 +271,7 @@ impl AssetServer {
             async_rx: rx,
             async_tx: tx,
             completed: Vec::new(),
+            task_tx,
         }
     }
 
@@ -294,11 +310,11 @@ impl AssetServer {
         let file_path = handle.path().to_path_buf();
         let tx = self.async_tx.clone();
 
-        std::thread::spawn(move || {
+        let _ = self.task_tx.send(Box::new(move || {
             let result = std::fs::read(&file_path)
                 .map_err(|e| format!("Failed to load {:?}: {}", file_path, e));
             let _ = tx.send(AsyncLoadResult { id, data: result });
-        });
+        }));
 
         handle
     }

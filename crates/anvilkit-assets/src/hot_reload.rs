@@ -10,7 +10,7 @@
 //!
 //! let mut watcher = FileWatcher::new("assets").unwrap();
 //! // In your game loop:
-//! for path in watcher.poll_changes() {
+//! for path in watcher.poll_changes() { // requires &mut self
 //!     println!("File changed: {:?}", path);
 //! }
 //! ```
@@ -29,6 +29,7 @@ mod inner {
         _watcher: notify::RecommendedWatcher,
         rx: mpsc::Receiver<PathBuf>,
         watch_root: PathBuf,
+        pending_changes: std::collections::HashMap<PathBuf, std::time::Instant>,
     }
 
     impl FileWatcher {
@@ -41,7 +42,7 @@ mod inner {
             let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
                 if let Ok(event) = res {
                     match event.kind {
-                        EventKind::Create(_) | EventKind::Modify(_) => {
+                        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {
                             for path in event.paths {
                                 let _ = sender.send(path);
                             }
@@ -60,21 +61,33 @@ mod inner {
                 _watcher: watcher,
                 rx,
                 watch_root,
+                pending_changes: std::collections::HashMap::new(),
             })
         }
 
         /// 轮询所有待处理的文件变更。
         ///
-        /// 返回自上次调用以来变更的文件路径列表（去重）。
-        pub fn poll_changes(&self) -> Vec<PathBuf> {
-            let mut changes = Vec::new();
+        /// 返回已稳定（经过 200ms 防抖）的变更文件路径列表。
+        pub fn poll_changes(&mut self) -> Vec<PathBuf> {
+            let now = std::time::Instant::now();
+            let debounce_duration = std::time::Duration::from_millis(200);
+
+            // Collect new events
             while let Ok(path) = self.rx.try_recv() {
-                // Deduplicate (notify may fire multiple events for one save)
-                if !changes.contains(&path) {
-                    changes.push(path);
-                }
+                self.pending_changes.insert(path, now);
             }
-            changes
+
+            // Return paths that have been stable for debounce_duration
+            let mut ready = Vec::new();
+            self.pending_changes.retain(|path, last_event| {
+                if now.duration_since(*last_event) >= debounce_duration {
+                    ready.push(path.clone());
+                    false // remove from pending
+                } else {
+                    true // keep pending
+                }
+            });
+            ready
         }
 
         /// 检查路径是否是特定类型的资源文件。
@@ -114,7 +127,7 @@ mod stub {
         }
 
         /// Always returns empty (no-op).
-        pub fn poll_changes(&self) -> Vec<PathBuf> { Vec::new() }
+        pub fn poll_changes(&mut self) -> Vec<PathBuf> { Vec::new() }
 
         /// Always false.
         pub fn is_shader(_path: &Path) -> bool { false }

@@ -5,6 +5,7 @@
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use crate::error::AnvilKitError;
 
 /// 图形设置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,21 +107,27 @@ impl Settings {
     /// 从 RON 文件加载设置。文件不存在时返回默认值。
     pub fn load(path: &Path) -> Self {
         match std::fs::read_to_string(path) {
-            Ok(data) => ron::from_str(&data).unwrap_or_default(),
+            Ok(data) => match ron::from_str(&data) {
+                Ok(settings) => settings,
+                Err(e) => {
+                    eprintln!("[WARN] Settings deserialization failed, using defaults: {}", e);
+                    Self::default()
+                }
+            },
             Err(_) => Self::default(),
         }
     }
 
     /// 保存设置到 RON 文件。
-    pub fn save(&self, path: &Path) -> Result<(), String> {
+    pub fn save(&self, path: &Path) -> Result<(), AnvilKitError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create settings dir: {}", e))?;
+                .map_err(|e| AnvilKitError::generic(format!("Failed to create settings dir: {}", e)))?;
         }
         let ron_str = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
-            .map_err(|e| format!("Settings serialize failed: {}", e))?;
+            .map_err(|e| AnvilKitError::serialization(format!("Settings serialize failed: {}", e)))?;
         std::fs::write(path, ron_str)
-            .map_err(|e| format!("Failed to write settings: {}", e))?;
+            .map_err(|e| AnvilKitError::generic(format!("Failed to write settings: {}", e)))?;
         Ok(())
     }
 

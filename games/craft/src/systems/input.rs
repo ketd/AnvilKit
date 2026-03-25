@@ -5,6 +5,7 @@ use anvilkit_input::prelude::{InputState, KeyCode};
 use anvilkit_camera::prelude::CameraController;
 
 use crate::components::FpsCamera;
+use crate::config;
 use crate::resources::PlayerState;
 
 /// Player movement system: WASD + Space/Shift for vertical movement.
@@ -34,7 +35,7 @@ pub fn player_movement_system(
             || input.is_key_pressed(KeyCode::A)
             || input.is_key_pressed(KeyCode::D));
 
-    let speed_multiplier = if player.sprinting { 1.5 } else { 1.0 };
+    let speed_multiplier = if player.sprinting { config::SPRINT_MULTIPLIER } else { 1.0 };
 
     if player.flying {
         if input.is_key_pressed(KeyCode::Space) { dir.y += 1.0; }
