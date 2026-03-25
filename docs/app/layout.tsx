@@ -1,9 +1,11 @@
 import './global.css';
-import { Inter } from 'next/font/google';
+import { Inter, Space_Grotesk, Fira_Code } from 'next/font/google';
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 
-const inter = Inter({ subsets: ['latin'] });
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
+const spaceGrotesk = Space_Grotesk({ subsets: ['latin'], variable: '--font-headline' });
+const firaCode = Fira_Code({ subsets: ['latin'], variable: '--font-mono' });
 
 export const metadata: Metadata = {
   title: {
@@ -24,7 +26,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="zh" suppressHydrationWarning>
-      <body className={inter.className}>
+      <body className={`${inter.variable} ${spaceGrotesk.variable} ${firaCode.variable} ${inter.className}`}>
         {children}
       </body>
     </html>

@@ -3,3 +3,64 @@
 @import 'fumadocs-ui/css/preset.css';
 
 @source '../node_modules/fumadocs-ui/dist/**/*.js';
+
+/* AnvilKit Landing Page Custom Styles */
+@theme {
+  --font-headline: var(--font-headline);
+  --font-mono: var(--font-mono);
+  --color-anvil-primary: #00fbfb;
+  --color-anvil-tertiary: #f94bf5;
+  --color-anvil-bg: #0e0e0f;
+  --color-anvil-surface: #131314;
+  --color-anvil-surface-container: #201f20;
+  --color-anvil-surface-high: #2a2a2b;
+  --color-anvil-surface-low: #1c1b1c;
+  --color-anvil-on-surface: #e5e2e3;
+  --color-anvil-on-surface-variant: #a8b8b9;
+  --color-anvil-outline-variant: #3a494a;
+}
+
+.kinetic-gradient {
+  background: linear-gradient(135deg, #00fbfb 0%, #f94bf5 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.thermal-gradient {
+  background: linear-gradient(135deg, #00fbfb 0%, #f94bf5 100%);
+}
+
+.glass-panel {
+  background: rgba(20, 20, 21, 0.8);
+  backdrop-filter: blur(24px);
+}
+
+.ghost-border {
+  border: 1px solid rgba(0, 251, 251, 0.15);
+}
+
+.forge-border {
+  position: relative;
+}
+
+.forge-border::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid #f94bf5;
+  border-right: 2px solid #f94bf5;
+}
+
+.landing-bg {
+  background-color: #0e0e0f;
+  background-image: radial-gradient(circle at 1px 1px, #1c1b1c 1px, transparent 0);
+  background-size: 32px 32px;
+}
+
+.hero-glow {
+  background: radial-gradient(circle at 50% 50%, rgba(0, 251, 251, 0.08) 0%, transparent 70%);
+}
