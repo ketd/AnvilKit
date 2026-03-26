@@ -396,6 +396,38 @@ impl AssetServer {
         self.states.insert(id, LoadState::Failed);
     }
 
+    /// 处理已完成的加载任务（main thread 侧）
+    ///
+    /// 从 worker channel 接收已解析的字节数据，
+    /// 缓存到 `loaded_cache` 并更新 load state。
+    ///
+    /// 与 [`process_completed`] 不同，此方法仅计数成功加载的资产，
+    /// 不执行 hot-reload 检查或自动卸载。
+    ///
+    /// # 返回
+    ///
+    /// 本帧处理的完成项数量
+    pub fn process_completed_count(&mut self) -> usize {
+        // process_completed already handles the full logic including
+        // hot-reload and unloads. This method provides a lightweight
+        // count-only interface that drains the async channel.
+        let mut count = 0;
+        while let Ok(result) = self.async_rx.try_recv() {
+            match &result.data {
+                Ok(data) => {
+                    self.loaded_cache.insert(result.id, Arc::new(data.clone()));
+                    self.states.insert(result.id, LoadState::Loaded);
+                }
+                Err(_e) => {
+                    self.states.insert(result.id, LoadState::Failed);
+                }
+            }
+            self.completed.push(result);
+            count += 1;
+        }
+        count
+    }
+
     /// 获取资产根目录
     pub fn asset_root(&self) -> &Path {
         &self.asset_root

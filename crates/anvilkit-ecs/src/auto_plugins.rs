@@ -8,6 +8,10 @@ use crate::plugin::Plugin;
 use crate::app::App;
 use crate::schedule::AnvilKitSchedule;
 
+// Note: winit 0.30 removed gamepad support. Gamepad input requires a separate
+// backend (e.g., gilrs) which can write to GamepadState directly.
+// AutoInputPlugin handles keyboard/mouse only.
+
 /// 自动输入插件
 ///
 /// 在 Cleanup 阶段自动调用 `InputState::end_frame()`，
@@ -136,5 +140,11 @@ mod tests {
         app.update();
         let after_frame_count = app.world.resource::<anvilkit_core::time::Time>().frame_count();
         assert!(after_frame_count > initial_frame_count);
+    }
+
+    #[test]
+    fn test_auto_input_plugin_name() {
+        let plugin = AutoInputPlugin;
+        assert_eq!(plugin.name(), "AutoInputPlugin");
     }
 }

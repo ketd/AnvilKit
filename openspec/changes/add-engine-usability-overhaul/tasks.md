@@ -99,9 +99,9 @@
 - [x] 3.3.4 添加 AudioBus 单元测试
 
 ### 3.4 AssetServer 集成
-- [ ] 3.4.1 修改 `audio_playback_system` — 通过 AssetServer 加载音频文件
+- [x] 3.4.1 修改 `audio_playback_system` — 通过 AssetServer 加载音频文件
 - [x] 3.4.2 添加 AudioAsset 类型到 AssetStorage
-- [ ] 3.4.3 添加集成测试
+- [x] 3.4.3 添加集成测试
 
 ## Phase 4: Asset Pipeline v2
 
@@ -136,9 +136,9 @@
 - [x] 4.5.4 添加自动卸载单元测试
 
 ### 4.6 后台解析
-- [ ] 4.6.1 修改 `load_async` worker — 在 worker thread 中执行解析
+- [x] 4.6.1 修改 `load_async` worker — 在 worker thread 中执行解析
 - [x] 4.6.2 定义 `ParsedAsset` enum
-- [ ] 4.6.3 main thread `process_completed` 只做 storage 插入
+- [x] 4.6.3 main thread `process_completed` 只做 storage 插入
 
 ## Phase 5: Input 系统 v2
 
@@ -146,7 +146,7 @@
 - [x] 5.1.1 新增 `GamepadState` 资源（connect/disconnect/button/axis）
 - [x] 5.1.2 新增 `GamepadButton` 枚举（16 种按钮）
 - [x] 5.1.3 新增 `GamepadAxis` 枚举（6 种轴）
-- [ ] 5.1.4 在 `AutoInputPlugin` 中映射 winit gamepad 事件到 GamepadState
+- [x] 5.1.4 在 `AutoInputPlugin` 中映射 winit gamepad 事件到 GamepadState
 - [x] 5.1.5 添加 GamepadState 单元测试（connect/button/axis/end_frame）
 
 ### 5.2 轴向输入

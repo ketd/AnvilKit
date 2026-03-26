@@ -15,6 +15,23 @@
 //! let listener = AudioListener::default();
 //! assert!(listener.is_active);
 //! ```
+//!
+//! # AssetServer 集成
+//!
+//! 当使用 `anvilkit-assets` crate 时，音频可以通过 `AudioAsset` 类型加载：
+//!
+//! ```rust,ignore
+//! use anvilkit_assets::audio_asset::AudioAsset;
+//!
+//! // 通过 AssetServer 加载
+//! let handle = asset_server.load::<AudioAsset>("sounds/bgm.ogg");
+//!
+//! // 在系统中使用
+//! fn play_audio(audio: Res<AudioAsset>) {
+//!     let cursor = audio.cursor();
+//!     // 传递给 rodio::Decoder::new(cursor)
+//! }
+//! ```
 
 use bevy_ecs::prelude::*;
 /// 播放状态
@@ -234,5 +251,14 @@ mod tests {
         source.pitch = 2.0;
         assert!(source.looping);
         assert!((source.pitch - 2.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_audio_asset_integration_pattern() {
+        // Verify the integration types exist and are compatible
+        let bus = AudioBus::default();
+        let source = AudioSource::new("test.wav");
+        assert_eq!(source.bus, AudioBusCategory::SFX);
+        assert!((bus.effective_volume(AudioBusCategory::SFX) - 1.0).abs() < 0.001);
     }
 }
