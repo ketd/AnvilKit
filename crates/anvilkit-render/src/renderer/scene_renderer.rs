@@ -17,6 +17,17 @@ use crate::renderer::buffer::{
 use crate::renderer::post_process::PostProcessSettings;
 use log::debug;
 
+/// Pipeline 创建参数（从 RenderConfig 提取）
+#[derive(Debug, Clone)]
+pub struct PipelineConfig {
+    /// MSAA 采样数
+    pub msaa_samples: u32,
+    /// 清除颜色 [r, g, b, a]
+    pub clear_color: [f32; 4],
+    /// 默认剔除模式
+    pub cull_mode: wgpu::Face,
+}
+
 /// 场景渲染编排器
 ///
 /// 提供自动 resize 和后处理资源管理的静态方法。
@@ -97,6 +108,24 @@ impl SceneRenderer {
         let (w, h) = rs.surface_size;
         rs.post_process.ensure_resources(device, w, h, settings);
     }
+
+    /// 从 RenderConfig 读取渲染参数
+    ///
+    /// 用于 pipeline 创建时应用用户配置（MSAA、clear color、cull mode）。
+    pub fn get_pipeline_config(config: &crate::plugin::RenderConfig) -> PipelineConfig {
+        PipelineConfig {
+            msaa_samples: config.msaa_samples,
+            clear_color: config.clear_color,
+            cull_mode: config.default_cull_mode,
+        }
+    }
+
+    /// 按优先级排序相机
+    ///
+    /// 高优先级相机先渲染。用于多相机场景（如 minimap）。
+    pub fn sort_cameras_by_priority(cameras: &mut [(i32, glam::Mat4)]) {
+        cameras.sort_by(|a, b| a.0.cmp(&b.0));
+    }
 }
 
 #[cfg(test)]
@@ -107,5 +136,18 @@ mod tests {
     fn test_scene_renderer_is_zero_sized() {
         // SceneRenderer 是纯静态方法集合，零大小
         assert_eq!(std::mem::size_of::<SceneRenderer>(), 0);
+    }
+
+    #[test]
+    fn test_sort_cameras_by_priority() {
+        let mut cameras = vec![
+            (10, glam::Mat4::IDENTITY),
+            (1, glam::Mat4::IDENTITY),
+            (5, glam::Mat4::IDENTITY),
+        ];
+        SceneRenderer::sort_cameras_by_priority(&mut cameras);
+        assert_eq!(cameras[0].0, 1);
+        assert_eq!(cameras[1].0, 5);
+        assert_eq!(cameras[2].0, 10);
     }
 }

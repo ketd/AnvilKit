@@ -253,9 +253,16 @@ impl Default for SpotLight {
     }
 }
 
+/// 最大阴影投射光源数量
+///
+/// 限制同时投射阴影的光源数量以控制 GPU 内存和性能。
+/// 超出此限制的光源不会投射阴影（但仍参与光照计算）。
+pub const MAX_SHADOW_LIGHTS: usize = 4;
+
 /// 场景灯光资源
 ///
 /// 持有场景中所有灯光信息，最多 8 盏（1 方向光 + 点光/聚光组合）。
+/// 其中最多 [`MAX_SHADOW_LIGHTS`] 个光源可同时投射阴影。
 #[derive(Resource)]
 pub struct SceneLights {
     /// The primary directional (sun) light.

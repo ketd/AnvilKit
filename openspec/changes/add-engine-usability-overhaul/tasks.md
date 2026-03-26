@@ -2,8 +2,8 @@
 
 ### 1.1 StandardMaterial 组件
 - [x] 1.1.1 定义 `StandardMaterial` 组件（base_color, metallic, roughness, normal_scale, emissive_factor）
-- [ ] 1.1.2 实现 pipeline 缓存 HashMap<PipelineKey, PipelineHandle>，key = (vertex_format, blend_mode, cull_mode)
-- [ ] 1.1.3 实现 bind group 缓存 HashMap<MaterialId, BindGroup>，lazy 创建 + dirty flag 重建
+- [x] 1.1.2 实现 pipeline 缓存 HashMap<PipelineKey, PipelineHandle>，key = (vertex_format, blend_mode, cull_mode)
+- [x] 1.1.3 实现 bind group 缓存 HashMap<MaterialId, BindGroup>，lazy 创建 + dirty flag 重建
 - [x] 1.1.4 实现 1x1 fallback textures（white, default_normal, black, white_ao）用于无纹理材质
 - [x] 1.1.5 添加 StandardMaterial 单元测试（默认值、builder 模式）
 
@@ -177,7 +177,7 @@
 
 ### 6.3 可配置渲染参数
 - [x] 6.3.1 `RenderConfig` 新增 `msaa_samples`、`clear_color`、`default_cull_mode`
-- [ ] 6.3.2 `SceneRenderer` 读取 RenderConfig 创建 pipeline 时使用配置值
+- [x] 6.3.2 `SceneRenderer` 读取 RenderConfig 创建 pipeline 时使用配置值
 - [x] 6.3.3 glTF loader 读取 `doubleSided` 属性设置 cull_mode
 - [x] 6.3.4 添加 RenderConfig 默认值测试
 
@@ -188,7 +188,7 @@
 
 ### 6.5 多相机
 - [x] 6.5.1 `CameraComponent` 新增 `priority: i32` 字段
-- [ ] 6.5.2 `SceneRenderer` 按 priority 排序 active cameras
+- [x] 6.5.2 `SceneRenderer` 按 priority 排序 active cameras
 - [ ] 6.5.3 `RenderTarget::Texture(handle)` 支持渲染到纹理
 - [x] 6.5.4 添加多相机渲染排序测试
 
@@ -196,7 +196,7 @@
 - [ ] 6.6.1 点光源 cubemap shadow
 - [ ] 6.6.2 聚光灯 2D shadow
 - [ ] 6.6.3 PBR shader 采样
-- [ ] 6.6.4 `MAX_SHADOW_LIGHTS` 常量
+- [x] 6.6.4 `MAX_SHADOW_LIGHTS` 常量
 
 ## Phase 7: 清理与迁移
 
@@ -208,8 +208,8 @@
 
 ### 7.2 Umbrella crate 统一
 - [x] 7.2.1 扩展 `anvilkit/src/lib.rs` — 添加 DefaultPlugins 模块和 prelude 导出
-- [ ] 7.2.2 迁移所有 example 的 import 到 `use anvilkit::prelude::*`
-- [ ] 7.2.3 迁移 billiards/craft 的 import 到 umbrella crate
+- [x] 7.2.2 迁移所有 example 的 import 到 `use anvilkit::prelude::*`
+- [x] 7.2.3 迁移 billiards/craft 的 import 到 umbrella crate
 
 ### 7.3 Example 重构
 - [ ] 7.3.1 实现 `DemoApp` 共享脚手架

@@ -64,6 +64,149 @@ pub struct GpuMaterial {
     pub bind_group: BindGroup,
 }
 
+/// Pipeline 缓存 key
+///
+/// 用于去重 pipeline 创建。相同 key 的 pipeline 可复用。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PipelineKey {
+    /// 顶点格式标识
+    pub vertex_format: u64,
+    /// 混合模式
+    pub blend_mode: BlendMode,
+    /// 背面剔除模式
+    pub cull_mode: CullMode,
+}
+
+/// 混合模式
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BlendMode {
+    /// 不透明
+    Opaque,
+    /// Alpha 混合
+    AlphaBlend,
+    /// 加法混合
+    Additive,
+}
+
+/// 剔除模式
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CullMode {
+    /// 无剔除
+    None,
+    /// 背面剔除
+    Back,
+    /// 正面剔除
+    Front,
+}
+
+/// Pipeline 缓存
+///
+/// 缓存已创建的渲染管线，避免重复创建。
+/// 使用 `PipelineKey` 作为缓存键。
+pub struct PipelineCache {
+    /// key → pipeline handle 映射
+    cache: std::collections::HashMap<PipelineKey, PipelineHandle>,
+}
+
+impl PipelineCache {
+    /// 创建空的 pipeline 缓存
+    pub fn new() -> Self {
+        Self {
+            cache: std::collections::HashMap::new(),
+        }
+    }
+
+    /// 获取或创建 pipeline
+    ///
+    /// 如果缓存中存在相同 key 的 pipeline，直接返回；
+    /// 否则调用 `create_fn` 创建新 pipeline 并缓存。
+    pub fn get_or_create(
+        &mut self,
+        key: PipelineKey,
+        create_fn: impl FnOnce(&PipelineKey) -> PipelineHandle,
+    ) -> PipelineHandle {
+        *self.cache.entry(key.clone()).or_insert_with(|| create_fn(&key))
+    }
+
+    /// 缓存中的 pipeline 数量
+    pub fn len(&self) -> usize {
+        self.cache.len()
+    }
+
+    /// 缓存是否为空
+    pub fn is_empty(&self) -> bool {
+        self.cache.is_empty()
+    }
+
+    /// 清除所有缓存的 pipeline
+    pub fn clear(&mut self) {
+        self.cache.clear();
+    }
+}
+
+impl Default for PipelineCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Bind group 缓存
+///
+/// 按 MaterialHandle 缓存 bind group，支持 dirty flag 重建。
+pub struct BindGroupCache {
+    /// material id → (bind_group_index, dirty)
+    entries: std::collections::HashMap<u32, (u32, bool)>,
+}
+
+impl BindGroupCache {
+    /// 创建空缓存
+    pub fn new() -> Self {
+        Self {
+            entries: std::collections::HashMap::new(),
+        }
+    }
+
+    /// 检查是否有缓存的 bind group
+    pub fn get(&self, material_id: u32) -> Option<u32> {
+        self.entries.get(&material_id)
+            .filter(|(_, dirty)| !dirty)
+            .map(|(idx, _)| *idx)
+    }
+
+    /// 插入或更新缓存
+    pub fn insert(&mut self, material_id: u32, bind_group_index: u32) {
+        self.entries.insert(material_id, (bind_group_index, false));
+    }
+
+    /// 标记为 dirty（需要重建）
+    pub fn mark_dirty(&mut self, material_id: u32) {
+        if let Some(entry) = self.entries.get_mut(&material_id) {
+            entry.1 = true;
+        }
+    }
+
+    /// 清除所有缓存
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    /// 缓存条目数量
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// 缓存是否为空
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+impl Default for BindGroupCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// GPU 资产存储
 ///
 /// 管理所有已上传到 GPU 的网格、材质和渲染管线资源。
@@ -201,5 +344,56 @@ impl RenderAssets {
     /// 已注册的管线数量
     pub fn pipeline_count(&self) -> usize {
         self.pipelines.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pipeline_cache() {
+        let mut cache = PipelineCache::new();
+        assert!(cache.is_empty());
+
+        let key = PipelineKey {
+            vertex_format: 1,
+            blend_mode: BlendMode::Opaque,
+            cull_mode: CullMode::Back,
+        };
+
+        let handle = cache.get_or_create(key.clone(), |_| PipelineHandle(42));
+        assert_eq!(handle.0, 42);
+        assert_eq!(cache.len(), 1);
+
+        // Same key should return cached handle
+        let handle2 = cache.get_or_create(key, |_| PipelineHandle(99));
+        assert_eq!(handle2.0, 42); // not 99 — was cached
+
+        // Different key creates new
+        let key2 = PipelineKey {
+            vertex_format: 2,
+            blend_mode: BlendMode::AlphaBlend,
+            cull_mode: CullMode::None,
+        };
+        let handle3 = cache.get_or_create(key2, |_| PipelineHandle(77));
+        assert_eq!(handle3.0, 77);
+        assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn test_bind_group_cache() {
+        let mut cache = BindGroupCache::new();
+        assert!(cache.is_empty());
+
+        cache.insert(1, 10);
+        assert_eq!(cache.get(1), Some(10));
+
+        cache.mark_dirty(1);
+        assert_eq!(cache.get(1), None); // dirty = not returned
+
+        cache.insert(1, 11); // re-create clears dirty
+        assert_eq!(cache.get(1), Some(11));
+        assert_eq!(cache.len(), 1);
     }
 }

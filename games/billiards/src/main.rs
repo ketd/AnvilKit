@@ -1,3 +1,6 @@
+#[allow(unused_imports)]
+use anvilkit::prelude::*;
+
 use anvilkit_render::prelude::*;
 use anvilkit_render::renderer::{
     buffer::{
