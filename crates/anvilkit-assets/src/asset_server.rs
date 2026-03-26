@@ -249,11 +249,15 @@ pub struct AssetServer {
     completed: Vec<AsyncLoadResult>,
     /// 线程池任务发送端
     task_tx: std::sync::mpsc::Sender<Box<dyn FnOnce() + Send>>,
+    /// 文件监视器（hot-reload feature 启用时有效）
+    #[cfg(feature = "hot-reload")]
+    watcher: Option<crate::hot_reload::FileWatcher>,
 }
 
 impl AssetServer {
     /// 创建新的资产服务器
     pub fn new(asset_root: impl Into<PathBuf>) -> Self {
+        let asset_root: PathBuf = asset_root.into();
         let (tx, rx) = mpsc::channel();
         let (task_tx, task_rx) = std::sync::mpsc::channel::<Box<dyn FnOnce() + Send>>();
         let task_rx = std::sync::Arc::new(std::sync::Mutex::new(task_rx));
@@ -268,8 +272,12 @@ impl AssetServer {
                 }
             });
         }
+        #[cfg(feature = "hot-reload")]
+        let watcher = crate::hot_reload::FileWatcher::new(asset_root.as_path())
+            .map_err(|e| log::warn!("FileWatcher 创建失败: {}", e))
+            .ok();
         Self {
-            asset_root: asset_root.into(),
+            asset_root,
             path_to_id: HashMap::new(),
             id_to_path: HashMap::new(),
             states: HashMap::new(),
@@ -278,6 +286,8 @@ impl AssetServer {
             async_tx: tx,
             completed: Vec::new(),
             task_tx,
+            #[cfg(feature = "hot-reload")]
+            watcher,
         }
     }
 
@@ -348,6 +358,19 @@ impl AssetServer {
             self.completed.push(result);
             count += 1;
         }
+        #[cfg(feature = "hot-reload")]
+        if let Some(ref mut watcher) = self.watcher {
+            for changed_path in watcher.poll_changes() {
+                if let Some(&id) = self.path_to_id.get(&changed_path) {
+                    log::info!("热重载: {:?}", changed_path);
+                    self.reload(id);
+                }
+            }
+        }
+
+        // 自动清理无引用的缓存资产
+        self.process_unloads();
+
         count
     }
 
@@ -415,6 +438,26 @@ impl AssetServer {
     /// 缓存中的资产数量
     pub fn cache_len(&self) -> usize {
         self.loaded_cache.len()
+    }
+
+    /// 清理无引用的缓存资产
+    ///
+    /// 遍历缓存，移除 `Arc::strong_count == 1` 的条目
+    /// （仅 AssetServer 自身持有，所有外部 handle 已 drop）。
+    ///
+    /// 返回本次清理的资产数量。
+    pub fn process_unloads(&mut self) -> usize {
+        let before = self.loaded_cache.len();
+        self.loaded_cache.retain(|id, arc| {
+            if Arc::strong_count(arc) <= 1 {
+                log::debug!("自动卸载资产 {:?}", id);
+                self.states.insert(*id, LoadState::NotLoaded);
+                false
+            } else {
+                true
+            }
+        });
+        before - self.loaded_cache.len()
     }
 }
 

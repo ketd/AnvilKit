@@ -26,6 +26,6 @@ pub mod gamepad;
 /// Convenient re-exports for common input types.
 pub mod prelude {
     pub use crate::input_state::{InputState, KeyCode, MouseButton};
-    pub use crate::action_map::{ActionId, ActionMap, ActionState};
+    pub use crate::action_map::{ActionId, ActionMap, ActionState, AxisBinding};
     pub use crate::gamepad::{GamepadAxis, GamepadButton, GamepadState};
 }

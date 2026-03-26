@@ -33,6 +33,20 @@ pub enum InputBinding {
     Mouse(MouseButton),
 }
 
+/// 输入轴绑定
+#[derive(Debug, Clone)]
+pub enum AxisBinding {
+    /// Gamepad 模拟轴
+    GamepadAxis(crate::gamepad::GamepadAxis),
+    /// 键盘模拟轴（负键 + 正键 → [-1, 0, 1]）
+    KeyboardAxis {
+        /// 负方向按键
+        negative: KeyCode,
+        /// 正方向按键
+        positive: KeyCode,
+    },
+}
+
 /// 动作状态
 ///
 /// # 示例
@@ -106,6 +120,8 @@ pub struct ActionMap {
     id_to_name: Vec<String>,
     /// 下一个 ActionId
     next_id: u32,
+    /// 轴绑定（动作名 → 轴绑定列表）
+    axis_bindings: HashMap<String, Vec<AxisBinding>>,
 }
 
 impl ActionMap {
@@ -117,6 +133,7 @@ impl ActionMap {
             name_to_id: HashMap::new(),
             id_to_name: Vec::new(),
             next_id: 0,
+            axis_bindings: HashMap::new(),
         }
     }
 
@@ -221,6 +238,31 @@ impl ActionMap {
             .copied()
             .unwrap_or(ActionState::Inactive)
     }
+
+    /// 为动作绑定轴输入
+    pub fn bind_axis(&mut self, action: &str, binding: AxisBinding) {
+        self.axis_bindings.entry(action.to_string()).or_default().push(binding);
+    }
+
+    /// 查询轴值（合并所有绑定的最大绝对值）
+    pub fn axis_value(&self, action: &str, input: &InputState, gamepad: Option<&crate::gamepad::GamepadState>) -> f32 {
+        let Some(bindings) = self.axis_bindings.get(action) else { return 0.0 };
+        let mut value = 0.0f32;
+        for binding in bindings {
+            let v = match binding {
+                AxisBinding::GamepadAxis(axis) => {
+                    gamepad.map_or(0.0, |gp| gp.axis_value(0, *axis))
+                }
+                AxisBinding::KeyboardAxis { negative, positive } => {
+                    let neg = if input.is_key_pressed(*negative) { -1.0 } else { 0.0 };
+                    let pos = if input.is_key_pressed(*positive) { 1.0 } else { 0.0 };
+                    neg + pos
+                }
+            };
+            if v.abs() > value.abs() { value = v; }
+        }
+        value
+    }
 }
 
 impl Default for ActionMap {
@@ -282,5 +324,24 @@ mod tests {
         let map = ActionMap::new();
         assert_eq!(map.action_state("nonexistent"), ActionState::Inactive);
         assert!(!map.is_action_active("nonexistent"));
+    }
+
+    #[test]
+    fn test_keyboard_axis() {
+        let mut map = ActionMap::new();
+        map.bind_axis("move_x", AxisBinding::KeyboardAxis {
+            negative: KeyCode::A,
+            positive: KeyCode::D,
+        });
+
+        let mut input = InputState::new();
+        input.press_key(KeyCode::D);
+
+        let val = map.axis_value("move_x", &input, None);
+        assert!((val - 1.0).abs() < 0.001);
+
+        input.press_key(KeyCode::A);
+        let val = map.axis_value("move_x", &input, None);
+        assert_eq!(val, 0.0); // both pressed = cancel out
     }
 }
