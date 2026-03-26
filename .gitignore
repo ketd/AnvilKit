@@ -76,3 +76,4 @@ memory-bank/backups/*
 docs/.next/
 docs/out/
 docs/.source/
+design/
