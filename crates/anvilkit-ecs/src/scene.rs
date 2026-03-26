@@ -237,3 +237,47 @@ impl SceneSerializer {
         Ok(count)
     }
 }
+
+#[cfg(all(test, feature = "serde"))]
+mod tests {
+    use super::*;
+    use crate::prelude::*;
+    use crate::component::{Name, Tag};
+
+    #[test]
+    fn test_scene_round_trip() {
+        let mut world = World::new();
+
+        // Create entities with various components
+        let parent = world.spawn((
+            Transform::from_xyz(1.0, 2.0, 3.0),
+            GlobalTransform::default(),
+            Name::new("Parent"),
+            Serializable,
+        )).id();
+
+        let child = world.spawn((
+            Transform::from_xyz(4.0, 5.0, 6.0),
+            GlobalTransform::default(),
+            Name::new("Child"),
+            Tag::new("enemy"),
+            crate::transform::Parent::new(parent),
+            Serializable,
+        )).id();
+
+        world.entity_mut(parent).insert(crate::transform::Children::new(vec![child]));
+
+        // Save
+        let path = "/tmp/anvilkit_test_scene.ron";
+        let count = SceneSerializer::save(&mut world, path).unwrap();
+        assert_eq!(count, 2);
+
+        // Load into new world
+        let mut new_world = World::new();
+        let loaded = SceneSerializer::load(&mut new_world, path).unwrap();
+        assert_eq!(loaded, 2);
+
+        // Cleanup
+        let _ = std::fs::remove_file(path);
+    }
+}

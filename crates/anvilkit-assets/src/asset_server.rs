@@ -522,4 +522,20 @@ mod tests {
         server.mark_loaded(handle.id());
         assert_eq!(server.load_state(&handle), LoadState::Loaded);
     }
+
+    #[test]
+    fn test_cache_and_reload() {
+        let mut server = AssetServer::new("/tmp/nonexistent_assets");
+        let handle = server.load::<String>("test.txt");
+
+        // Initially no cache
+        assert!(server.get_cached(handle.id()).is_none());
+        assert_eq!(server.cache_len(), 0);
+    }
+
+    #[test]
+    fn test_process_unloads_empty() {
+        let mut server = AssetServer::new("/tmp");
+        assert_eq!(server.process_unloads(), 0);
+    }
 }

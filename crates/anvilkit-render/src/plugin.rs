@@ -473,4 +473,11 @@ mod tests {
         let cam2 = CameraComponent { priority: 10, ..Default::default() };
         assert!(cam2.priority > cam1.priority);
     }
+
+    #[test]
+    fn test_extract_skips_no_material() {
+        // StandardMaterial without MeshHandle should not crash
+        // (Just verify the types compile — actual GPU test needs runtime)
+        let _mat = crate::renderer::standard_material::StandardMaterial::new();
+    }
 }

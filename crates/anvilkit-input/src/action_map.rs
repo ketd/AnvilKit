@@ -344,4 +344,29 @@ mod tests {
         let val = map.axis_value("move_x", &input, None);
         assert_eq!(val, 0.0); // both pressed = cancel out
     }
+
+    #[test]
+    fn test_action_id_register() {
+        let mut map = ActionMap::new();
+        let id1 = map.register_action("jump");
+        let id2 = map.register_action("fire");
+        let id1_again = map.register_action("jump");
+
+        assert_ne!(id1, id2);
+        assert_eq!(id1, id1_again); // same name = same id
+    }
+
+    #[test]
+    fn test_action_id_lookup() {
+        let mut map = ActionMap::new();
+        map.add_binding("jump", InputBinding::Key(KeyCode::Space));
+        let id = map.register_action("jump");
+
+        let mut input = InputState::new();
+        input.press_key(KeyCode::Space);
+        map.update(&input);
+
+        assert!(map.is_action_active_by_id(id));
+        assert!(map.is_action_active("jump"));
+    }
 }
