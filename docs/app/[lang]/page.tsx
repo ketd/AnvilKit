@@ -1,4 +1,12 @@
 import Link from 'next/link';
+import { LandingAnimations } from '@/components/landing/LandingAnimations';
+import { DotGrid } from '@/components/landing/DotGrid';
+import { MagneticLink } from '@/components/landing/MagneticLink';
+import { TypewriterTerminal } from '@/components/landing/TypewriterTerminal';
+import { TextSmash } from '@/components/landing/TextSmash';
+import { GameCursor } from '@/components/landing/GameCursor';
+import { TiltCard } from '@/components/landing/TiltCard';
+import { FpsCounter } from '@/components/landing/FpsCounter';
 
 const t = (lang: string, zh: string, en: string) => lang === 'zh' ? zh : en;
 
@@ -19,7 +27,10 @@ export default async function HomePage({ params }: { params: Promise<{ lang: str
   const { lang } = await params;
 
   return (
-    <div className="landing-bg text-[#e5e2e3] selection:bg-[#00fbfb]/30 selection:text-white">
+    <div className="landing-bg text-[#e5e2e3] selection:bg-[#00fbfb]/30 selection:text-white relative">
+      <DotGrid />
+      <GameCursor />
+      <FpsCounter />
 
       {/* ═══ Nav ═══ */}
       <nav className="fixed top-0 z-50 w-full px-4 sm:px-8 py-3 sm:py-4 flex justify-between items-center bg-[#0e0e0f]/90 backdrop-blur-md border-b border-white/5">
@@ -34,58 +45,58 @@ export default async function HomePage({ params }: { params: Promise<{ lang: str
               { href: `/${lang}/docs/getting-started`, label: 'Quick Start', active: false },
               { href: `/${lang}/docs/games/craft`, label: 'Games', active: false },
             ].map((link) => (
-              <Link key={link.label} href={link.href}
+              <Link key={link.label} href={link.href} data-anim="nav-link"
                 className={`font-[var(--font-headline)] tracking-tight font-bold uppercase text-[0.6875rem] transition-colors ${
                   link.active ? 'text-[#00fbfb] border-b border-[#00fbfb] pb-1' : 'text-slate-400 hover:text-[#00fbfb]'
                 }`}>
                 {link.label}
               </Link>
             ))}
-            <a href="https://github.com/ketd/AnvilKit" target="_blank" rel="noopener noreferrer"
+            <a href="https://github.com/ketd/AnvilKit" target="_blank" rel="noopener noreferrer" data-anim="nav-link"
               className="font-[var(--font-headline)] tracking-tight font-bold uppercase text-[0.6875rem] text-slate-400 hover:text-[#00fbfb] transition-colors">
               GitHub
             </a>
           </div>
         </div>
-        <Link href={`/${lang}/docs/getting-started`}
+        <MagneticLink href={`/${lang}/docs/getting-started`}
           className="bg-[#00fbfb] hover:bg-white text-black font-[var(--font-headline)] font-bold uppercase tracking-widest px-4 sm:px-5 py-2 rounded-sm text-[0.625rem] sm:text-[0.6875rem] transition-all">
           {t(lang, '开始使用', 'GET STARTED')}
-        </Link>
+        </MagneticLink>
       </nav>
 
       {/* ═══ Hero ═══ */}
       <header className="relative min-h-[100svh] flex flex-col justify-center items-center px-4 sm:px-6 pt-20 overflow-hidden">
-        <div className="absolute inset-0 z-0 hero-glow opacity-60" />
+        <div className="absolute inset-0 z-0 hero-glow" data-anim="hero-glow" />
         <div className="absolute inset-0 z-0 opacity-[0.05]">
           <img alt="" className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] sm:w-[800px] grayscale opacity-50" src="/icon.svg" />
         </div>
         <div className="z-10 text-center max-w-5xl px-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#2a2a2b] rounded-full border border-[#00fbfb]/20 mb-6 sm:mb-8">
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#2a2a2b] rounded-full border border-[#00fbfb]/20 mb-6 sm:mb-8" data-anim="hero-badge">
             <span className="w-2 h-2 rounded-full bg-[#00fbfb] animate-pulse" />
             <span className="text-[0.625rem] sm:text-[0.6875rem] font-bold tracking-[0.15em] sm:tracking-[0.2em] uppercase text-[#00fbfb]">v0.2.0</span>
           </div>
-          <h1 className="font-[var(--font-headline)] text-4xl sm:text-5xl md:text-8xl font-black tracking-tighter uppercase mb-4 sm:mb-6 leading-[0.9]">
+          <h1 className="font-[var(--font-headline)] text-4xl sm:text-5xl md:text-8xl font-black tracking-tighter uppercase mb-4 sm:mb-6 leading-[0.9]" data-anim="hero-title">
             {t(lang, '用 Rust 写游戏', 'Build Games')} <br />
             <span className="kinetic-gradient italic">{t(lang, '模块化，高性能。', 'in pure Rust.')}</span>
           </h1>
-          <p className="text-base sm:text-xl md:text-2xl text-[#a8b8b9] max-w-2xl mx-auto mb-8 sm:mb-10 font-light leading-relaxed">
+          <p className="text-base sm:text-xl md:text-2xl text-[#a8b8b9] max-w-2xl mx-auto mb-8 sm:mb-10 font-light leading-relaxed" data-anim="hero-subtitle">
             {t(lang,
               'AnvilKit 是一个模块化的 Rust 游戏引擎。把渲染、物理、ECS 这些拆成独立 crate，用多少拿多少，不用的不编译。',
               "A modular Rust game engine. Rendering, physics, ECS — each is an independent crate. Take what you need, skip what you don't."
             )}
           </p>
-          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
-            <Link href={`/${lang}/docs/getting-started`}
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center" data-anim="hero-buttons">
+            <MagneticLink href={`/${lang}/docs/getting-started`}
               className="thermal-gradient text-black font-[var(--font-headline)] font-bold uppercase tracking-widest px-8 sm:px-10 py-3 sm:py-4 rounded-sm hover:scale-[1.02] active:scale-95 transition-all shadow-[0_0_30px_rgba(0,251,251,0.2)] text-sm">
               {t(lang, '5 分钟上手', 'Get Started')}
-            </Link>
-            <Link href={`/${lang}/docs`}
+            </MagneticLink>
+            <MagneticLink href={`/${lang}/docs`}
               className="bg-[#2a2a2b] ghost-border text-white font-[var(--font-headline)] font-bold uppercase tracking-widest px-8 sm:px-10 py-3 sm:py-4 rounded-sm hover:bg-[#3a3a3b] transition-all text-sm">
               {t(lang, '看文档', 'View Docs')}
-            </Link>
+            </MagneticLink>
           </div>
         </div>
-        <div className="mt-12 sm:mt-20 font-[var(--font-mono)] text-[9px] sm:text-xs text-[#00fbfb]/40 select-none hidden md:block">
+        <div className="mt-12 sm:mt-20 font-[var(--font-mono)] text-[9px] sm:text-xs text-[#00fbfb]/40 select-none hidden md:block" data-anim="hero-ascii">
           <pre className="tracking-widest">{`[core] ← [render] ← [app]
   |         |          |
 [ecs] ← [physics] ← [input]`}</pre>
@@ -95,7 +106,7 @@ export default async function HomePage({ params }: { params: Promise<{ lang: str
       {/* ═══ 模块化架构 ═══ */}
       <section className="py-16 sm:py-24 px-4 sm:px-8 bg-[#0e0e0f] border-y border-white/5">
         <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-10 sm:gap-16 items-center">
-          <div>
+          <div data-anim="arch-text">
             <div className="text-[#f94bf5] text-xs font-bold tracking-[0.3em] uppercase mb-2">{t(lang, '核心设计', 'Architecture')}</div>
             <h2 className="font-[var(--font-headline)] text-3xl sm:text-4xl font-black tracking-tighter uppercase mb-6 sm:mb-8 border-l-4 border-[#00fbfb] pl-4 sm:pl-6">
               {t(lang, '不是黑盒，是工具箱', "Not a black box — it's a toolbox")}
@@ -124,9 +135,10 @@ export default async function HomePage({ params }: { params: Promise<{ lang: str
             </div>
           </div>
           {/* 架构图 */}
-          <div className="relative group">
+          <div className="relative group" data-anim="arch-diagram">
             <div className="absolute -inset-1 bg-gradient-to-r from-[#00fbfb] to-[#f94bf5] rounded-lg blur opacity-10 group-hover:opacity-20 transition duration-1000" />
             <div className="relative bg-[#131314] p-4 sm:p-8 rounded-lg border border-[#00fbfb]/20 shadow-2xl">
+              <span className="hud-corner hud-corner--tl" /><span className="hud-corner hud-corner--tr" /><span className="hud-corner hud-corner--bl" /><span className="hud-corner hud-corner--br" />
               <div className="flex justify-between items-center mb-4 sm:mb-6">
                 <div className="flex gap-2">
                   <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-[#f94bf5]/40" />
@@ -162,7 +174,7 @@ export default async function HomePage({ params }: { params: Promise<{ lang: str
       {/* ═══ 代码示例 ═══ */}
       <section className="py-16 sm:py-24 px-4 sm:px-8 bg-[#131314]">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-8 sm:gap-12">
-          <div className="md:w-1/3">
+          <div className="md:w-1/3" data-anim="code-left">
             <div className="text-[#00fbfb] text-xs font-bold tracking-[0.3em] uppercase mb-2">{t(lang, '写代码', 'Code')}</div>
             <h2 className="font-[var(--font-headline)] text-3xl sm:text-4xl font-black tracking-tighter uppercase mb-4 sm:mb-6">
               {t(lang, '上手就三行', 'Three lines to start')}
@@ -178,14 +190,14 @@ export default async function HomePage({ params }: { params: Promise<{ lang: str
               <code className="text-[#00fbfb] font-[var(--font-mono)] text-xs sm:text-sm">$ cargo run --release</code>
             </div>
           </div>
-          <div className="md:w-2/3 bg-[#0e0e0f] rounded-lg overflow-hidden border border-[#00fbfb]/20">
+          <div className="md:w-2/3 bg-[#0e0e0f] rounded-lg overflow-hidden border border-[#00fbfb]/20" data-anim="code-right">
             <div className="bg-[#2a2a2b] px-4 sm:px-6 py-2 flex justify-between items-center border-b border-white/5">
               <div className="flex items-center gap-2">
                 <span className="text-[#f94bf5] text-sm">{'</>'}</span>
                 <span className="font-[var(--font-mono)] text-[0.6rem] text-[#a8b8b9] uppercase tracking-widest">src/main.rs</span>
               </div>
             </div>
-            <pre className="p-4 sm:p-8 text-xs sm:text-sm font-[var(--font-mono)] overflow-x-auto text-slate-300">
+            <pre className="p-4 sm:p-8 text-xs sm:text-sm font-[var(--font-mono)] overflow-x-auto text-slate-300" data-anim="code-lines">
               <code>{`use anvilkit::prelude::*;
 
 fn main() {
@@ -216,9 +228,9 @@ fn setup(mut commands: Commands) {
               {t(lang, '开箱即用的 8 大模块', '8 Modules, Ready to Go')}
             </h2>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-[#00fbfb]/10 rounded-lg overflow-hidden border border-[#00fbfb]/10">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-[#00fbfb]/10 rounded-lg overflow-hidden border border-[#00fbfb]/10" data-anim="modules-grid">
             {features.map((f) => (
-              <div key={f.icon} className="bg-[#131314] p-4 sm:p-8 flex flex-col items-center text-center group hover:bg-[#1c1b1c] transition-colors">
+              <div key={f.icon} className="bg-[#131314] p-4 sm:p-8 flex flex-col items-center text-center group hover:bg-[#1c1b1c] transition-colors" data-anim="module-card">
                 <span className={`text-2xl sm:text-4xl mb-3 sm:mb-4 ${f.accent ? 'opacity-80' : ''}`}>{f.icon}</span>
                 <h3 className="font-[var(--font-headline)] font-bold text-[0.65rem] sm:text-[0.75rem] uppercase mb-1 sm:mb-2 tracking-widest">
                   {t(lang, f.titleZh, f.title)}
@@ -239,7 +251,7 @@ fn setup(mut commands: Commands) {
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 md:grid-rows-2 gap-3 sm:gap-4">
           {/* 大卡片 — ECS */}
-          <div className="sm:col-span-2 md:row-span-2 glass-panel p-6 sm:p-10 border border-[#484849]/20 relative group overflow-hidden">
+          <TiltCard className="sm:col-span-2 md:row-span-2 glass-panel p-6 sm:p-10 border border-[#484849]/20 relative group overflow-hidden rounded-lg" data-anim="bento-large">
             <div className="absolute top-0 right-0 p-3 sm:p-4 font-[var(--font-mono)] text-[9px] sm:text-[10px] opacity-20">REF_ID: #4492-X</div>
             <h4 className="font-[var(--font-headline)] font-bold text-2xl sm:text-3xl mb-3 sm:mb-4 uppercase tracking-tighter">
               {t(lang, '多线程', 'Multi-Threaded')} <br />
@@ -256,9 +268,9 @@ fn setup(mut commands: Commands) {
               <div className="bg-[#00fbfb]/10 text-[#00fbfb] px-2 sm:px-3 py-1 font-[var(--font-mono)] text-[9px] sm:text-[10px] tracking-widest border border-[#00fbfb]/20">LOCK_FREE</div>
               <div className="bg-[#00fbfb]/10 text-[#00fbfb] px-2 sm:px-3 py-1 font-[var(--font-mono)] text-[9px] sm:text-[10px] tracking-widest border border-[#00fbfb]/20">AUTO_THREADED</div>
             </div>
-          </div>
+          </TiltCard>
           {/* 中卡片 — WGPU */}
-          <div className="sm:col-span-2 glass-panel p-6 sm:p-10 border border-[#484849]/20">
+          <TiltCard className="sm:col-span-2 glass-panel p-6 sm:p-10 border border-[#484849]/20 rounded-lg" strength={8} data-anim="bento-medium">
             <div className="flex items-center gap-4 sm:gap-6">
               <div className="flex-1">
                 <h4 className="font-[var(--font-headline)] font-bold text-xl sm:text-2xl mb-2 uppercase tracking-tighter">
@@ -275,23 +287,23 @@ fn setup(mut commands: Commands) {
                 <span className="text-[#f94bf5] text-2xl sm:text-4xl -rotate-45">🎨</span>
               </div>
             </div>
-          </div>
+          </TiltCard>
           {/* 小卡片 — Zero Cost */}
-          <div className="glass-panel p-4 sm:p-6 border border-[#484849]/20 flex flex-col justify-between">
+          <TiltCard className="glass-panel p-4 sm:p-6 border border-[#484849]/20 flex flex-col justify-between rounded-lg" strength={15} data-anim="bento-small">
             <span className="text-[#f94bf5] text-xl sm:text-2xl mb-3 sm:mb-4">⚡</span>
             <div>
               <h5 className="font-[var(--font-headline)] font-bold uppercase text-xs sm:text-sm mb-1">{t(lang, '零成本抽象', 'Zero Cost')}</h5>
               <p className="text-[10px] sm:text-[11px] text-[#a8b8b9]">{t(lang, '抽象在编译时全部内联，运行时零开销。', 'Abstractions inline at compile time. Zero runtime overhead.')}</p>
             </div>
-          </div>
+          </TiltCard>
           {/* 小卡片 — Memory Safe */}
-          <div className="glass-panel p-4 sm:p-6 border border-[#484849]/20 flex flex-col justify-between">
+          <TiltCard className="glass-panel p-4 sm:p-6 border border-[#484849]/20 flex flex-col justify-between rounded-lg" strength={15} data-anim="bento-small">
             <span className="text-[#00fbfb] text-xl sm:text-2xl mb-3 sm:mb-4">🛡</span>
             <div>
               <h5 className="font-[var(--font-headline)] font-bold uppercase text-xs sm:text-sm mb-1">{t(lang, '内存安全', 'Memory Safe')}</h5>
               <p className="text-[10px] sm:text-[11px] text-[#a8b8b9]">{t(lang, '没有段错误，没有内存泄漏。编译器帮你兜底。', 'No segfaults, no leaks. The compiler has your back.')}</p>
             </div>
-          </div>
+          </TiltCard>
         </div>
       </section>
 
@@ -306,7 +318,7 @@ fn setup(mut commands: Commands) {
           </div>
           <div className="grid md:grid-cols-2 gap-6 sm:gap-12">
             {/* Craft */}
-            <div className="group relative overflow-hidden rounded-lg bg-black border border-white/5 forge-border">
+            <div className="group relative overflow-hidden rounded-lg bg-black border border-white/5 forge-border" data-anim="game-card">
               <div className="aspect-video w-full overflow-hidden">
                 <img alt="Craft" className="w-full h-full object-cover grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-700 scale-105 group-hover:scale-100" src="/images/craft-hero.jpg" />
               </div>
@@ -325,7 +337,7 @@ fn setup(mut commands: Commands) {
               </div>
             </div>
             {/* Billiards */}
-            <div className="group relative overflow-hidden rounded-lg bg-black border border-white/5 forge-border">
+            <div className="group relative overflow-hidden rounded-lg bg-black border border-white/5 forge-border" data-anim="game-card">
               <div className="aspect-video w-full overflow-hidden">
                 <img alt="Billiards" className="w-full h-full object-cover grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-700 scale-105 group-hover:scale-100" src="/images/billiards-hero.jpg" />
               </div>
@@ -350,7 +362,7 @@ fn setup(mut commands: Commands) {
       {/* ═══ 快速开始 ═══ */}
       <section className="py-16 sm:py-24 px-4 sm:px-8 bg-[#0e0e0f] border-t border-white/5">
         <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-10 sm:gap-16">
-          <div className="space-y-8 sm:space-y-12">
+          <div className="space-y-8 sm:space-y-12" data-anim="cli-block">
             <div>
               <div className="text-[#f94bf5] text-xs font-bold tracking-[0.3em] uppercase mb-2">{t(lang, '命令行', 'CLI')}</div>
               <h2 className="font-[var(--font-headline)] text-3xl sm:text-4xl font-black tracking-tighter uppercase mb-4 sm:mb-6">
@@ -362,11 +374,7 @@ fn setup(mut commands: Commands) {
                   'One command to create a project, one command to run it. Handles project structure and dependencies so you can focus on game logic.'
                 )}
               </p>
-              <div className="bg-black p-4 sm:p-6 rounded-lg border border-[#00fbfb]/20 font-[var(--font-mono)] text-xs sm:text-sm space-y-2">
-                <div className="flex gap-3 sm:gap-4"><span className="text-[#00fbfb]/40">$</span><span className="text-white">anvil new my-game</span></div>
-                <div className="flex gap-3 sm:gap-4"><span className="text-[#00fbfb]/40">$</span><span className="text-white">cd my-game</span></div>
-                <div className="flex gap-3 sm:gap-4"><span className="text-[#00fbfb]/40">$</span><span className="text-[#00fbfb]">anvil run</span></div>
-              </div>
+              <TypewriterTerminal lang={lang} />
             </div>
             <div>
               <h3 className="font-[var(--font-headline)] text-xl sm:text-2xl font-bold uppercase mb-4 sm:mb-6 flex items-center gap-2">
@@ -381,7 +389,7 @@ fn setup(mut commands: Commands) {
             </div>
           </div>
           {/* 步骤 */}
-          <div className="bg-[#201f20] p-6 sm:p-10 rounded-lg border border-white/5 relative forge-border">
+          <div className="bg-[#201f20] p-6 sm:p-10 rounded-lg border border-white/5 relative forge-border" data-anim="steps-panel">
             <div className="absolute top-0 right-0 p-3 sm:p-4 font-[var(--font-mono)] text-[9px] sm:text-[10px] text-[#00fbfb]/40">v0.2.0</div>
             <h2 className="font-[var(--font-headline)] text-xl sm:text-2xl font-black uppercase mb-8 sm:mb-12 text-center">
               {t(lang, '三步跑起来', '3 Steps to Launch')}
@@ -392,7 +400,7 @@ fn setup(mut commands: Commands) {
                 { num: '02', title: t(lang, '建项目', 'Create'), desc: t(lang, '生成项目模板。', 'Generate a project from template.'), code: 'anvil new my_game' },
                 { num: '03', title: t(lang, '跑起来', 'Run'), desc: t(lang, '编译并启动。', 'Compile and launch.'), code: 'cargo run' },
               ].map((step) => (
-                <div key={step.num} className="flex gap-4 sm:gap-6">
+                <div key={step.num} className="flex gap-4 sm:gap-6" data-anim="step">
                   <div className="shrink-0 w-10 h-10 sm:w-12 sm:h-12 bg-black border border-[#00fbfb]/30 text-[#00fbfb] flex items-center justify-center font-bold text-lg sm:text-xl">{step.num}</div>
                   <div className="min-w-0">
                     <h4 className="font-bold text-xs sm:text-sm uppercase mb-1 text-white">{step.title}</h4>
@@ -403,17 +411,17 @@ fn setup(mut commands: Commands) {
               ))}
             </div>
             <div className="mt-10 sm:mt-16 flex flex-col items-center">
-              <Link href={`/${lang}/docs/getting-started`}
+              <MagneticLink href={`/${lang}/docs/getting-started`} strength={0.4}
                 className="bg-gradient-to-r from-[#00fbfb] to-[#f94bf5] text-black font-black px-8 sm:px-10 py-4 sm:py-5 rounded-sm uppercase tracking-[0.15em] sm:tracking-[0.2em] hover:scale-105 transition-all text-[0.65rem] sm:text-xs">
                 {t(lang, '开始写游戏', 'START BUILDING')}
-              </Link>
+              </MagneticLink>
             </div>
           </div>
         </div>
       </section>
 
       {/* ═══ 开源 ═══ */}
-      <section className="py-16 sm:py-24 px-4 sm:px-8 border-t border-white/5">
+      <section className="py-16 sm:py-24 px-4 sm:px-8 border-t border-white/5" data-anim="open-source">
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="font-[var(--font-headline)] text-2xl sm:text-3xl font-black tracking-tighter uppercase mb-4 sm:mb-6">
             {t(lang, '完全开源', 'Fully Open Source')}
@@ -426,23 +434,25 @@ fn setup(mut commands: Commands) {
           </p>
           <div className="flex flex-wrap justify-center gap-2 sm:gap-3">
             {deps.map((dep) => (
-              <span key={dep} className="px-3 sm:px-4 py-1 sm:py-1.5 bg-black rounded text-[0.6rem] sm:text-[0.65rem] font-[var(--font-mono)] text-[#00fbfb]/70 border border-[#00fbfb]/20">{dep}</span>
+              <span key={dep} className="px-3 sm:px-4 py-1 sm:py-1.5 bg-black rounded text-[0.6rem] sm:text-[0.65rem] font-[var(--font-mono)] text-[#00fbfb]/70 border border-[#00fbfb]/20" data-anim="dep-badge">{dep}</span>
             ))}
           </div>
         </div>
       </section>
 
       {/* ═══ Footer ═══ */}
-      <footer className="bg-black flex flex-col sm:flex-row justify-between items-center w-full px-6 sm:px-12 py-8 sm:py-12 border-t border-white/5 gap-6">
-        <div className="flex flex-col gap-3 items-center sm:items-start">
-          <div className="flex items-center gap-2">
-            <img alt="AnvilKit" className="h-6 sm:h-8 w-auto" src="/icon.svg" />
-            <span className="font-[var(--font-headline)] font-bold text-sm sm:text-base">AnvilKit</span>
+      <footer className="bg-black flex flex-col sm:flex-row justify-between items-center w-full px-6 sm:px-12 py-8 sm:py-12 border-t border-white/5 gap-6" data-anim="footer">
+        <TextSmash>
+          <div className="flex flex-col gap-3 items-center sm:items-start">
+            <div className="flex items-center gap-2">
+              <img alt="AnvilKit" className="h-6 sm:h-8 w-auto" src="/icon.svg" />
+              <span className="font-[var(--font-headline)] font-bold text-sm sm:text-base">AnvilKit</span>
+            </div>
+            <p className="font-[var(--font-headline)] text-[0.55rem] sm:text-[0.65rem] tracking-[0.15em] sm:tracking-[0.2em] uppercase text-slate-500">
+              &copy; 2025 AnvilKit
+            </p>
           </div>
-          <p className="font-[var(--font-headline)] text-[0.55rem] sm:text-[0.65rem] tracking-[0.15em] sm:tracking-[0.2em] uppercase text-slate-500">
-            &copy; 2025 AnvilKit
-          </p>
-        </div>
+        </TextSmash>
         <div className="flex gap-6 sm:gap-10">
           <Link href={`/${lang}/docs`} className="font-[var(--font-headline)] text-[0.625rem] sm:text-[0.6875rem] tracking-widest uppercase text-slate-500 hover:text-[#00fbfb] transition-colors">
             {t(lang, '文档', 'DOCS')}
@@ -453,6 +463,12 @@ fn setup(mut commands: Commands) {
           </a>
         </div>
       </footer>
+
+      {/* HUD Scanline overlay */}
+      <div className="scanline-overlay" />
+
+      {/* GSAP Animation Orchestrator */}
+      <LandingAnimations />
     </div>
   );
 }

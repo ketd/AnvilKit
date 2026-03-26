@@ -1,0 +1,785 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+        <title>AnvilKit | Industrial Grade Game Engine</title>
+        <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+        <link
+            href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;700;800&amp;family=Manrope:wght@300;400;600;800&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+            rel="stylesheet"
+        />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+            rel="stylesheet"
+        />
+        <script id="tailwind-config">
+            tailwind.config = {
+                darkMode: "class",
+                theme: {
+                    extend: {
+                        colors: {
+                            "error-container": "#9f0519",
+                            "surface-bright": "#2c2c2d",
+                            surface: "#0e0e0f",
+                            "surface-container-lowest": "#000000",
+                            "on-primary": "#006767",
+                            "surface-container-high": "#201f21",
+                            "primary-fixed": "#00f5f5",
+                            "on-tertiary-container": "#421e00",
+                            "on-error-container": "#ffa8a3",
+                            "tertiary-dim": "#ec8327",
+                            secondary: "#ff51fa",
+                            "surface-tint": "#c1fffe",
+                            "outline-variant": "#484849",
+                            "tertiary-container": "#f68a2f",
+                            "on-primary-fixed-variant": "#006262",
+                            "surface-container": "#1a191b",
+                            "on-secondary-container": "#fff5f9",
+                            "secondary-fixed": "#ffbdf3",
+                            "on-primary-fixed": "#004343",
+                            background: "#0e0e0f",
+                            "primary-container": "#00ffff",
+                            "inverse-on-surface": "#565556",
+                            "on-tertiary-fixed": "#2b1100",
+                            "on-primary-container": "#005d5d",
+                            "on-surface-variant": "#adaaab",
+                            primary: "#c1fffe",
+                            "surface-container-highest": "#262627",
+                            "inverse-surface": "#fcf8f9",
+                            "primary-fixed-dim": "#00e6e6",
+                            "secondary-container": "#a900a9",
+                            "tertiary-fixed": "#ff9742",
+                            "on-tertiary-fixed-variant": "#5d2c00",
+                            "on-surface": "#ffffff",
+                            "inverse-primary": "#006a6a",
+                            "on-background": "#ffffff",
+                            tertiary: "#ff9b4c",
+                            "on-error": "#490006",
+                            "on-secondary": "#400040",
+                            "on-tertiary": "#532700",
+                            "on-secondary-fixed-variant": "#920091",
+                            "primary-dim": "#00e6e6",
+                            outline: "#767576",
+                            "error-dim": "#d7383b",
+                            "surface-variant": "#262627",
+                            "tertiary-fixed-dim": "#f2882c",
+                            "secondary-dim": "#ff51fa",
+                            "surface-container-low": "#131314",
+                            error: "#ff716c",
+                            "on-secondary-fixed": "#620061",
+                            "secondary-fixed-dim": "#ffa6f3",
+                            "surface-dim": "#0e0e0f",
+                        },
+                        fontFamily: {
+                            headline: ["Space Grotesk"],
+                            body: ["Manrope"],
+                            label: ["Space Grotesk"],
+                        },
+                        borderRadius: {
+                            DEFAULT: "0px",
+                            lg: "0px",
+                            xl: "0px",
+                            full: "9999px",
+                        },
+                    },
+                },
+            };
+        </script>
+        <style>
+            body {
+                background-color: #0e0e0f;
+                background-image:
+                    linear-gradient(
+                        rgba(0, 255, 255, 0.05) 1px,
+                        transparent 1px
+                    ),
+                    linear-gradient(
+                        90deg,
+                        rgba(0, 255, 255, 0.05) 1px,
+                        transparent 1px
+                    );
+                background-size: 40px 40px;
+            }
+            .material-symbols-outlined {
+                font-variation-settings:
+                    "FILL" 0,
+                    "wght" 400,
+                    "GRAD" 0,
+                    "opsz" 24;
+            }
+            .glass-panel {
+                background: rgba(32, 31, 33, 0.7);
+                backdrop-filter: blur(20px);
+            }
+            .chamfer-tr {
+                clip-path: polygon(
+                    0 0,
+                    calc(100% - 20px) 0,
+                    100% 20px,
+                    100% 100%,
+                    0 100%
+                );
+            }
+            .wireframe-hex {
+                clip-path: polygon(
+                    25% 0%,
+                    75% 0%,
+                    100% 50%,
+                    75% 100%,
+                    25% 100%,
+                    0% 50%
+                );
+            }
+            .glow-cyan {
+                box-shadow: 0 0 15px rgba(0, 255, 255, 0.4);
+            }
+            .glow-magenta {
+                box-shadow: 0 0 15px rgba(255, 81, 250, 0.4);
+            }
+        </style>
+    </head>
+    <body class="font-body text-on-surface overflow-x-hidden">
+        <!-- Top Navigation -->
+        <nav
+            class="fixed top-0 left-0 right-0 z-50 bg-[#0e0e0f] bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] shadow-[0_0_15px_rgba(0,255,255,0.1)]"
+        >
+            <div
+                class="flex justify-between items-center w-full px-6 py-4 max-w-screen-2xl mx-auto relative"
+            >
+                <div class="flex items-center gap-4">
+                    <span
+                        class="text-2xl font-black tracking-tighter text-[#00ffff] italic font-headline"
+                        >AnvilKit</span
+                    >
+                </div>
+                <div
+                    class="hidden md:flex items-center space-gap-8 gap-8 font-headline font-bold tracking-tight uppercase text-xs"
+                >
+                    <a
+                        class="text-[#00ffff] border-b-2 border-[#00ffff] pb-1"
+                        href="#"
+                        >Docs</a
+                    >
+                    <a
+                        class="text-[#adaaab] hover:text-[#c1fffe] transition-colors"
+                        href="#"
+                        >Quick Start</a
+                    >
+                    <a
+                        class="text-[#adaaab] hover:text-[#c1fffe] transition-colors"
+                        href="#"
+                        >Games</a
+                    >
+                    <a
+                        class="text-[#adaaab] hover:text-[#c1fffe] transition-colors"
+                        href="#"
+                        >crates.io</a
+                    >
+                    <a
+                        class="text-[#adaaab] hover:text-[#c1fffe] transition-colors"
+                        href="#"
+                        >GitHub</a
+                    >
+                </div>
+                <button
+                    class="bg-primary-container text-on-primary-container px-6 py-2 font-headline font-bold uppercase tracking-widest text-xs hover:skew-x-12 transition-transform duration-150"
+                >
+                    GET_STARTED
+                </button>
+                <div
+                    class="bg-gradient-to-r from-[#00ffff]/20 via-transparent to-[#ff51fa]/20 h-[1px] w-full absolute bottom-0 left-0"
+                ></div>
+            </div>
+        </nav>
+        <!-- Hero Section -->
+        <header class="relative pt-32 pb-24 px-6 overflow-hidden">
+            <!-- Decorative Elements -->
+            <div
+                class="absolute top-20 right-[-10%] w-96 h-96 wireframe-hex bg-gradient-to-br from-primary-container/10 to-transparent opacity-30 -rotate-12 border border-primary/20"
+            ></div>
+            <div
+                class="absolute bottom-0 left-[-5%] w-64 h-64 wireframe-hex bg-gradient-to-tr from-secondary/10 to-transparent opacity-20 rotate-45 border border-secondary/20"
+            ></div>
+            <div
+                class="max-w-7xl mx-auto relative z-10 flex flex-col items-center text-center"
+            >
+                <div
+                    class="mb-8 p-4 bg-surface-container-highest border border-outline-variant/30 chamfer-tr"
+                >
+                    <img
+                        alt="AnvilKit Logo"
+                        class="h-24 w-24 object-contain"
+                        data-alt="Stylized metallic anvil logo with glowing cyan energy circuits and industrial geometric precision on dark background"
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuAXlBeYxiWZeMsSyxmxEdAJ-puho77cYojTsq4QTqskhAcHG2VX1plQBUTZDPhr-tQgDgZaGMILeRSRDoOtYs0ej7xOdElameHSRtZMhGbokXSCLAOXqqSPUPDxIr7U6Pa3vXkkQV8lgap1sCGk3aP1ogfCJXAZPp9jK0KBcJVapyjAE5Gv1Yidr99r0U9uY3kBQ2r_Ka93LssSJYUgH_ySScrB3KsXwVBcUSdfNFOqi7sDAU9Q7oIcVHGLqFlmdtQYi21uPOyxs4U"
+                    />
+                </div>
+                <h1
+                    class="font-headline font-extrabold text-7xl md:text-9xl tracking-tighter uppercase leading-none mb-6"
+                >
+                    FORGING <br />
+                    <span
+                        class="text-transparent bg-clip-text bg-gradient-to-r from-primary-container to-secondary"
+                        >GAMES</span
+                    >
+                </h1>
+                <p
+                    class="max-w-2xl text-on-surface-variant text-lg md:text-xl font-light mb-10 tracking-wide"
+                >
+                    A modular, high-performance ECS engine built in Rust.
+                    Precision-engineered for industrial-grade simulations and
+                    next-gen gaming experiences.
+                </p>
+                <div class="flex flex-wrap justify-center gap-6">
+                    <button
+                        class="bg-primary-container text-on-primary-container font-headline font-bold px-10 py-4 text-sm tracking-[0.2em] uppercase glow-cyan hover:scale-105 transition-all"
+                    >
+                        INITIATE_PROJECT
+                    </button>
+                    <button
+                        class="border border-secondary text-secondary font-headline font-bold px-10 py-4 text-sm tracking-[0.2em] uppercase hover:bg-secondary/10 transition-all"
+                    >
+                        VIEW_ARCHITECTURE
+                    </button>
+                </div>
+            </div>
+        </header>
+        <!-- Schematic / Crate Map -->
+        <section
+            class="py-24 px-6 bg-surface-container-low relative border-y border-outline-variant/10"
+        >
+            <div class="max-w-7xl mx-auto">
+                <div class="flex items-center gap-4 mb-16">
+                    <div
+                        class="h-px flex-1 bg-gradient-to-r from-transparent to-primary/30"
+                    ></div>
+                    <h2
+                        class="font-headline font-bold text-3xl tracking-widest uppercase text-primary"
+                    >
+                        System_Schematic
+                    </h2>
+                    <div
+                        class="h-px flex-1 bg-gradient-to-l from-transparent to-primary/30"
+                    ></div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <!-- Core Layer -->
+                    <div
+                        class="glass-panel p-8 border-l-4 border-primary chamfer-tr"
+                    >
+                        <div class="flex justify-between items-start mb-6">
+                            <span
+                                class="material-symbols-outlined text-primary text-4xl"
+                                data-icon="terminal"
+                                >terminal</span
+                            >
+                            <span
+                                class="font-label text-[10px] text-primary/50 tracking-tighter"
+                                >LVL_01_CORE</span
+                            >
+                        </div>
+                        <h3
+                            class="font-headline font-bold text-xl mb-4 text-on-surface uppercase tracking-tight"
+                        >
+                            Anvil_Core
+                        </h3>
+                        <p
+                            class="text-on-surface-variant text-sm leading-relaxed mb-6"
+                        >
+                            The titanium backbone. Zero-cost abstractions,
+                            memory safety, and the foundational ECS scheduler.
+                        </p>
+                        <div class="space-y-2">
+                            <div
+                                class="flex items-center gap-3 text-[11px] font-label text-on-surface-variant/80 uppercase"
+                            >
+                                <span class="w-2 h-2 bg-primary"></span> [sys]
+                                MEM_MANAGEMENT
+                            </div>
+                            <div
+                                class="flex items-center gap-3 text-[11px] font-label text-on-surface-variant/80 uppercase"
+                            >
+                                <span class="w-2 h-2 bg-primary"></span> [sys]
+                                TASK_SCHEDULER
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Renderer Layer -->
+                    <div
+                        class="glass-panel p-8 border-l-4 border-secondary chamfer-tr"
+                    >
+                        <div class="flex justify-between items-start mb-6">
+                            <span
+                                class="material-symbols-outlined text-secondary text-4xl"
+                                data-icon="token"
+                                >token</span
+                            >
+                            <span
+                                class="font-label text-[10px] text-secondary/50 tracking-tighter"
+                                >LVL_02_GFX</span
+                            >
+                        </div>
+                        <h3
+                            class="font-headline font-bold text-xl mb-4 text-on-surface uppercase tracking-tight"
+                        >
+                            Anvil_Render
+                        </h3>
+                        <p
+                            class="text-on-surface-variant text-sm leading-relaxed mb-6"
+                        >
+                            WGPU-powered hardware acceleration. Photorealistic
+                            shaders and lightning-fast frame budgets.
+                        </p>
+                        <div class="space-y-2">
+                            <div
+                                class="flex items-center gap-3 text-[11px] font-label text-on-surface-variant/80 uppercase"
+                            >
+                                <span class="w-2 h-2 bg-secondary"></span> [gfx]
+                                PBR_PIPELINE
+                            </div>
+                            <div
+                                class="flex items-center gap-3 text-[11px] font-label text-on-surface-variant/80 uppercase"
+                            >
+                                <span class="w-2 h-2 bg-secondary"></span> [gfx]
+                                RAY_QUERY_V2
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Asset Layer -->
+                    <div
+                        class="glass-panel p-8 border-l-4 border-tertiary chamfer-tr"
+                    >
+                        <div class="flex justify-between items-start mb-6">
+                            <span
+                                class="material-symbols-outlined text-tertiary text-4xl"
+                                data-icon="inventory_2"
+                                >inventory_2</span
+                            >
+                            <span
+                                class="font-label text-[10px] text-tertiary/50 tracking-tighter"
+                                >LVL_03_DATA</span
+                            >
+                        </div>
+                        <h3
+                            class="font-headline font-bold text-xl mb-4 text-on-surface uppercase tracking-tight"
+                        >
+                            Anvil_Asset
+                        </h3>
+                        <p
+                            class="text-on-surface-variant text-sm leading-relaxed mb-6"
+                        >
+                            Hot-reloading asset pipeline. Instant feedback loops
+                            for designers and developers alike.
+                        </p>
+                        <div class="space-y-2">
+                            <div
+                                class="flex items-center gap-3 text-[11px] font-label text-on-surface-variant/80 uppercase"
+                            >
+                                <span class="w-2 h-2 bg-tertiary"></span> [dat]
+                                HOT_RELOAD
+                            </div>
+                            <div
+                                class="flex items-center gap-3 text-[11px] font-label text-on-surface-variant/80 uppercase"
+                            >
+                                <span class="w-2 h-2 bg-tertiary"></span> [dat]
+                                GLTF_PARSER
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <!-- Bento Grid Features -->
+        <section class="py-24 px-6 max-w-7xl mx-auto">
+            <h2
+                class="font-headline font-bold text-5xl mb-16 tracking-tighter uppercase italic"
+            >
+                Technical_<span class="text-primary-container"
+                    >Capabilities</span
+                >
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-4 md:grid-rows-2 gap-4">
+                <!-- Large Card -->
+                <div
+                    class="md:col-span-2 md:row-span-2 glass-panel p-10 border border-outline-variant/20 relative group overflow-hidden"
+                >
+                    <div
+                        class="absolute top-0 right-0 p-4 font-label text-[10px] opacity-20"
+                    >
+                        REF_ID: #4492-X
+                    </div>
+                    <h4
+                        class="font-headline font-bold text-3xl mb-4 uppercase tracking-tighter"
+                    >
+                        Multi-Threaded <br />
+                        ECS Pipeline
+                    </h4>
+                    <p class="text-on-surface-variant mb-8 max-w-sm">
+                        Parallel execution by default. Our scheduler
+                        automatically distributes system workloads across all
+                        available cores without race conditions.
+                    </p>
+                    <img
+                        alt="ECS Architecture"
+                        class="w-full h-48 object-cover opacity-60 group-hover:opacity-100 transition-opacity"
+                        data-alt="Abstract technical diagram showing parallel nodes and data flow in a vibrant cyan and magenta color scheme"
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuCKhXBPJ9gYpNitVC2sQ-R564IcYlqh4SC8AEorgn-IPSKrOZXCpn6VVXKK7ZB1ROw0_O9FhX6gEV39wBOHxLue4EH7ZCkZ6rQxs2n-E8e6bf8mdNHWdb0dSBkKwEGy7_91ADzoZHTMXOzlbrEBbWROFGWnmZmOvfxyyk06P7QVqciQXhwQI89hnZG2eFpmQS0FjWP5CLMeHbnDceaiGczm7X2jbA1FGkIzkicZeJGzX1nyIdOeoAQTAxEVgm9F04kcDehzVql84JU"
+                    />
+                    <div class="mt-8 flex gap-4">
+                        <div
+                            class="bg-primary/10 text-primary px-3 py-1 font-label text-[10px] tracking-widest border border-primary/20"
+                        >
+                            LOCK_FREE
+                        </div>
+                        <div
+                            class="bg-primary/10 text-primary px-3 py-1 font-label text-[10px] tracking-widest border border-primary/20"
+                        >
+                            AUTO_THREADED
+                        </div>
+                    </div>
+                </div>
+                <!-- Medium Card -->
+                <div
+                    class="md:col-span-2 glass-panel p-10 border border-outline-variant/20 relative"
+                >
+                    <div class="flex items-center gap-6">
+                        <div class="flex-1">
+                            <h4
+                                class="font-headline font-bold text-2xl mb-2 uppercase tracking-tighter"
+                            >
+                                WGPU Integration
+                            </h4>
+                            <p class="text-on-surface-variant text-sm">
+                                Target Vulkan, Metal, and DX12 with a single
+                                high-level API. Native performance on every
+                                platform.
+                            </p>
+                        </div>
+                        <div
+                            class="w-24 h-24 bg-surface-container-highest border border-outline-variant flex items-center justify-center rotate-45"
+                        >
+                            <span
+                                class="material-symbols-outlined text-secondary text-4xl -rotate-45"
+                                data-icon="fluid_med"
+                                >fluid_med</span
+                            >
+                        </div>
+                    </div>
+                </div>
+                <!-- Small Card 1 -->
+                <div
+                    class="glass-panel p-6 border border-outline-variant/20 flex flex-col justify-between"
+                >
+                    <span
+                        class="material-symbols-outlined text-tertiary mb-4"
+                        data-icon="bolt"
+                        >bolt</span
+                    >
+                    <div>
+                        <h5
+                            class="font-headline font-bold uppercase text-sm mb-1"
+                        >
+                            Zero Cost
+                        </h5>
+                        <p class="text-[11px] text-on-surface-variant">
+                            Rust abstractions that disappear at compile time.
+                        </p>
+                    </div>
+                </div>
+                <!-- Small Card 2 -->
+                <div
+                    class="glass-panel p-6 border border-outline-variant/20 flex flex-col justify-between"
+                >
+                    <span
+                        class="material-symbols-outlined text-primary mb-4"
+                        data-icon="security"
+                        >security</span
+                    >
+                    <div>
+                        <h5
+                            class="font-headline font-bold uppercase text-sm mb-1"
+                        >
+                            Memory Safe
+                        </h5>
+                        <p class="text-[11px] text-on-surface-variant">
+                            No segfaults. No leaks. Guaranteed by the compiler.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <!-- Code Preview Section -->
+        <section class="py-24 px-6 bg-surface-container-highest">
+            <div
+                class="max-w-7xl mx-auto flex flex-col md:flex-row gap-16 items-center"
+            >
+                <div class="flex-1">
+                    <span
+                        class="font-label text-secondary tracking-[0.3em] uppercase text-xs mb-4 block"
+                        >CLI_INTERFACE</span
+                    >
+                    <h2
+                        class="font-headline font-extrabold text-5xl uppercase mb-8 tracking-tighter"
+                    >
+                        Built for the <br />
+                        <span class="text-secondary">Terminal_Warrior</span>
+                    </h2>
+                    <div class="space-y-6">
+                        <div class="flex gap-4">
+                            <div
+                                class="w-10 h-10 shrink-0 bg-secondary/20 flex items-center justify-center"
+                            >
+                                <span
+                                    class="material-symbols-outlined text-secondary"
+                                    data-icon="terminal"
+                                    >terminal</span
+                                >
+                            </div>
+                            <div>
+                                <h6
+                                    class="font-headline font-bold text-lg uppercase tracking-tight"
+                                >
+                                    Anvil_CLI
+                                </h6>
+                                <p class="text-on-surface-variant text-sm">
+                                    Scaffold new projects, manage plugins, and
+                                    compile assets with a single command.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex-1 w-full">
+                    <div
+                        class="bg-surface p-1 border-2 border-secondary/30 chamfer-tr shadow-[0_0_30px_rgba(255,81,250,0.15)]"
+                    >
+                        <div
+                            class="bg-surface-container-high px-4 py-2 flex items-center justify-between border-b border-outline-variant/30"
+                        >
+                            <div class="flex gap-1.5">
+                                <div class="w-2 h-2 bg-error"></div>
+                                <div class="w-2 h-2 bg-tertiary"></div>
+                                <div class="w-2 h-2 bg-primary"></div>
+                            </div>
+                            <span
+                                class="font-label text-[10px] text-on-surface-variant/50"
+                                >main.rs — anvil_project</span
+                            >
+                        </div>
+                        <div
+                            class="p-6 font-mono text-sm leading-relaxed overflow-x-auto"
+                        >
+                            <pre><span class="text-secondary">use</span> anvil_core::prelude::*;
+
+<span class="text-primary-container">fn</span> <span class="text-primary-container">main</span>() {
+    <span class="text-on-surface-variant">// Initialize the synthetic forge</span>
+    App::<span class="text-primary">new</span>()
+        .add_plugins(DefaultPlugins)
+        .add_systems(Update, rotate_anvil)
+        .run();
+}
+
+<span class="text-primary-container">fn</span> <span class="text-primary-container">rotate_anvil</span>(query: Query&lt;&amp;mut Transform, With&lt;Anvil&gt;&gt;) {
+    <span class="text-on-surface-variant">// Precision rotation logic</span>
+}</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <!-- Games Showcase -->
+        <section class="py-24 px-6">
+            <div class="max-w-7xl mx-auto">
+                <div
+                    class="flex flex-col md:flex-row md:items-end justify-between mb-16 gap-6"
+                >
+                    <div>
+                        <h2
+                            class="font-headline font-bold text-5xl uppercase tracking-tighter mb-4"
+                        >
+                            Forge_Results
+                        </h2>
+                        <p class="text-on-surface-variant max-w-md">
+                            See what industrial engineers and indie rebels are
+                            building with AnvilKit.
+                        </p>
+                    </div>
+                    <a
+                        class="font-label text-xs text-primary-container tracking-widest border-b border-primary-container pb-1 hover:text-white hover:border-white transition-colors"
+                        href="#"
+                        >EXPLORE_GALLERY</a
+                    >
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <!-- Game 1 -->
+                    <div
+                        class="group relative bg-surface-container border border-outline-variant/20 overflow-hidden"
+                    >
+                        <img
+                            alt="Project Neon"
+                            class="w-full h-64 object-cover grayscale group-hover:grayscale-0 transition-all duration-500"
+                            data-alt="High-contrast cyberpunk city at night with glowing blue and pink neon signs and rain-slicked pavement"
+                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuCRECmNszA4H0j44ub1o1Jra6wPGUzjww0Yo-esl6YlU3WlLqGlqiPep6tGiNkLAKQaTUaW0Dw24Yl6OjX33NUT8O7-E1iQ9be9bLN7uUn_ujGm-B4BPEm5ljxl07pTP7HKQzYQpjDF3XmIPZPW8Hl7orTX8Nmh_H4s-sP2GB2fO21tJCVE5-e9apVWlqRDvMqqnd1g31Z-gAl0fDKEaje6c6ZQrNhX-ODFx14_QhZQn6Lkc1R--AX90ks1fyB5rBQoTOzRXV4UHq0"
+                        />
+                        <div class="p-6 border-t border-outline-variant/20">
+                            <div class="flex justify-between items-center mb-4">
+                                <h4
+                                    class="font-headline font-bold text-xl uppercase italic"
+                                >
+                                    Project_Neon
+                                </h4>
+                                <span
+                                    class="font-label text-[10px] bg-secondary/10 text-secondary px-2 py-1"
+                                    >ALPHA</span
+                                >
+                            </div>
+                            <p
+                                class="text-xs text-on-surface-variant leading-relaxed"
+                            >
+                                A high-fidelity immersive sim pushing the limits
+                                of WGPU rendering.
+                            </p>
+                        </div>
+                    </div>
+                    <!-- Game 2 -->
+                    <div
+                        class="group relative bg-surface-container border border-outline-variant/20 overflow-hidden"
+                    >
+                        <img
+                            alt="Orbital Forge"
+                            class="w-full h-64 object-cover grayscale group-hover:grayscale-0 transition-all duration-500"
+                            data-alt="Massive space station orbiting a giant gas planet with realistic metal textures and harsh sunlight"
+                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuDOnXR73Mlg1i8IbV7FDOMyoyCvGbjRq5qKF9uiNgJX9N_IP7jrdtQ-w5z2t35eFUtUoAOC8fETnj-lu7o-q38W3Qe96NIDAyYspMB98kjUrAARzdxOLWV9tV4cUVbVPqMfwU0lukv6fVglO1uDYme6vie0N2bE-Mj6ZliEgu7w2GVcYabpPGpPQ6-0qTjfqlCGgWbghhU0cwlvVCmewQpR6eh93zyLeU4lL9zPIItqxSUWjAliCxNpMSuLJzt9aKEohb0d4Fmq5VA"
+                        />
+                        <div class="p-6 border-t border-outline-variant/20">
+                            <div class="flex justify-between items-center mb-4">
+                                <h4
+                                    class="font-headline font-bold text-xl uppercase italic"
+                                >
+                                    Orbital_Forge
+                                </h4>
+                                <span
+                                    class="font-label text-[10px] bg-primary/10 text-primary px-2 py-1"
+                                    >STABLE</span
+                                >
+                            </div>
+                            <p
+                                class="text-xs text-on-surface-variant leading-relaxed"
+                            >
+                                Large-scale space simulation utilizing the
+                                multi-threaded ECS scheduler.
+                            </p>
+                        </div>
+                    </div>
+                    <!-- Game 3 -->
+                    <div
+                        class="group relative bg-surface-container border border-outline-variant/20 overflow-hidden"
+                    >
+                        <img
+                            alt="Void Engine"
+                            class="w-full h-64 object-cover grayscale group-hover:grayscale-0 transition-all duration-500"
+                            data-alt="Abstract crystalline structures growing in a dark void with prismatic light refractions and deep shadows"
+                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuBsRlnr_vgsnjKSjAep9l-DnWb6NT0lop9_Deoil8ulujWTHaGSab4WqBL4vW2gdRsewBoTsACfvuC5k2kEK6Ro7Ru47IPZ5MndCPrYHqFKwSNGC1plnXQxSHB3Ltiy0q4VDhQwvWfSbHGdB_v79e_F5xfdzuroGSR7ddqsbfu9otAJwFtwNZI9bwM8bbT4Ci9rdmSa5JAXWKHk1vzd8Ge_J3IjNIP3mvxXUmjMAaZFkXuu5mCxvV5PgQIhcABSwZQ75zzx82tQGEs"
+                        />
+                        <div class="p-6 border-t border-outline-variant/20">
+                            <div class="flex justify-between items-center mb-4">
+                                <h4
+                                    class="font-headline font-bold text-xl uppercase italic"
+                                >
+                                    Void_Core
+                                </h4>
+                                <span
+                                    class="font-label text-[10px] bg-tertiary/10 text-tertiary px-2 py-1"
+                                    >EXPERIMENTAL</span
+                                >
+                            </div>
+                            <p
+                                class="text-xs text-on-surface-variant leading-relaxed"
+                            >
+                                Physics-based puzzle platformer with complex
+                                voxel interaction.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <!-- Final CTA -->
+        <section
+            class="py-32 px-6 relative overflow-hidden bg-gradient-to-b from-surface to-surface-container-low"
+        >
+            <div class="absolute inset-0 opacity-10">
+                <div
+                    class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] wireframe-hex border-[20px] border-primary-container blur-3xl"
+                ></div>
+            </div>
+            <div class="max-w-4xl mx-auto text-center relative z-10">
+                <h2
+                    class="font-headline font-extrabold text-6xl md:text-8xl mb-8 tracking-tighter uppercase leading-none"
+                >
+                    READY TO <br />
+                    <span class="text-primary-container">OVERCLOCK?</span>
+                </h2>
+                <p
+                    class="text-on-surface-variant mb-12 text-lg max-w-2xl mx-auto font-light"
+                >
+                    Join 10,000+ developers building the future of
+                    industrial-grade interactive software. Open source,
+                    rust-native, and lightning fast.
+                </p>
+                <div class="flex flex-wrap justify-center gap-4">
+                    <button
+                        class="bg-primary-container text-on-primary-container px-12 py-5 font-headline font-bold uppercase tracking-widest text-sm glow-cyan hover:scale-105 transition-all"
+                    >
+                        GET_STARTED_NOW
+                    </button>
+                    <button
+                        class="bg-surface-container-highest text-on-surface px-12 py-5 font-headline font-bold uppercase tracking-widest text-sm border border-outline-variant/30 hover:bg-surface-bright transition-all"
+                    >
+                        READ_THE_MANIFESTO
+                    </button>
+                </div>
+            </div>
+        </section>
+        <!-- Footer -->
+        <footer class="bg-[#0e0e0f] py-12 border-t border-[#1a1a1b]">
+            <div
+                class="flex flex-col md:flex-row justify-between items-center w-full px-8 max-w-7xl mx-auto space-y-4 md:space-y-0"
+            >
+                <div class="flex items-center gap-6">
+                    <span
+                        class="text-[#ff51fa] font-bold font-headline text-lg uppercase tracking-wider"
+                        >AnvilKit</span
+                    >
+                    <span
+                        class="font-['Space_Grotesk'] text-[10px] tracking-[0.2em] uppercase text-[#adaaab]"
+                        >© 2024 ANVILKIT INDUSTRIAL. ALL RIGHTS RESERVED.</span
+                    >
+                </div>
+                <div class="flex gap-8">
+                    <a
+                        class="font-['Space_Grotesk'] text-[10px] tracking-[0.2em] uppercase text-[#adaaab] hover:text-[#ff51fa] transition-all duration-500 hover:tracking-[0.3em]"
+                        href="#"
+                        >Security</a
+                    >
+                    <a
+                        class="font-['Space_Grotesk'] text-[10px] tracking-[0.2em] uppercase text-[#adaaab] hover:text-[#ff51fa] transition-all duration-500 hover:tracking-[0.3em]"
+                        href="#"
+                        >Telemetry</a
+                    >
+                    <a
+                        class="font-['Space_Grotesk'] text-[10px] tracking-[0.2em] uppercase text-[#adaaab] hover:text-[#ff51fa] transition-all duration-500 hover:tracking-[0.3em]"
+                        href="#"
+                        >Status</a
+                    >
+                    <a
+                        class="font-['Space_Grotesk'] text-[10px] tracking-[0.2em] uppercase text-[#adaaab] hover:text-[#ff51fa] transition-all duration-500 hover:tracking-[0.3em]"
+                        href="#"
+                        >EULA</a
+                    >
+                </div>
+            </div>
+        </footer>
+    </body>
+</html>

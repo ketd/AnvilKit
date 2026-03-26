@@ -63,4 +63,76 @@
 
 .hero-glow {
   background: radial-gradient(circle at 50% 50%, rgba(0, 251, 251, 0.08) 0%, transparent 70%);
+  will-change: transform;
+  pointer-events: none;
+}
+
+/* ══ GSAP Animation Helpers ══ */
+
+/* Prevent FOUC: hide animated elements until JS runs */
+@media (scripting: enabled) {
+  [data-anim="hero-glow"] { opacity: 0; transform: scale(0.5); }
+  [data-anim="hero-badge"] { opacity: 0; transform: translateY(20px) scale(0.9); }
+  [data-anim="hero-title"] { opacity: 0; }
+  [data-anim="hero-subtitle"] { opacity: 0; transform: translateY(30px); }
+  [data-anim="hero-buttons"] { opacity: 0; transform: translateY(30px); }
+  [data-anim="hero-ascii"] { opacity: 0; }
+}
+
+/* Typewriter cursor */
+.cursor-blink {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background: #00fbfb;
+  vertical-align: text-bottom;
+  margin-left: 2px;
+  animation: cursor-blink 0.8s step-end infinite;
+}
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ══ Game Engine HUD Elements ══ */
+
+/* Scanline overlay — subtle CRT/hologram feel */
+.scanline-overlay {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9990;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 251, 251, 0.008) 2px,
+    rgba(0, 251, 251, 0.008) 4px
+  );
+  mix-blend-mode: screen;
+}
+@media (max-width: 768px) {
+  .scanline-overlay { display: none; }
+}
+
+/* HUD corner brackets — game UI aesthetic */
+.hud-corner {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+.hud-corner--tl { top: -1px; left: -1px; border-top: 2px solid #00fbfb; border-left: 2px solid #00fbfb; }
+.hud-corner--tr { top: -1px; right: -1px; border-top: 2px solid #00fbfb; border-right: 2px solid #00fbfb; }
+.hud-corner--bl { bottom: -1px; left: -1px; border-bottom: 2px solid #00fbfb; border-left: 2px solid #00fbfb; }
+.hud-corner--br { bottom: -1px; right: -1px; border-bottom: 2px solid #00fbfb; border-right: 2px solid #00fbfb; }
+
+/* Reduced motion: show everything immediately */
+@media (prefers-reduced-motion: reduce) {
+  [data-anim] {
+    opacity: 1 !important;
+    transform: none !important;
+    clip-path: none !important;
+  }
+  .scanline-overlay { display: none; }
 }
