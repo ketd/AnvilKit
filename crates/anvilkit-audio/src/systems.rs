@@ -3,7 +3,8 @@
 //! ECS 系统：监听 AudioSource 组件状态变化，驱动 rodio 播放。
 
 use bevy_ecs::prelude::*;
-use anvilkit_ecs::audio::{AudioSource, PlaybackState};
+use anvilkit_ecs::audio::{AudioSource, PlaybackState, AudioListener, AudioBus};
+use anvilkit_core::math::Transform;
 use log::{debug, error};
 use std::io::BufReader;
 use std::fs::File;
@@ -92,4 +93,35 @@ pub fn audio_playback_system(
     }
 
     engine.cleanup_finished();
+}
+
+/// 空间音频系统 — 基于距离的音量衰减
+pub fn spatial_audio_system(
+    query: Query<(Entity, &AudioSource, &Transform)>,
+    listener_query: Query<&Transform, With<AudioListener>>,
+    engine: Option<ResMut<AudioEngine>>,
+    bus: Option<Res<AudioBus>>,
+) {
+    let Some(engine) = engine else { return };
+    let default_bus = AudioBus::default();
+    let bus = bus.as_deref().unwrap_or(&default_bus);
+
+    let listener_pos = listener_query.iter().next()
+        .map(|t| t.translation)
+        .unwrap_or(glam::Vec3::ZERO);
+
+    for (entity, source, transform) in query.iter() {
+        if source.state != PlaybackState::Playing { continue; }
+
+        let bus_vol = bus.effective_volume(source.bus);
+        let effective_vol = if source.spatial && source.spatial_range > 0.0 {
+            let distance = (transform.translation - listener_pos).length();
+            let attenuation = (1.0 - distance / source.spatial_range).max(0.0);
+            source.volume * attenuation * bus_vol
+        } else {
+            source.volume * bus_vol
+        };
+
+        engine.set_volume(entity, effective_vol);
+    }
 }

@@ -21,7 +21,7 @@ pub mod systems;
 use anvilkit_ecs::prelude::*;
 use anvilkit_ecs::schedule::AnvilKitSchedule;
 use engine::AudioEngine;
-use systems::audio_playback_system;
+use systems::{audio_playback_system, spatial_audio_system};
 
 /// 音频插件
 ///
@@ -33,6 +33,9 @@ impl Plugin for AudioPlugin {
         if let Some(engine) = AudioEngine::new() {
             app.insert_resource(engine);
         }
-        app.add_systems(AnvilKitSchedule::PostUpdate, audio_playback_system);
+        app.add_systems(AnvilKitSchedule::PostUpdate, (
+            audio_playback_system,
+            spatial_audio_system.after(audio_playback_system),
+        ));
     }
 }

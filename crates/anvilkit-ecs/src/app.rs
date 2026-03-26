@@ -494,4 +494,64 @@ mod tests {
         let resource = app.world.get_resource::<DefaultResource>().unwrap();
         assert_eq!(*resource, DefaultResource::default());
     }
+
+    #[test]
+    fn test_fixed_timestep_config() {
+        let mut app = App::new();
+        assert!((app.fixed_timestep() - 1.0 / 60.0).abs() < 0.001);
+
+        app.set_fixed_timestep(1.0 / 120.0);
+        assert!((app.fixed_timestep() - 1.0 / 120.0).abs() < 0.001);
+
+        // 防止零或负值
+        app.set_fixed_timestep(0.0);
+        assert!(app.fixed_timestep() > 0.0);
+    }
+
+    #[test]
+    fn test_add_event() {
+        use bevy_ecs::event::{Event, Events};
+
+        #[derive(Event)]
+        struct TestEvent(i32);
+
+        let mut app = App::new();
+        app.add_event::<TestEvent>();
+
+        // Events 资源应已创建
+        assert!(app.world.get_resource::<Events<TestEvent>>().is_some());
+    }
+
+    #[test]
+    fn test_fixed_update_runs_physics_schedule() {
+        use crate::schedule::AnvilKitSchedule;
+
+        #[derive(Resource, Default)]
+        struct FixedCounter(u32);
+
+        fn fixed_count_system(mut counter: ResMut<FixedCounter>) {
+            counter.0 += 1;
+        }
+
+        let mut app = App::new();
+        app.add_plugins(AnvilKitEcsPlugin);
+        app.init_resource::<FixedCounter>();
+        app.add_systems(AnvilKitSchedule::FixedUpdate, fixed_count_system);
+
+        // 手动设置时间以触发 FixedUpdate
+        // update() 读取 Time::delta_seconds() 为 0（首帧），所以 FixedUpdate 不会运行
+        app.update();
+        assert_eq!(app.world.resource::<FixedCounter>().0, 0);
+
+        // 给 Time 一个实际的 delta 然后再 update
+        if let Some(mut time) = app.world.get_resource_mut::<anvilkit_core::time::Time>() {
+            time.update(); // 更新内部 Instant
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20)); // 确保 delta > fixed_timestep
+        if let Some(mut time) = app.world.get_resource_mut::<anvilkit_core::time::Time>() {
+            time.update(); // 现在 delta_seconds ~0.02 > 1/60
+        }
+        app.update();
+        assert!(app.world.resource::<FixedCounter>().0 >= 1);
+    }
 }

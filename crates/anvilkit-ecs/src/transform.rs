@@ -765,4 +765,39 @@ mod tests {
         let collected: Vec<_> = children.iter().copied().collect();
         assert_eq!(collected, vec![c1, c2, c3]);
     }
+
+    #[test]
+    fn test_despawn_recursive_leaf() {
+        let mut world = World::new();
+        let leaf = world.spawn((
+            Transform::from_xyz(1.0, 0.0, 0.0),
+            GlobalTransform::default(),
+        )).id();
+
+        let descendants = TransformHierarchy::get_descendants(&world, leaf);
+        assert_eq!(descendants.len(), 0); // leaf has no children
+        assert!(world.get_entity(leaf).is_some());
+    }
+
+    #[test]
+    fn test_despawn_recursive_hierarchy() {
+        let mut world = World::new();
+
+        let root = world.spawn((Transform::default(), GlobalTransform::default())).id();
+        let child1 = world.spawn((Transform::default(), GlobalTransform::default(), Parent::new(root))).id();
+        let child2 = world.spawn((Transform::default(), GlobalTransform::default(), Parent::new(root))).id();
+        let grandchild = world.spawn((Transform::default(), GlobalTransform::default(), Parent::new(child1))).id();
+
+        // Set up Children
+        world.entity_mut(root).insert(Children::new(vec![child1, child2]));
+        world.entity_mut(child1).insert(Children::new(vec![grandchild]));
+
+        let descendants = TransformHierarchy::get_descendants(&world, root);
+        assert_eq!(descendants.len(), 3); // child1, grandchild, child2
+
+        // Verify get_descendants finds all
+        assert!(descendants.contains(&child1));
+        assert!(descendants.contains(&child2));
+        assert!(descendants.contains(&grandchild));
+    }
 }

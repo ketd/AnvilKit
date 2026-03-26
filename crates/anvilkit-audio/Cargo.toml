@@ -13,7 +13,9 @@ description = "Cross-platform audio playback built on rodio for AnvilKit game en
 readme = "../../README.md"
 
 [dependencies]
+anvilkit-core = { version = "0.1.0", path = "../anvilkit-core", features = ["bevy_ecs"] }
 anvilkit-ecs = { version = "0.1.0", path = "../anvilkit-ecs" }
 bevy_ecs = { workspace = true }
+glam = { workspace = true }
 rodio = { version = "0.19", default-features = false, features = ["wav", "vorbis", "mp3"] }
 log = "0.4"

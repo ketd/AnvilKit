@@ -431,4 +431,46 @@ mod tests {
         assert!(camera.near > 0.0);
         assert!(camera.far > camera.near);
     }
+
+    #[test]
+    fn test_projection_default_is_perspective() {
+        let camera = CameraComponent::default();
+        assert!(matches!(camera.projection, Projection::Perspective { .. }));
+    }
+
+    #[test]
+    fn test_orthographic_projection() {
+        let camera = CameraComponent {
+            projection: Projection::Orthographic {
+                left: -10.0, right: 10.0, bottom: -10.0, top: 10.0,
+            },
+            ..Default::default()
+        };
+        match camera.projection {
+            Projection::Orthographic { left, right, .. } => {
+                assert_eq!(left, -10.0);
+                assert_eq!(right, 10.0);
+            }
+            _ => panic!("Expected orthographic"),
+        }
+    }
+
+    #[test]
+    fn test_render_config_msaa() {
+        let config = RenderConfig::default();
+        assert_eq!(config.msaa_samples, 4);
+
+        let custom = RenderConfig {
+            msaa_samples: 1,
+            ..Default::default()
+        };
+        assert_eq!(custom.msaa_samples, 1);
+    }
+
+    #[test]
+    fn test_camera_priority() {
+        let cam1 = CameraComponent { priority: 0, ..Default::default() };
+        let cam2 = CameraComponent { priority: 10, ..Default::default() };
+        assert!(cam2.priority > cam1.priority);
+    }
 }
