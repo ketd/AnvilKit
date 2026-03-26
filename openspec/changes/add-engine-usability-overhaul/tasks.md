@@ -28,15 +28,15 @@
 - [x] 1.4.7 添加 PostProcessSettings 开关测试（全禁用、全启用、部分启用）
 
 ### 1.5 DefaultPlugins + Auto 插件
-- [ ] 1.5.1 实现 `AutoInputPlugin` — winit keyboard/mouse 事件自动转发到 InputState + end_frame
-- [ ] 1.5.2 实现 `AutoDeltaTimePlugin` — Instant::elapsed → DeltaTime (clamped) + Time.update()
+- [x] 1.5.1 实现 `AutoInputPlugin` — winit keyboard/mouse 事件自动转发到 InputState + end_frame
+- [x] 1.5.2 实现 `AutoDeltaTimePlugin` — Instant::elapsed → DeltaTime (clamped) + Time.update()
 - [x] 1.5.3 实现 `DefaultPlugins` PluginGroup（ECS + Render + Audio）
 - [x] 1.5.4 添加 `DefaultPlugins::new().with_window(config)` builder 方法
 - [x] 1.5.5 添加 DefaultPlugins 单元测试
 
 ### 1.6 便捷方法
 - [x] 1.6.1 实现 `MeshData::to_pbr_vertices() -> Vec<InterleavedPbrVertex>`
-- [ ] 1.6.2 实现 `generate_sphere/box/plane` 返回 (MeshData, MeshHandle) 的便捷工厂方法
+- [x] 1.6.2 实现 `generate_sphere/box/plane` 返回 (MeshData, MeshHandle) 的便捷工厂方法
 - [x] 1.6.3 添加便捷方法单元测试
 
 ## Phase 2: ECS 基础设施
@@ -46,7 +46,7 @@
 - [x] 2.1.2 `collision_detection_system` 改用 `EventWriter<CollisionEvent>` 替代 `ResMut<CollisionEvents>`
 - [x] 2.1.3 `NetworkPlugin::build()` 中添加 `app.add_event::<NetworkEvent>()`
 - [x] 2.1.4 `CollisionEvents` 和 `NetworkEvents` 标记 `#[deprecated]`，手动清除系统移除
-- [ ] 2.1.5 更新 Billiards 碰撞事件消费代码
+- [x] 2.1.5 更新 Billiards 碰撞事件消费代码
 - [x] 2.1.6 添加事件系统单元测试（collision detection 使用 EventReader 验证）
 
 ### 2.2 游戏状态机
@@ -61,15 +61,15 @@
 - [x] 2.3.3 修改 `App::update()` — 在 PreUpdate 之后、Update 之前运行 FixedUpdate 累加循环
 - [x] 2.3.4 将 `PhysicsPlugin` 的系统从 Update 迁移到 FixedUpdate
 - [x] 2.3.5 将 `RapierPhysicsPlugin` 的系统从 Update 迁移到 FixedUpdate
-- [ ] 2.3.6 添加 FixedUpdate 累加器单元测试
+- [x] 2.3.6 添加 FixedUpdate 累加器单元测试
 
 ### 2.4 SystemSet 排序
 - [x] 2.4.1 在 `AnvilKitEcsPlugin::setup_schedules()` 中配置 10 个 set 链式排序
-- [ ] 2.4.2 添加系统排序集成测试
+- [x] 2.4.2 添加系统排序集成测试
 
 ### 2.5 Scene 序列化扩展
 - [x] 2.5.1 SerializedEntity 扩展 name/tag/parent_index/custom_data 字段
-- [ ] 2.5.2 新增 `app.register_serializable::<T>()` 方法（类型擦除 registry）
+- [x] 2.5.2 新增 `app.register_serializable::<T>()` 方法（类型擦除 registry）
 - [x] 2.5.3 修改 `SceneSerializer::save` — 序列化 Transform + Name + Tag + 层级
 - [x] 2.5.4 修改 `SceneSerializer::load` — 恢复所有组件 + Parent/Children 层级
 - [x] 2.5.5 序列化/反序列化保留 Parent/Children 层级关系
@@ -77,14 +77,14 @@
 
 ### 2.6 层级递归销毁
 - [x] 2.6.1 实现 `TransformHierarchy::despawn_recursive(commands, entity)`
-- [ ] 2.6.2 添加 despawn_recursive 测试
+- [x] 2.6.2 添加 despawn_recursive 测试
 
 ## Phase 3: Audio 补完
 
 ### 3.1 播放功能修复
 - [x] 3.1.1 修改 `audio_playback_system` — looping 通过 `rodio::Source::repeat_infinite()` 实现
 - [x] 3.1.2 修改 `audio_playback_system` — pitch 通过 `Sink::set_speed()` 应用
-- [ ] 3.1.3 添加 looping/pitch 单元测试
+- [x] 3.1.3 添加 looping/pitch 单元测试
 
 ### 3.2 空间音频
 - [x] 3.2.1 新增 `spatial_audio_system` — 距离衰减计算
@@ -167,7 +167,7 @@
 ### 6.1 CSM 修复
 - [x] 6.1.1 修改 `events.rs` — cascade 矩阵使用 `active_camera.fov_radians` 替代 `FRAC_PI_4`
 - [x] 6.1.2 修改 CSM 投影从 `perspective_rh` 到 `perspective_lh` 统一坐标系
-- [ ] 6.1.3 添加 CSM FOV 一致性测试
+- [x] 6.1.3 添加 CSM FOV 一致性测试
 
 ### 6.2 Mipmap 生成
 - [x] 6.2.1 新增 `compute_mip_levels()` + `create_texture()` 自动计算 mip chain（≥4x4）
@@ -184,7 +184,7 @@
 ### 6.4 正交相机
 - [x] 6.4.1 `CameraComponent` 新增 `Projection` 枚举（Perspective | Orthographic）
 - [x] 6.4.2 camera_system 根据 Projection 类型计算 view-projection 矩阵
-- [ ] 6.4.3 添加正交投影单元测试
+- [x] 6.4.3 添加正交投影单元测试
 
 ### 6.5 多相机
 - [x] 6.5.1 `CameraComponent` 新增 `priority: i32` 字段

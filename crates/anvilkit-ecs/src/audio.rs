@@ -219,4 +219,20 @@ mod tests {
         let src = AudioSource::new("test.ogg");
         assert_eq!(src.bus, AudioBusCategory::SFX);
     }
+
+    #[test]
+    fn test_audio_source_looping_default() {
+        let source = AudioSource::new("test.ogg");
+        assert!(!source.looping);
+        assert!((source.pitch - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_audio_source_looping_and_pitch() {
+        let mut source = AudioSource::new("sound.wav");
+        source.looping = true;
+        source.pitch = 2.0;
+        assert!(source.looping);
+        assert!((source.pitch - 2.0).abs() < 0.001);
+    }
 }

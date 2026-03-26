@@ -424,4 +424,44 @@ mod tests {
         let plugin = SimplePlugin;
         assert!(plugin.is_unique()); // Default is true
     }
+
+    #[test]
+    fn test_system_set_ordering() {
+        use crate::schedule::{AnvilKitSchedule, AnvilKitSystemSet};
+
+        #[derive(Resource, Default)]
+        struct ExecutionOrder(Vec<&'static str>);
+
+        fn input_system(mut order: ResMut<ExecutionOrder>) {
+            order.0.push("input");
+        }
+        fn physics_system(mut order: ResMut<ExecutionOrder>) {
+            order.0.push("physics");
+        }
+        fn transform_system(mut order: ResMut<ExecutionOrder>) {
+            order.0.push("transform");
+        }
+
+        let mut app = App::new();
+        app.add_plugins(AnvilKitEcsPlugin);
+        app.init_resource::<ExecutionOrder>();
+
+        app.add_systems(AnvilKitSchedule::Update, input_system.in_set(AnvilKitSystemSet::Input));
+        app.add_systems(AnvilKitSchedule::Update, physics_system.in_set(AnvilKitSystemSet::Physics));
+        app.add_systems(AnvilKitSchedule::Update, transform_system.in_set(AnvilKitSystemSet::Transform));
+
+        app.update();
+
+        let order = app.world.resource::<ExecutionOrder>();
+        // Input should come before Physics, which comes before Transform
+        let input_pos = order.0.iter().position(|&s| s == "input");
+        let physics_pos = order.0.iter().position(|&s| s == "physics");
+        let transform_pos = order.0.iter().position(|&s| s == "transform");
+
+        assert!(input_pos.is_some(), "Input system should have run");
+        assert!(physics_pos.is_some(), "Physics system should have run");
+        assert!(transform_pos.is_some(), "Transform system should have run");
+        assert!(input_pos.unwrap() < physics_pos.unwrap(), "Input should run before Physics");
+        assert!(physics_pos.unwrap() < transform_pos.unwrap(), "Physics should run before Transform");
+    }
 }

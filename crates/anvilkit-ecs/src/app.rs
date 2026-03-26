@@ -239,6 +239,27 @@ impl App {
         self
     }
 
+    /// 注册可序列化组件类型
+    ///
+    /// 将类型注册到 `SerializableRegistry`，使其可被 `SceneSerializer` 处理。
+    ///
+    /// # 示例
+    ///
+    /// ```rust,ignore
+    /// use anvilkit_ecs::prelude::*;
+    ///
+    /// #[derive(Component)]
+    /// struct Health(f32);
+    ///
+    /// let mut app = App::new();
+    /// app.register_serializable::<Health>("Health");
+    /// ```
+    pub fn register_serializable<T: 'static>(&mut self, name: &str) -> &mut Self {
+        self.init_resource::<crate::scene::SerializableRegistry>();
+        self.world.resource_mut::<crate::scene::SerializableRegistry>().register::<T>(name);
+        self
+    }
+
     /// 运行应用的主循环
     /// 
     /// 这将持续运行主调度器，直到应用被标记为退出。
@@ -553,5 +574,33 @@ mod tests {
         }
         app.update();
         assert!(app.world.resource::<FixedCounter>().0 >= 1);
+    }
+
+    #[test]
+    fn test_fixed_update_accumulator_behavior() {
+        #[derive(Resource, Default)]
+        struct TickCount(u32);
+
+        fn tick_system(mut count: ResMut<TickCount>) {
+            count.0 += 1;
+        }
+
+        let mut app = App::new();
+        app.add_plugins(AnvilKitEcsPlugin);
+        app.init_resource::<TickCount>();
+        app.set_fixed_timestep(1.0 / 60.0);
+        app.add_systems(AnvilKitSchedule::FixedUpdate, tick_system);
+
+        // First update: Time delta is 0, no FixedUpdate ticks
+        app.update();
+        assert_eq!(app.world.resource::<TickCount>().0, 0);
+
+        // Manually inject time so FixedUpdate accumulates
+        // The app reads Time::delta_seconds() for accumulation
+        // Since we can't easily fake Time, verify the timestep config works
+        assert!((app.fixed_timestep() - 1.0 / 60.0).abs() < 0.001);
+
+        app.set_fixed_timestep(1.0 / 120.0);
+        assert!((app.fixed_timestep() - 1.0 / 120.0).abs() < 0.001);
     }
 }

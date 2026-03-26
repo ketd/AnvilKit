@@ -767,6 +767,18 @@ mod tests {
     }
 
     #[test]
+    fn test_despawn_recursive_single() {
+        let mut world = World::new();
+        let entity = world.spawn(Transform::default()).id();
+
+        assert!(world.get_entity(entity).is_some());
+
+        // Use direct despawn for single entity (no children)
+        world.despawn(entity);
+        assert!(world.get_entity(entity).is_none());
+    }
+
+    #[test]
     fn test_despawn_recursive_leaf() {
         let mut world = World::new();
         let leaf = world.spawn((

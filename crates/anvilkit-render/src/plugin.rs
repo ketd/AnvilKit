@@ -480,4 +480,20 @@ mod tests {
         // (Just verify the types compile — actual GPU test needs runtime)
         let _mat = crate::renderer::standard_material::StandardMaterial::new();
     }
+
+    #[test]
+    fn test_projection_matrix_differs() {
+        let persp = CameraComponent::default();
+        let ortho = CameraComponent {
+            projection: Projection::Orthographic {
+                left: -10.0, right: 10.0, bottom: -10.0, top: 10.0,
+            },
+            ..Default::default()
+        };
+        // Both should have valid fov/near/far but different projection types
+        assert!(matches!(persp.projection, Projection::Perspective { .. }));
+        assert!(matches!(ortho.projection, Projection::Orthographic { .. }));
+        assert!((persp.near - 0.1).abs() < 0.001);
+        assert!((ortho.near - 0.1).abs() < 0.001);
+    }
 }

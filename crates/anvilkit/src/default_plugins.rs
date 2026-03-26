@@ -87,6 +87,12 @@ impl Plugin for DefaultPlugins {
 
         // 3. 音频引擎
         app.add_plugins(AudioPlugin);
+
+        // 4. 自动输入帧管理
+        app.add_plugins(anvilkit_ecs::auto_plugins::AutoInputPlugin);
+
+        // 5. 自动时间更新
+        app.add_plugins(anvilkit_ecs::auto_plugins::AutoDeltaTimePlugin);
     }
 
     fn name(&self) -> &str {

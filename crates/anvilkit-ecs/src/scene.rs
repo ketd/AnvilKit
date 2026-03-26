@@ -119,6 +119,61 @@ pub struct SerializedScene {
 /// ```
 pub struct SceneSerializer;
 
+/// 可序列化组件注册表
+///
+/// 允许用户注册自定义组件类型用于场景序列化。
+/// 注册后，`SceneSerializer` 可以通过 type name 查找组件的序列化/反序列化函数。
+///
+/// # 示例
+///
+/// ```rust,ignore
+/// use anvilkit_ecs::scene::SerializableRegistry;
+///
+/// let mut registry = SerializableRegistry::new();
+/// registry.register::<MyComponent>("MyComponent");
+/// ```
+#[derive(Resource, Default)]
+pub struct SerializableRegistry {
+    /// type_name → type_id 映射
+    entries: std::collections::HashMap<String, std::any::TypeId>,
+}
+
+impl SerializableRegistry {
+    /// 创建空的注册表
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 注册组件类型
+    ///
+    /// # 参数
+    ///
+    /// - `name`: 序列化使用的类型名称（应稳定、跨版本一致）
+    pub fn register<T: 'static>(&mut self, name: &str) {
+        self.entries.insert(name.to_string(), std::any::TypeId::of::<T>());
+    }
+
+    /// 检查类型是否已注册
+    pub fn is_registered(&self, name: &str) -> bool {
+        self.entries.contains_key(name)
+    }
+
+    /// 已注册类型数量
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// 注册表是否为空
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// 获取已注册的所有类型名称
+    pub fn registered_names(&self) -> Vec<&str> {
+        self.entries.keys().map(|s| s.as_str()).collect()
+    }
+}
+
 #[cfg(feature = "serde")]
 impl SceneSerializer {
     /// 保存场景到 RON 文件。
@@ -279,5 +334,36 @@ mod tests {
 
         // Cleanup
         let _ = std::fs::remove_file(path);
+    }
+}
+
+#[cfg(test)]
+mod registry_tests {
+    use super::*;
+
+    #[test]
+    fn test_serializable_registry() {
+        let mut registry = SerializableRegistry::new();
+        assert!(registry.is_empty());
+
+        #[derive(Debug)]
+        struct FakeComponent;
+
+        registry.register::<FakeComponent>("FakeComponent");
+        assert_eq!(registry.len(), 1);
+        assert!(registry.is_registered("FakeComponent"));
+        assert!(!registry.is_registered("Unknown"));
+    }
+
+    #[test]
+    fn test_serializable_registry_names() {
+        let mut registry = SerializableRegistry::new();
+        registry.register::<u32>("u32");
+        registry.register::<String>("String");
+
+        let names = registry.registered_names();
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"u32"));
+        assert!(names.contains(&"String"));
     }
 }

@@ -145,6 +145,155 @@ impl MeshData {
             })
             .collect()
     }
+
+    /// 生成立方体网格数据
+    ///
+    /// 以原点为中心，边长为 `size` 的立方体。
+    /// 每个面有独立法线（24 顶点，36 索引）。
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use anvilkit_assets::mesh::MeshData;
+    /// let cube = MeshData::generate_box(1.0);
+    /// assert_eq!(cube.vertex_count(), 24);
+    /// assert_eq!(cube.index_count(), 36);
+    /// ```
+    pub fn generate_box(size: f32) -> Self {
+        let h = size * 0.5;
+        let mut positions = Vec::with_capacity(24);
+        let mut normals = Vec::with_capacity(24);
+        let mut texcoords = Vec::with_capacity(24);
+        let mut indices = Vec::with_capacity(36);
+
+        // Face definitions: (normal, [4 corner offsets])
+        let faces: [([f32; 3], [[f32; 3]; 4]); 6] = [
+            // +Z (front)
+            ([0.0, 0.0, 1.0], [[-h, -h, h], [h, -h, h], [h, h, h], [-h, h, h]]),
+            // -Z (back)
+            ([0.0, 0.0, -1.0], [[h, -h, -h], [-h, -h, -h], [-h, h, -h], [h, h, -h]]),
+            // +X (right)
+            ([1.0, 0.0, 0.0], [[h, -h, h], [h, -h, -h], [h, h, -h], [h, h, h]]),
+            // -X (left)
+            ([-1.0, 0.0, 0.0], [[-h, -h, -h], [-h, -h, h], [-h, h, h], [-h, h, -h]]),
+            // +Y (top)
+            ([0.0, 1.0, 0.0], [[-h, h, h], [h, h, h], [h, h, -h], [-h, h, -h]]),
+            // -Y (bottom)
+            ([0.0, -1.0, 0.0], [[-h, -h, -h], [h, -h, -h], [h, -h, h], [-h, -h, h]]),
+        ];
+
+        let uvs = [[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]];
+
+        for (normal, corners) in &faces {
+            let base = positions.len() as u32;
+            for (j, corner) in corners.iter().enumerate() {
+                positions.push(Vec3::new(corner[0], corner[1], corner[2]));
+                normals.push(Vec3::new(normal[0], normal[1], normal[2]));
+                texcoords.push(Vec2::new(uvs[j][0], uvs[j][1]));
+            }
+            indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        }
+
+        Self {
+            positions,
+            normals,
+            texcoords,
+            tangents: vec![[1.0, 0.0, 0.0, 1.0]; 24],
+            indices,
+        }
+    }
+
+    /// 生成平面网格数据
+    ///
+    /// 位于 XZ 平面，法线朝 +Y，以原点为中心，边长为 `size`。
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use anvilkit_assets::mesh::MeshData;
+    /// let plane = MeshData::generate_plane(10.0);
+    /// assert_eq!(plane.vertex_count(), 4);
+    /// assert_eq!(plane.index_count(), 6);
+    /// ```
+    pub fn generate_plane(size: f32) -> Self {
+        let h = size * 0.5;
+        Self {
+            positions: vec![
+                Vec3::new(-h, 0.0, h),
+                Vec3::new(h, 0.0, h),
+                Vec3::new(h, 0.0, -h),
+                Vec3::new(-h, 0.0, -h),
+            ],
+            normals: vec![Vec3::Y; 4],
+            texcoords: vec![
+                Vec2::new(0.0, 1.0),
+                Vec2::new(1.0, 1.0),
+                Vec2::new(1.0, 0.0),
+                Vec2::new(0.0, 0.0),
+            ],
+            tangents: vec![[1.0, 0.0, 0.0, 1.0]; 4],
+            indices: vec![0, 1, 2, 0, 2, 3],
+        }
+    }
+
+    /// 生成球体网格数据
+    ///
+    /// UV 球体，半径为 `radius`，`segments` 经线数，`rings` 纬线数。
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use anvilkit_assets::mesh::MeshData;
+    /// let sphere = MeshData::generate_sphere(1.0, 16, 12);
+    /// assert!(sphere.vertex_count() > 0);
+    /// assert!(sphere.index_count() > 0);
+    /// ```
+    pub fn generate_sphere(radius: f32, segments: u32, rings: u32) -> Self {
+        let mut positions = Vec::new();
+        let mut normals = Vec::new();
+        let mut texcoords = Vec::new();
+        let mut indices = Vec::new();
+
+        for y in 0..=rings {
+            let v = y as f32 / rings as f32;
+            let phi = v * std::f32::consts::PI;
+            for x in 0..=segments {
+                let u = x as f32 / segments as f32;
+                let theta = u * std::f32::consts::TAU;
+
+                let sin_phi = phi.sin();
+                let cos_phi = phi.cos();
+                let sin_theta = theta.sin();
+                let cos_theta = theta.cos();
+
+                let nx = cos_theta * sin_phi;
+                let ny = cos_phi;
+                let nz = sin_theta * sin_phi;
+
+                positions.push(Vec3::new(nx * radius, ny * radius, nz * radius));
+                normals.push(Vec3::new(nx, ny, nz));
+                texcoords.push(Vec2::new(u, v));
+            }
+        }
+
+        let stride = segments + 1;
+        for y in 0..rings {
+            for x in 0..segments {
+                let a = y * stride + x;
+                let b = a + stride;
+                indices.extend_from_slice(&[a, b, a + 1, b, b + 1, a + 1]);
+            }
+        }
+
+        let vert_count = positions.len();
+        Self {
+            positions,
+            normals,
+            texcoords,
+            tangents: vec![[1.0, 0.0, 0.0, 1.0]; vert_count],
+            indices,
+        }
+    }
 }
 
 /// 交错 PBR 顶点数据
@@ -223,5 +372,38 @@ mod tests {
         let verts = mesh.to_pbr_vertices();
         assert_eq!(verts.len(), 1);
         assert_eq!(verts[0].tangent, [1.0, 0.0, 0.0, 1.0]); // 默认值
+    }
+
+    #[test]
+    fn test_generate_box() {
+        let cube = MeshData::generate_box(2.0);
+        assert_eq!(cube.vertex_count(), 24);
+        assert_eq!(cube.index_count(), 36);
+        assert!(cube.validate().is_ok());
+    }
+
+    #[test]
+    fn test_generate_plane() {
+        let plane = MeshData::generate_plane(10.0);
+        assert_eq!(plane.vertex_count(), 4);
+        assert_eq!(plane.index_count(), 6);
+        assert!(plane.validate().is_ok());
+        // All normals should be +Y
+        for n in &plane.normals {
+            assert_eq!(*n, Vec3::Y);
+        }
+    }
+
+    #[test]
+    fn test_generate_sphere() {
+        let sphere = MeshData::generate_sphere(1.0, 16, 12);
+        assert!(sphere.vertex_count() > 0);
+        assert!(sphere.index_count() > 0);
+        assert!(sphere.validate().is_ok());
+        // Check all positions are on the unit sphere
+        for p in &sphere.positions {
+            let len = p.length();
+            assert!((len - 1.0).abs() < 0.001, "Vertex not on unit sphere: len={}", len);
+        }
     }
 }

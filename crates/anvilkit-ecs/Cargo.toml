@@ -20,6 +20,9 @@ bevy_ecs = { workspace = true }
 # 日志
 log = "0.4"
 
+# 输入系统
+anvilkit-input = { version = "0.1.0", path = "../anvilkit-input" }
+
 # 数学库
 glam = { workspace = true }
 

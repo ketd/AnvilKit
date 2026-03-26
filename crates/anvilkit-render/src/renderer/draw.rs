@@ -431,4 +431,17 @@ mod tests {
         // Far behind the camera should not be visible
         assert!(!frustum.intersects_aabb(Vec3::new(0.0, 0.0, -100.0), Vec3::splat(0.5)));
     }
+
+    #[test]
+    fn test_active_camera_fov_default() {
+        let camera = ActiveCamera::default();
+        assert!((camera.fov_radians - std::f32::consts::FRAC_PI_4).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_active_camera_fov_custom() {
+        let mut camera = ActiveCamera::default();
+        camera.fov_radians = 60.0_f32.to_radians();
+        assert!((camera.fov_radians - 60.0_f32.to_radians()).abs() < 0.001);
+    }
 }

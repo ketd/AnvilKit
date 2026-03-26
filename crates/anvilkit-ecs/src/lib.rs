@@ -70,6 +70,8 @@ pub mod profiler;
 pub mod console;
 /// 游戏状态机（State/NextState/in_state）
 pub mod state;
+/// 自动插件（AutoInputPlugin / AutoDeltaTimePlugin）
+pub mod auto_plugins;
 
 /// 预导入模块，包含最常用的类型和 trait
 pub mod prelude {
@@ -81,6 +83,8 @@ pub mod prelude {
     pub use crate::system::*;
     pub use crate::transform::*;
     
+    pub use crate::auto_plugins::*;
+
     // 重新导出 Bevy ECS 的核心类型
     pub use bevy_ecs::prelude::*;
     
