@@ -716,6 +716,11 @@ pub fn create_bloom_mip_chain(
     (texture, views)
 }
 
+/// 计算完整 mip chain 的层数
+pub fn compute_mip_levels(width: u32, height: u32) -> u32 {
+    (width.max(height) as f32).log2().floor() as u32 + 1
+}
+
 /// 从 RGBA 数据创建 GPU 纹理和视图
 ///
 /// # 参数
@@ -751,10 +756,16 @@ pub fn create_texture(
         depth_or_array_layers: 1,
     };
 
+    let mip_levels = if width >= 4 && height >= 4 {
+        compute_mip_levels(width, height)
+    } else {
+        1
+    };
+
     let texture = device.device().create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
         size,
-        mip_level_count: 1,
+        mip_level_count: mip_levels,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8UnormSrgb,
@@ -811,10 +822,16 @@ pub fn create_texture_linear(
         depth_or_array_layers: 1,
     };
 
+    let mip_levels = if width >= 4 && height >= 4 {
+        compute_mip_levels(width, height)
+    } else {
+        1
+    };
+
     let texture = device.device().create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
         size,
-        mip_level_count: 1,
+        mip_level_count: mip_levels,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8Unorm,
@@ -862,7 +879,7 @@ pub fn create_sampler(device: &RenderDevice, label: &str) -> wgpu::Sampler {
         address_mode_w: wgpu::AddressMode::Repeat,
         mag_filter: wgpu::FilterMode::Linear,
         min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::FilterMode::Nearest,
+        mipmap_filter: wgpu::FilterMode::Linear,
         ..Default::default()
     })
 }
@@ -941,5 +958,13 @@ mod tests {
         assert_eq!(layout.attributes[1].offset, 12);  // normal
         assert_eq!(layout.attributes[2].offset, 24);  // texcoord
         assert_eq!(layout.attributes[3].offset, 32);  // tangent
+    }
+
+    #[test]
+    fn test_compute_mip_levels() {
+        assert_eq!(compute_mip_levels(1, 1), 1);
+        assert_eq!(compute_mip_levels(2, 2), 2);
+        assert_eq!(compute_mip_levels(256, 256), 9);
+        assert_eq!(compute_mip_levels(1024, 512), 11);
     }
 }

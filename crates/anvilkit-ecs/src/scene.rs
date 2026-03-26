@@ -34,6 +34,18 @@ pub struct Serializable;
 pub struct SerializedEntity {
     /// Transform (local).
     pub transform: Option<TransformData>,
+    /// 实体名称（来自 Name 组件）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// 实体标签（来自 Tag 组件）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    /// 父实体索引（在 entities 数组中的位置，用于重建层级）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_index: Option<usize>,
+    /// 自定义键值数据（用户扩展）
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub custom_data: std::collections::HashMap<String, String>,
 }
 
 /// Transform 的序列化友好表示。
@@ -116,17 +128,42 @@ impl SceneSerializer {
     /// Note: Takes `&mut World` because bevy_ecs query initialization requires it,
     /// but this function is semantically read-only.
     pub fn save(world: &mut World, path: &str) -> Result<usize, String> {
-        let mut query = world.query_filtered::<Option<&Transform>, With<Serializable>>();
-        let mut entities = Vec::new();
+        use crate::component::{Name, Tag};
+        use crate::transform::Parent;
 
-        for transform in query.iter(world) {
+        // 先收集所有 Serializable 实体的 Entity ID，建立 entity → index 映射
+        let mut entity_ids: Vec<Entity> = Vec::new();
+        {
+            let mut query = world.query_filtered::<Entity, With<Serializable>>();
+            for entity in query.iter(world) {
+                entity_ids.push(entity);
+            }
+        }
+
+        let entity_to_index: std::collections::HashMap<Entity, usize> = entity_ids.iter()
+            .enumerate()
+            .map(|(i, &e)| (e, i))
+            .collect();
+
+        let mut entities = Vec::new();
+        for &entity in &entity_ids {
+            let transform = world.get::<Transform>(entity).map(TransformData::from);
+            let name = world.get::<Name>(entity).map(|n| n.as_str().to_string());
+            let tag = world.get::<Tag>(entity).map(|t| t.as_str().to_string());
+            let parent_index = world.get::<Parent>(entity)
+                .and_then(|p| entity_to_index.get(&p.get()).copied());
+
             entities.push(SerializedEntity {
-                transform: transform.map(TransformData::from),
+                transform,
+                name,
+                tag,
+                parent_index,
+                custom_data: std::collections::HashMap::new(),
             });
         }
 
         let scene = SerializedScene {
-            version: 1,
+            version: 2,
             entities,
         };
 
@@ -142,8 +179,11 @@ impl SceneSerializer {
 
     /// 从 RON 文件加载场景到 World。
     ///
-    /// 为每个序列化实体创建新实体，带 `Transform`、`GlobalTransform` 和 `Serializable`。
+    /// 为每个序列化实体创建新实体，恢复 Transform、Name、Tag、层级关系。
     pub fn load(world: &mut World, path: &str) -> Result<usize, String> {
+        use crate::component::{Name, Tag};
+        use crate::transform::{Parent, Children};
+
         let data = std::fs::read_to_string(path)
             .map_err(|e| format!("Failed to read {}: {}", path, e))?;
 
@@ -151,17 +191,47 @@ impl SceneSerializer {
             .map_err(|e| format!("RON deserialization failed: {}", e))?;
 
         let count = scene.entities.len();
+        let mut spawned_entities: Vec<Entity> = Vec::with_capacity(count);
+
+        // 第一遍：创建所有实体
         for entity_data in &scene.entities {
             let transform = entity_data.transform
                 .as_ref()
                 .map(|t| t.to_transform())
                 .unwrap_or_default();
 
-            world.spawn((
+            let mut entity_cmd = world.spawn((
                 transform,
                 GlobalTransform::from(transform),
                 Serializable,
             ));
+
+            if let Some(ref name) = entity_data.name {
+                entity_cmd.insert(Name::new(name.as_str()));
+            }
+            if let Some(ref tag) = entity_data.tag {
+                entity_cmd.insert(Tag::new(tag.as_str()));
+            }
+
+            spawned_entities.push(entity_cmd.id());
+        }
+
+        // 第二遍：恢复层级关系
+        for (i, entity_data) in scene.entities.iter().enumerate() {
+            if let Some(parent_idx) = entity_data.parent_index {
+                if parent_idx < spawned_entities.len() {
+                    let child = spawned_entities[i];
+                    let parent = spawned_entities[parent_idx];
+                    world.entity_mut(child).insert(Parent::new(parent));
+                    if let Some(mut children) = world.get_mut::<Children>(parent) {
+                        children.push(child);
+                    } else {
+                        let mut c = Children::empty();
+                        c.push(child);
+                        world.entity_mut(parent).insert(c);
+                    }
+                }
+            }
         }
 
         Ok(count)

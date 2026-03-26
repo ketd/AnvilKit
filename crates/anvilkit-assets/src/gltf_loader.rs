@@ -372,6 +372,104 @@ fn extract_texture_by_source(
     }
 }
 
+/// 从 glTF 文件提取骨骼和动画数据
+///
+/// 返回所有 skin 的 (Skeleton, Vec<AnimationClip>) 对。
+/// 如果文件没有动画数据，返回空 Vec。
+pub fn load_gltf_animations(path: impl AsRef<std::path::Path>) -> anvilkit_core::error::Result<Vec<(crate::animation::Skeleton, Vec<crate::animation::AnimationClip>)>> {
+    let path = path.as_ref();
+    let (document, buffers, _) = gltf::import(path).map_err(|e| {
+        anvilkit_core::error::AnvilKitError::asset(format!("glTF 加载失败 {:?}: {}", path, e))
+    })?;
+
+    let mut results = Vec::new();
+
+    // Extract skeletons from skins
+    for skin in document.skins() {
+        // Read inverse bind matrices via skin reader
+        let skin_reader = skin.reader(|buffer| Some(&buffers[buffer.index()]));
+        let ibms: Vec<glam::Mat4> = skin_reader
+            .read_inverse_bind_matrices()
+            .map(|iter| iter.map(|m| glam::Mat4::from_cols_array_2d(&m)).collect())
+            .unwrap_or_default();
+
+        let joint_nodes: Vec<_> = skin.joints().collect();
+        let joints: Vec<crate::animation::Joint> = joint_nodes.iter().enumerate().map(|(i, joint)| {
+            // Find parent index: check which other joint has this joint as a child
+            let parent = joint_nodes.iter().position(|candidate| {
+                candidate.children().any(|child| child.index() == joint.index())
+            });
+            crate::animation::Joint {
+                name: joint.name().unwrap_or("").to_string(),
+                parent,
+                inverse_bind_matrix: ibms.get(i).copied().unwrap_or(glam::Mat4::IDENTITY),
+            }
+        }).collect();
+
+        let skeleton = crate::animation::Skeleton { joints };
+
+        // Extract animations targeting this skin's joints
+        let mut clips = Vec::new();
+        for anim in document.animations() {
+            let mut channels = Vec::new();
+            for channel in anim.channels() {
+                let target = channel.target();
+                let joint_index = skin.joints().position(|j| j.index() == target.node().index());
+                let Some(joint_idx) = joint_index else { continue };
+
+                let property = match target.property() {
+                    gltf::animation::Property::Translation => crate::animation::AnimationProperty::Translation,
+                    gltf::animation::Property::Rotation => crate::animation::AnimationProperty::Rotation,
+                    gltf::animation::Property::Scale => crate::animation::AnimationProperty::Scale,
+                    _ => continue,
+                };
+
+                let reader = channel.reader(|buffer| Some(&buffers[buffer.index()]));
+                let timestamps: Vec<f32> = reader.read_inputs().map(|i| i.collect()).unwrap_or_default();
+                let interpolation = match channel.sampler().interpolation() {
+                    gltf::animation::Interpolation::Linear => crate::animation::Interpolation::Linear,
+                    gltf::animation::Interpolation::Step => crate::animation::Interpolation::Step,
+                    gltf::animation::Interpolation::CubicSpline => crate::animation::Interpolation::CubicSpline,
+                };
+
+                let values: Vec<[f32; 4]> = match reader.read_outputs() {
+                    Some(gltf::animation::util::ReadOutputs::Translations(t)) =>
+                        t.map(|v| [v[0], v[1], v[2], 0.0]).collect(),
+                    Some(gltf::animation::util::ReadOutputs::Rotations(r)) =>
+                        r.into_f32().map(|v| v).collect(),
+                    Some(gltf::animation::util::ReadOutputs::Scales(s)) =>
+                        s.map(|v| [v[0], v[1], v[2], 0.0]).collect(),
+                    _ => continue,
+                };
+
+                let keyframes: Vec<crate::animation::Keyframe> = timestamps.into_iter()
+                    .zip(values.into_iter())
+                    .map(|(time, value)| crate::animation::Keyframe { time, value })
+                    .collect();
+
+                if !keyframes.is_empty() {
+                    channels.push(crate::animation::AnimationChannel {
+                        joint_index: joint_idx,
+                        property,
+                        interpolation,
+                        keyframes,
+                    });
+                }
+            }
+            if !channels.is_empty() {
+                clips.push(crate::animation::AnimationClip {
+                    name: anim.name().unwrap_or("unnamed").to_string(),
+                    channels,
+                });
+            }
+        }
+
+        results.push((skeleton, clips));
+    }
+
+    Ok(results)
+}
+
 /// 将 glTF 图像数据转换为 RGBA8 格式
 fn convert_to_rgba8(image: &gltf::image::Data) -> Option<Vec<u8>> {
     match image.format {
