@@ -38,6 +38,7 @@ pub mod motion_blur;
 pub mod color_grading;
 pub mod debug_renderer;
 pub mod post_process;
+pub mod standard_material;
 #[cfg(feature = "capture")]
 pub mod capture;
 

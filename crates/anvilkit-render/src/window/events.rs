@@ -24,9 +24,9 @@ use crate::renderer::state::{RenderState, PbrSceneUniform, GpuLight, MAX_LIGHTS}
 use crate::renderer::buffer::{
     create_uniform_buffer, create_depth_texture_msaa,
     create_hdr_render_target, create_hdr_msaa_texture,
-    create_sampler, create_texture_linear, create_shadow_sampler,
+    create_sampler, create_texture, create_texture_linear, create_shadow_sampler,
     create_csm_shadow_map,
-    Vertex, PbrVertex, SHADOW_MAP_SIZE,
+    Vertex, PbrVertex, SHADOW_MAP_SIZE, HDR_FORMAT, MSAA_SAMPLE_COUNT,
 };
 use crate::renderer::state::CSM_CASCADE_COUNT;
 use crate::renderer::{RenderPipelineBuilder, DEPTH_FORMAT};
@@ -167,6 +167,7 @@ pub fn compute_light_space_matrix(light_direction: &glam::Vec3) -> glam::Mat4 {
 }
 
 /// Shadow pass shader (depth-only, reads model + view_proj from scene uniform)
+const PBR_SHADER: &str = include_str!("../shaders/pbr.wgsl");
 const SHADOW_SHADER: &str = include_str!("../shaders/shadow.wgsl");
 
 /// ACES Filmic tone mapping post-process shader (fullscreen triangle)
@@ -592,8 +593,139 @@ impl RenderApp {
         app.insert_resource(bloom_settings);
         app.insert_resource(crate::renderer::post_process::PostProcessSettings::default());
 
+        // --- 创建默认 PBR 管线 + 默认材质（StandardMaterial 使用） ---
+        {
+            use crate::renderer::standard_material::DefaultMaterialHandle;
+
+            // 创建 1x1 fallback 纹理
+            let white_pixel = [255u8, 255, 255, 255];
+            let normal_pixel = [128u8, 128, 255, 255]; // 默认法线 (0,0,1) in tangent space
+            let _black_pixel = [0u8, 0, 0, 255];
+
+            let (_, default_base_view) = create_texture(device, 1, 1, &white_pixel, "Default Base Color");
+            let (_, default_normal_view) = create_texture_linear(device, 1, 1, &normal_pixel, "Default Normal Map");
+            let (_, default_mr_view) = create_texture_linear(device, 1, 1, &white_pixel, "Default MR");
+            let (_, default_ao_view) = create_texture_linear(device, 1, 1, &white_pixel, "Default AO");
+            let (_, default_emissive_view) = create_texture(device, 1, 1, &white_pixel, "Default Emissive");
+            let default_sampler = create_sampler(device, "Default Material Sampler");
+
+            // Material BGL: 5 textures + 1 sampler
+            let tex_layout_entry = |binding: u32| -> wgpu::BindGroupLayoutEntry {
+                wgpu::BindGroupLayoutEntry {
+                    binding, visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    }, count: None,
+                }
+            };
+
+            let mat_bgl = device.device().create_bind_group_layout(
+                &wgpu::BindGroupLayoutDescriptor {
+                    label: Some("Default Material BGL"),
+                    entries: &[
+                        tex_layout_entry(0), // base_color
+                        tex_layout_entry(1), // normal_map
+                        tex_layout_entry(2), // metallic_roughness
+                        tex_layout_entry(3), // ao
+                        tex_layout_entry(4), // emissive
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 5, visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                    ],
+                },
+            );
+
+            let default_mat_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Default Material BG"),
+                layout: &mat_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&default_base_view) },
+                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&default_normal_view) },
+                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&default_mr_view) },
+                    wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&default_ao_view) },
+                    wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&default_emissive_view) },
+                    wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::Sampler(&default_sampler) },
+                ],
+            });
+
+            // Scene BGL 和 IBL+Shadow BGL 用于 PBR 管线需要重新创建（builder 取走所有权）
+            let pbr_scene_bgl = device.device().create_bind_group_layout(
+                &wgpu::BindGroupLayoutDescriptor {
+                    label: Some("PBR Scene BGL"),
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                },
+            );
+            let pbr_ibl_bgl = device.device().create_bind_group_layout(
+                &wgpu::BindGroupLayoutDescriptor {
+                    label: Some("PBR IBL+Shadow BGL"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0, visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            }, count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1, visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 2, visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Depth,
+                                view_dimension: wgpu::TextureViewDimension::D2Array,
+                                multisampled: false,
+                            }, count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 3, visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                            count: None,
+                        },
+                    ],
+                },
+            );
+
+            let pbr_pipeline = RenderPipelineBuilder::new()
+                .with_vertex_shader(PBR_SHADER)
+                .with_fragment_shader(PBR_SHADER)
+                .with_format(HDR_FORMAT)
+                .with_vertex_layouts(vec![PbrVertex::layout()])
+                .with_depth_format(DEPTH_FORMAT)
+                .with_bind_group_layouts(vec![pbr_scene_bgl, mat_bgl, pbr_ibl_bgl])
+                .with_label("Default PBR Pipeline")
+                .with_multisample_count(MSAA_SAMPLE_COUNT)
+                .build(device)
+                .expect("创建默认 PBR 管线失败")
+                .into_pipeline();
+
+            // 注册到 RenderAssets
+            let mat_handle = {
+                let mut assets = app.world.get_resource_mut::<RenderAssets>().expect("RenderAssets 必须已注册");
+                assets.create_material(pbr_pipeline, default_mat_bg)
+            };
+            app.world.insert_resource(DefaultMaterialHandle(mat_handle));
+            info!("默认 PBR 材质已创建: {:?}", mat_handle);
+        }
+
         self.gpu_initialized = true;
-        info!("RenderState (HDR + IBL + Shadow + Bloom) 已注入 ECS World");
+        info!("RenderState (HDR + IBL + Shadow + Bloom + Default PBR) 已注入 ECS World");
     }
 
     /// 处理窗口大小变化

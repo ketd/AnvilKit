@@ -236,17 +236,19 @@ fn camera_system(
 /// so entities in a parent-child hierarchy render at their correct world position.
 fn render_extract_system(
     query: Query<(&MeshHandle, &MaterialHandle, &GlobalTransform, Option<&MaterialParams>, Option<&Aabb>)>,
+    std_mat_query: Query<(&MeshHandle, &crate::renderer::standard_material::StandardMaterial, &GlobalTransform, Option<&Aabb>), Without<MaterialHandle>>,
     active_camera: Res<ActiveCamera>,
+    default_material: Option<Res<crate::renderer::standard_material::DefaultMaterialHandle>>,
     mut draw_list: ResMut<DrawCommandList>,
 ) {
     draw_list.clear();
 
     let frustum = Frustum::from_view_proj(&active_camera.view_proj);
 
+    // Path 1: 传统 MaterialHandle 实体
     for (mesh, material, global_transform, mat_params, aabb) in query.iter() {
         let model = global_transform.0;
 
-        // Frustum culling: if entity has an Aabb, test visibility
         if let Some(aabb) = aabb {
             let local_center = aabb.center();
             let world_center = model.transform_point3(local_center);
@@ -270,6 +272,34 @@ fn render_extract_system(
             normal_scale: p.normal_scale,
             emissive_factor: p.emissive_factor,
         });
+    }
+
+    // Path 2: StandardMaterial 实体（使用默认 PBR 管线）
+    if let Some(default_mat) = default_material {
+        for (mesh, std_mat, global_transform, aabb) in std_mat_query.iter() {
+            let model = global_transform.0;
+
+            if let Some(aabb) = aabb {
+                let local_center = aabb.center();
+                let world_center = model.transform_point3(local_center);
+                let scale = global_transform.scale();
+                let world_half = aabb.half_extents() * scale;
+
+                if !frustum.intersects_aabb(world_center, world_half) {
+                    continue;
+                }
+            }
+
+            draw_list.push(DrawCommand {
+                mesh: *mesh,
+                material: default_mat.0,
+                model_matrix: model,
+                metallic: std_mat.metallic,
+                roughness: std_mat.roughness,
+                normal_scale: std_mat.normal_scale,
+                emissive_factor: std_mat.emissive_factor,
+            });
+        }
     }
 
     // Sort for batching: group by material → mesh to minimize state changes
