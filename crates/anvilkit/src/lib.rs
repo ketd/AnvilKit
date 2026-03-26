@@ -22,6 +22,9 @@ pub use anvilkit_input as input;
 pub use anvilkit_audio as audio;
 pub use anvilkit_camera as camera;
 
+pub mod default_plugins;
+pub use default_plugins::DefaultPlugins;
+
 /// Convenient re-exports of the most commonly used types and traits.
 pub mod prelude {
     pub use anvilkit_core::prelude::*;
@@ -31,4 +34,5 @@ pub mod prelude {
     pub use anvilkit_input::prelude::*;
     pub use anvilkit_camera::prelude::*;
     pub use anvilkit_audio::AudioPlugin;
+    pub use crate::DefaultPlugins;
 }

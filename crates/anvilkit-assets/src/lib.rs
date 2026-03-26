@@ -26,7 +26,7 @@ pub mod hot_reload;
 
 /// Prelude module re-exporting the most commonly used types.
 pub mod prelude {
-    pub use crate::mesh::MeshData;
+    pub use crate::mesh::{MeshData, InterleavedPbrVertex};
     pub use crate::material::{TextureData, MaterialData};
     pub use crate::scene::{SceneData, Submesh, MultiMeshScene};
     pub use crate::gltf_loader::{load_gltf_mesh, load_gltf_scene, load_gltf_scene_multi};

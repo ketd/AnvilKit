@@ -132,6 +132,8 @@ pub struct RenderState {
     pub hdr_msaa_texture_view: wgpu::TextureView,
     /// Bloom post-processing GPU resources (mip chain, pipelines, bind groups).
     pub bloom: Option<crate::renderer::bloom::BloomResources>,
+    /// 后处理 GPU 资源集合（SSAO, DOF, MotionBlur, ColorGrading）
+    pub post_process: crate::renderer::post_process::PostProcessResources,
 }
 
 #[cfg(test)]

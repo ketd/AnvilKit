@@ -37,6 +37,7 @@ pub mod dof;
 pub mod motion_blur;
 pub mod color_grading;
 pub mod debug_renderer;
+pub mod post_process;
 #[cfg(feature = "capture")]
 pub mod capture;
 

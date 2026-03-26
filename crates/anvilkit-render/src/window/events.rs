@@ -587,8 +587,10 @@ impl RenderApp {
             shadow_cascade_views,
             hdr_msaa_texture_view,
             bloom: Some(bloom),
+            post_process: crate::renderer::post_process::PostProcessResources::new(),
         });
         app.insert_resource(bloom_settings);
+        app.insert_resource(crate::renderer::post_process::PostProcessSettings::default());
 
         self.gpu_initialized = true;
         info!("RenderState (HDR + IBL + Shadow + Bloom) 已注入 ECS World");
@@ -662,7 +664,18 @@ impl RenderApp {
             return;
         };
 
-        let Some(app) = &self.app else { return };
+        let Some(app) = &mut self.app else { return };
+
+        // 延迟初始化后处理 GPU 资源（需要 mutable 访问）
+        {
+            let pp_settings = app.world.get_resource::<crate::renderer::post_process::PostProcessSettings>()
+                .cloned()
+                .unwrap_or_default();
+            if let Some(mut rs) = app.world.get_resource_mut::<RenderState>() {
+                let (w, h) = rs.surface_size;
+                rs.post_process.ensure_resources(device, w, h, &pp_settings);
+            }
+        }
 
         let Some(active_camera) = app.world.get_resource::<ActiveCamera>() else { return };
         let Some(draw_list) = app.world.get_resource::<DrawCommandList>() else { return };
@@ -825,12 +838,45 @@ impl RenderApp {
             render_pass.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);
         }
 
-        // --- Bloom passes: downsample → upsample ---
-        if let Some(ref bloom) = render_state.bloom {
-            let bloom_settings = app.world.get_resource::<BloomSettings>();
-            let default_settings = BloomSettings::default();
-            let settings = bloom_settings.unwrap_or(&default_settings);
-            bloom.execute(device, &mut encoder, &render_state.hdr_texture_view, settings);
+        // --- 后处理管线 (顺序: SSAO → DOF → MotionBlur → Bloom → ColorGrading) ---
+        {
+            let pp_settings = app.world.get_resource::<crate::renderer::post_process::PostProcessSettings>()
+                .cloned()
+                .unwrap_or_default();
+
+            // 1. SSAO
+            if let (Some(ref ssao_settings), Some(ref ssao_res)) = (&pp_settings.ssao, &render_state.post_process.ssao) {
+                let proj = active_camera.view_proj; // 近似投影矩阵
+                ssao_res.execute(device, &mut encoder, &render_state.depth_texture_view, &proj, ssao_settings);
+            }
+
+            // 2. DOF
+            if let (Some(ref dof_settings), Some(ref dof_res)) = (&pp_settings.dof, &render_state.post_process.dof) {
+                dof_res.execute(device, &mut encoder, &render_state.hdr_texture_view, &render_state.depth_texture_view, dof_settings);
+            }
+
+            // 3. Motion Blur
+            if let (Some(ref mb_settings), Some(ref mb_res)) = (&pp_settings.motion_blur, &render_state.post_process.motion_blur) {
+                let prev_vp = view_proj.to_cols_array_2d();
+                let curr_inv_vp = view_proj.inverse().to_cols_array_2d();
+                mb_res.execute(device, &mut encoder, &render_state.hdr_texture_view, &render_state.depth_texture_view, mb_settings, prev_vp, curr_inv_vp);
+            }
+
+            // 4. Bloom
+            if let Some(ref bloom) = render_state.bloom {
+                let bloom_settings = pp_settings.bloom.as_ref()
+                    .or_else(|| app.world.get_resource::<BloomSettings>());
+                let default_settings = BloomSettings::default();
+                let settings = bloom_settings.unwrap_or(&default_settings);
+                bloom.execute(device, &mut encoder, &render_state.hdr_texture_view, settings);
+            }
+
+            // 5. Color Grading
+            if let (Some(ref cg_settings), Some(ref cg_res)) = (&pp_settings.color_grading, &render_state.post_process.color_grading) {
+                // Color grading 需要 src 和 dst view；此处直接在 hdr_texture_view 上操作
+                // 如果有独立的 intermediate texture 会更好，但当前架构下直接对 HDR 做 in-place 处理
+                cg_res.execute(device, &mut encoder, &render_state.hdr_texture_view, &render_state.hdr_texture_view, cg_settings);
+            }
         }
 
         // --- Pass 2: Tone mapping HDR + Bloom → Swapchain ---
