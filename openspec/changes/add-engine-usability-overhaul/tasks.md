@@ -87,9 +87,9 @@
 - [ ] 3.1.3 添加 looping/pitch 单元测试
 
 ### 3.2 空间音频
-- [ ] 3.2.1 新增 `spatial_audio_system` — 距离衰减计算
+- [x] 3.2.1 新增 `spatial_audio_system` — 距离衰减计算
 - [x] 3.2.2 衰减公式：`AudioBus::effective_volume()` 计算 source × category × master
-- [ ] 3.2.3 非 spatial 源跳过距离计算
+- [x] 3.2.3 非 spatial 源跳过距离计算
 - [ ] 3.2.4 添加空间音频距离衰减单元测试
 
 ### 3.3 音频 Bus
@@ -112,9 +112,9 @@
 - [ ] 4.1.4 添加缓存命中/失效单元测试
 
 ### 4.2 热重载集成
-- [ ] 4.2.1 `AssetServer` 内部持有 `Option<FileWatcher>`
+- [x] 4.2.1 `AssetServer` 内部持有 `Option<FileWatcher>`
 - [x] 4.2.2 维护 `id_to_path: HashMap<AssetId, PathBuf>` 反向映射
-- [ ] 4.2.3 `process_completed()` 中调用 `watcher.poll_changes()` 并触发 reload
+- [x] 4.2.3 `process_completed()` 中调用 `watcher.poll_changes()` 并触发 reload
 - [ ] 4.2.4 添加热重载集成测试
 
 ### 4.3 glTF 动画提取
@@ -130,9 +130,9 @@
 - [x] 4.4.3 添加纹理加载单元测试（file not found + memory PNG + invalid data）
 
 ### 4.5 自动卸载
-- [ ] 4.5.1 `AssetHandle<T>` 添加 weak reference 检测
-- [ ] 4.5.2 实现 `process_unloads()`
-- [ ] 4.5.3 在 `process_completed()` 末尾调用 `process_unloads()`
+- [x] 4.5.1 `AssetHandle<T>` 添加 weak reference 检测
+- [x] 4.5.2 实现 `process_unloads()`
+- [x] 4.5.3 在 `process_completed()` 末尾调用 `process_unloads()`
 - [ ] 4.5.4 添加自动卸载单元测试
 
 ### 4.6 后台解析
@@ -150,11 +150,11 @@
 - [x] 5.1.5 添加 GamepadState 单元测试（connect/button/axis/end_frame）
 
 ### 5.2 轴向输入
-- [ ] 5.2.1 新增 `InputAxis` 类型
-- [ ] 5.2.2 `ActionMap` 新增 `bind_axis(action, binding)` 方法
-- [ ] 5.2.3 `ActionMap` 新增 `axis_value(action) -> f32` 查询方法
-- [ ] 5.2.4 键盘模拟轴
-- [ ] 5.2.5 添加轴向输入单元测试
+- [x] 5.2.1 新增 `AxisBinding` 类型
+- [x] 5.2.2 `ActionMap` 新增 `bind_axis(action, binding)` 方法
+- [x] 5.2.3 `ActionMap` 新增 `axis_value(action) -> f32` 查询方法
+- [x] 5.2.4 键盘模拟轴
+- [x] 5.2.5 添加轴向输入单元测试
 
 ### 5.3 ActionMap 性能优化
 - [x] 5.3.1 新增 `ActionId(u32)` 类型
