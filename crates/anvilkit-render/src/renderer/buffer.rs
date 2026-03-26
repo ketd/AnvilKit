@@ -721,6 +721,50 @@ pub fn compute_mip_levels(width: u32, height: u32) -> u32 {
     (width.max(height) as f32).log2().floor() as u32 + 1
 }
 
+/// GPU mipmap blit chain 参数
+///
+/// 逐级 downsample 生成 mipmap。实际 GPU 执行需要 command encoder。
+///
+/// # 用法
+///
+/// ```rust,ignore
+/// let chain = MipmapBlitChain::new(1024, 1024, 5);
+/// for level in chain.levels() {
+///     // encoder.copy_texture_to_texture(...) 或 render pass downsample
+/// }
+/// ```
+pub struct MipmapBlitChain {
+    /// 各级 mip 的尺寸 [(width, height)]
+    levels: Vec<(u32, u32)>,
+}
+
+impl MipmapBlitChain {
+    /// 创建 mipmap blit chain
+    ///
+    /// 从 `base_width × base_height` 逐级缩小到 `mip_count` 级。
+    pub fn new(base_width: u32, base_height: u32, mip_count: u32) -> Self {
+        let mut levels = Vec::with_capacity(mip_count as usize);
+        let mut w = base_width;
+        let mut h = base_height;
+        for _ in 0..mip_count {
+            levels.push((w, h));
+            w = (w / 2).max(1);
+            h = (h / 2).max(1);
+        }
+        Self { levels }
+    }
+
+    /// 获取所有 mip 级别的尺寸
+    pub fn levels(&self) -> &[(u32, u32)] {
+        &self.levels
+    }
+
+    /// mip 级别数量
+    pub fn count(&self) -> usize {
+        self.levels.len()
+    }
+}
+
 /// 从 RGBA 数据创建 GPU 纹理和视图
 ///
 /// # 参数
@@ -966,5 +1010,23 @@ mod tests {
         assert_eq!(compute_mip_levels(2, 2), 2);
         assert_eq!(compute_mip_levels(256, 256), 9);
         assert_eq!(compute_mip_levels(1024, 512), 11);
+    }
+
+    #[test]
+    fn test_mipmap_blit_chain() {
+        let chain = MipmapBlitChain::new(256, 256, 4);
+        assert_eq!(chain.count(), 4);
+        assert_eq!(chain.levels()[0], (256, 256));
+        assert_eq!(chain.levels()[1], (128, 128));
+        assert_eq!(chain.levels()[2], (64, 64));
+        assert_eq!(chain.levels()[3], (32, 32));
+    }
+
+    #[test]
+    fn test_mipmap_blit_chain_non_square() {
+        let chain = MipmapBlitChain::new(512, 128, 3);
+        assert_eq!(chain.levels()[0], (512, 128));
+        assert_eq!(chain.levels()[1], (256, 64));
+        assert_eq!(chain.levels()[2], (128, 32));
     }
 }

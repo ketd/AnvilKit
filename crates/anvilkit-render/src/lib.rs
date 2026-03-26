@@ -35,6 +35,7 @@
 pub mod window;
 pub mod renderer;
 pub mod plugin;
+pub mod demo_app;
 
 /// 预导入模块
 ///
@@ -43,6 +44,7 @@ pub mod prelude {
     pub use crate::window::{RenderApp, WindowConfig};
     pub use crate::renderer::{RenderDevice, RenderSurface, PbrVertex};
     pub use crate::plugin::{RenderPlugin, CameraComponent};
+    pub use crate::demo_app::DemoApp;
 
     // ECS 渲染资源
     pub use crate::renderer::assets::{MeshHandle, MaterialHandle, PipelineHandle, RenderAssets};

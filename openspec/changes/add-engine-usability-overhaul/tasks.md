@@ -15,7 +15,7 @@
 ### 1.3 SceneRenderer 编排层
 - [x] 1.3.1 提取 resize 逻辑到 `SceneRenderer::handle_resize()` static method
 - [x] 1.3.2 实现自动 resize — 委托给 SceneRenderer 重建所有 size-dependent 资源
-- [ ] 1.3.3 实现 uniform batch write — 所有 draw commands 的 uniform 数据一次性写入 buffer
+- [x] 1.3.3 实现 uniform batch write — 所有 draw commands 的 uniform 数据一次性写入 buffer
 - [x] 1.3.4 实现后处理链调度 — 根据 PostProcessSettings 动态插入/跳过 pass
 
 ### 1.4 PostProcessSettings 资源
@@ -24,7 +24,7 @@
 - [x] 1.4.3 接入 DOF pass
 - [x] 1.4.4 接入 Motion Blur pass
 - [x] 1.4.5 接入 Color Grading pass（bloom 之后、tonemap 之前）
-- [ ] 1.4.6 修改 tonemap shader 接受可选 AO texture input
+- [x] 1.4.6 修改 tonemap shader 接受可选 AO texture input
 - [x] 1.4.7 添加 PostProcessSettings 开关测试（全禁用、全启用、部分启用）
 
 ### 1.5 DefaultPlugins + Auto 插件
@@ -171,7 +171,7 @@
 
 ### 6.2 Mipmap 生成
 - [x] 6.2.1 新增 `compute_mip_levels()` + `create_texture()` 自动计算 mip chain（≥4x4）
-- [ ] 6.2.2 实现 blit chain mipmap generation（GPU 逐级 downsample）
+- [x] 6.2.2 实现 blit chain mipmap generation（GPU 逐级 downsample）
 - [x] 6.2.3 修改 sampler — `mipmap_filter: Linear`
 - [x] 6.2.4 添加 mipmap level count 单元测试
 
@@ -189,13 +189,13 @@
 ### 6.5 多相机
 - [x] 6.5.1 `CameraComponent` 新增 `priority: i32` 字段
 - [x] 6.5.2 `SceneRenderer` 按 priority 排序 active cameras
-- [ ] 6.5.3 `RenderTarget::Texture(handle)` 支持渲染到纹理
+- [x] 6.5.3 `RenderTarget::Texture(handle)` 支持渲染到纹理
 - [x] 6.5.4 添加多相机渲染排序测试
 
 ### 6.6 点光/聚光阴影
-- [ ] 6.6.1 点光源 cubemap shadow
-- [ ] 6.6.2 聚光灯 2D shadow
-- [ ] 6.6.3 PBR shader 采样
+- [x] 6.6.1 点光源 cubemap shadow
+- [x] 6.6.2 聚光灯 2D shadow
+- [x] 6.6.3 PBR shader 采样
 - [x] 6.6.4 `MAX_SHADOW_LIGHTS` 常量
 
 ## Phase 7: 清理与迁移
@@ -212,7 +212,7 @@
 - [x] 7.2.3 迁移 billiards/craft 的 import 到 umbrella crate
 
 ### 7.3 Example 重构
-- [ ] 7.3.1 实现 `DemoApp` 共享脚手架
+- [x] 7.3.1 实现 `DemoApp` 共享脚手架
 - [ ] 7.3.2 迁移 `hello_ecs.rs` 到新 API（目标 < 30 行）
 - [ ] 7.3.3 迁移 `hello_pbr_ecs.rs` 到新 API
 - [ ] 7.3.4 迁移 `demo.rs` 到新 API

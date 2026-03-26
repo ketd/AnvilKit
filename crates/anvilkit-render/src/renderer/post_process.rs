@@ -33,7 +33,7 @@ use crate::renderer::bloom::BloomSettings;
 /// 效果执行顺序（固定）：SSAO → DOF → Motion Blur → Bloom → Color Grading → Tonemap
 #[derive(Resource, Default, Clone, Debug)]
 pub struct PostProcessSettings {
-    /// 屏幕空间环境光遮蔽。`None` 禁用。
+    /// SSAO 设置（如启用，tonemap shader 会采样 AO texture 调制环境光）
     pub ssao: Option<SsaoSettings>,
     /// 景深模糊。`None` 禁用。
     pub dof: Option<DofSettings>,
@@ -43,6 +43,11 @@ pub struct PostProcessSettings {
     pub bloom: Option<BloomSettings>,
     /// 色彩分级（LUT 调色）。`None` 禁用。
     pub color_grading: Option<ColorGradingSettings>,
+    /// Tonemap 是否接受 AO 纹理输入
+    ///
+    /// 启用后，tonemap pass 的 fragment shader 会额外采样 SSAO 输出，
+    /// 将环境遮蔽应用到最终颜色。需要 SSAO pass 先执行。
+    pub ao_input_enabled: bool,
 }
 
 impl PostProcessSettings {
@@ -176,6 +181,7 @@ mod tests {
             motion_blur: Some(MotionBlurSettings::default()),
             bloom: Some(BloomSettings::default()),
             color_grading: Some(ColorGradingSettings::default()),
+            ao_input_enabled: false,
         };
         assert!(settings.any_enabled());
     }
