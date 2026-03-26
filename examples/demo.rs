@@ -13,6 +13,12 @@
 //!
 //! Run: `cargo run -p anvilkit-render --example demo`
 
+// DemoApp 简化版:
+//
+//   let demo = DemoApp::new("AnvilKit Demo", 1280, 720);
+//   let mut app = demo.create_app();
+//   app.run();
+
 use anvilkit_render::prelude::*;
 use anvilkit_render::renderer::{
     RenderPipelineBuilder, DEPTH_FORMAT, HDR_FORMAT,

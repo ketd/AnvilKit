@@ -14,6 +14,12 @@
 //!
 //! Run: `cargo run -p anvilkit-render --example showcase`
 
+// DemoApp 简化版:
+//
+//   let demo = DemoApp::new("AnvilKit Showcase", 1280, 720);
+//   let mut app = demo.create_app();
+//   app.run();
+
 use anvilkit_render::prelude::*;
 use anvilkit_render::window::pack_lights;
 use anvilkit_render::renderer::{

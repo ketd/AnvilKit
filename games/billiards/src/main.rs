@@ -2,6 +2,9 @@
 use anvilkit::prelude::*;
 
 use anvilkit_render::prelude::*;
+
+// 迁移说明: 未来可使用 DefaultPlugins 替代手动 plugin 注册:
+//   app.add_plugins(DefaultPlugins::new().with_window(config));
 use anvilkit_render::renderer::{
     buffer::{
         create_depth_texture_msaa, create_hdr_render_target,

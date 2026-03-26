@@ -213,18 +213,18 @@
 
 ### 7.3 Example 重构
 - [x] 7.3.1 实现 `DemoApp` 共享脚手架
-- [ ] 7.3.2 迁移 `hello_ecs.rs` 到新 API（目标 < 30 行）
-- [ ] 7.3.3 迁移 `hello_pbr_ecs.rs` 到新 API
-- [ ] 7.3.4 迁移 `demo.rs` 到新 API
-- [ ] 7.3.5 迁移 `showcase.rs` 到新 API
-- [ ] 7.3.6 迁移 `game.rs` 到新 API
-- [ ] 7.3.7 迁移 15 个 demo_*.rs 到 DemoApp 脚手架
-- [ ] 7.3.8 删除迁移后的冗余代码
+- [x] 7.3.2 迁移 `hello_ecs.rs` 到新 API（目标 < 30 行）
+- [x] 7.3.3 迁移 `hello_pbr_ecs.rs` 到新 API
+- [x] 7.3.4 迁移 `demo.rs` 到新 API
+- [x] 7.3.5 迁移 `showcase.rs` 到新 API
+- [x] 7.3.6 迁移 `game.rs` 到新 API
+- [x] 7.3.7 迁移 15 个 demo_*.rs 到 DemoApp 脚手架
+- [x] 7.3.8 删除迁移后的冗余代码
 
 ### 7.4 游戏迁移
-- [ ] 7.4.1 Billiards: 迁移到 DefaultPlugins + StandardMaterial + Events
-- [ ] 7.4.2 Craft: 迁移到 DefaultPlugins + AutoDeltaTime + FixedUpdate
-- [ ] 7.4.3 验证两个游戏功能不回退
+- [x] 7.4.1 Billiards: 迁移到 DefaultPlugins + StandardMaterial + Events
+- [x] 7.4.2 Craft: 迁移到 DefaultPlugins + AutoDeltaTime + FixedUpdate
+- [x] 7.4.3 验证两个游戏功能不回退
 
 ## Phase 8: 验证与文档
 
@@ -232,8 +232,8 @@
 - [x] 8.1.1 `cargo check --workspace` 零错误
 - [x] 8.1.2 `cargo test --workspace` 全部通过（23 测试套件）
 - [x] 8.1.3 `cargo clippy` 无新增警告
-- [ ] 8.1.4 运行 showcase 视觉回归验证
-- [ ] 8.1.5 运行 billiards + craft 功能回归验证
+- [x] 8.1.4 运行 showcase 视觉回归验证
+- [x] 8.1.5 运行 billiards + craft 功能回归验证
 
 ### 8.2 网络模块标注
 - [x] 8.2.1 `network.rs` 模块级文档标注为 "框架抽象层，不含传输实现"

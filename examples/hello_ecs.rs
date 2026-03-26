@@ -6,6 +6,15 @@
 //!
 //! 运行: `cargo run -p anvilkit-render --example hello_ecs`
 
+// DemoApp 简化版（需要 StandardMaterial 完整集成后可用）:
+//
+//   let demo = DemoApp::new("Hello ECS", 800, 600);
+//   let mut app = demo.create_app();
+//   app.add_systems(AnvilKitSchedule::Startup, |mut commands: Commands| {
+//       commands.spawn((MeshData::generate_box(1.0), StandardMaterial::new(), Transform::default()));
+//   });
+//   app.run();
+
 use anvilkit_render::prelude::*;
 use anvilkit_render::renderer::{
     RenderPipelineBuilder, DEPTH_FORMAT,

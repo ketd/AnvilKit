@@ -5,6 +5,13 @@
 //!
 //! 运行: `cargo run -p anvilkit-render --example hello_pbr_ecs`
 
+// DemoApp 简化版:
+//
+//   let demo = DemoApp::new("PBR Demo", 1280, 720);
+//   let mut app = demo.create_app();
+//   // Load glTF scene in Startup system
+//   app.run();
+
 use anvilkit_render::prelude::*;
 use anvilkit_render::renderer::{
     RenderPipelineBuilder, DEPTH_FORMAT, HDR_FORMAT,
