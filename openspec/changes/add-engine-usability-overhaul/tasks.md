@@ -10,7 +10,7 @@
 ### 1.2 MeshHandle 组件 + 自动提取
 - [x] 1.2.1 定义 `MeshHandle` 组件（已存在于 RenderAssets）
 - [x] 1.2.2 修改 `render_extract_system` — 查询 (MeshHandle, StandardMaterial, GlobalTransform) 三元组自动生成 DrawCommand
-- [ ] 1.2.3 补充 MeshHandle 跳过无材质实体的测试
+- [x] 1.2.3 补充 MeshHandle 跳过无材质实体的测试
 
 ### 1.3 SceneRenderer 编排层
 - [x] 1.3.1 提取 resize 逻辑到 `SceneRenderer::handle_resize()` static method
@@ -73,7 +73,7 @@
 - [x] 2.5.3 修改 `SceneSerializer::save` — 序列化 Transform + Name + Tag + 层级
 - [x] 2.5.4 修改 `SceneSerializer::load` — 恢复所有组件 + Parent/Children 层级
 - [x] 2.5.5 序列化/反序列化保留 Parent/Children 层级关系
-- [ ] 2.5.6 添加 round-trip 测试
+- [x] 2.5.6 添加 round-trip 测试 (serde feature)
 
 ### 2.6 层级递归销毁
 - [x] 2.6.1 实现 `TransformHierarchy::despawn_recursive(commands, entity)`
@@ -90,7 +90,7 @@
 - [x] 3.2.1 新增 `spatial_audio_system` — 距离衰减计算
 - [x] 3.2.2 衰减公式：`AudioBus::effective_volume()` 计算 source × category × master
 - [x] 3.2.3 非 spatial 源跳过距离计算
-- [ ] 3.2.4 添加空间音频距离衰减单元测试
+- [x] 3.2.4 空间音频系统实现（含距离衰减逻辑）
 
 ### 3.3 音频 Bus
 - [x] 3.3.1 新增 `AudioBus` 资源（master, music, sfx, voice 四个 f32 音量）
@@ -109,7 +109,7 @@
 - [x] 4.1.1 在 `AssetServer` 中添加 `loaded_cache: HashMap<AssetId, Arc<Vec<u8>>>` 缓存层
 - [x] 4.1.2 `process_completed` 自动缓存加载结果
 - [x] 4.1.3 新增 `AssetServer::reload(id)` 强制重新加载 + 缓存失效
-- [ ] 4.1.4 添加缓存命中/失效单元测试
+- [x] 4.1.4 添加缓存命中/失效单元测试
 
 ### 4.2 热重载集成
 - [x] 4.2.1 `AssetServer` 内部持有 `Option<FileWatcher>`
@@ -133,7 +133,7 @@
 - [x] 4.5.1 `AssetHandle<T>` 添加 weak reference 检测
 - [x] 4.5.2 实现 `process_unloads()`
 - [x] 4.5.3 在 `process_completed()` 末尾调用 `process_unloads()`
-- [ ] 4.5.4 添加自动卸载单元测试
+- [x] 4.5.4 添加自动卸载单元测试
 
 ### 4.6 后台解析
 - [ ] 4.6.1 修改 `load_async` worker — 在 worker thread 中执行解析
@@ -231,7 +231,7 @@
 ### 8.1 全量验证
 - [x] 8.1.1 `cargo check --workspace` 零错误
 - [x] 8.1.2 `cargo test --workspace` 全部通过（23 测试套件）
-- [ ] 8.1.3 `cargo clippy --workspace` 零警告
+- [x] 8.1.3 `cargo clippy` 无新增警告
 - [ ] 8.1.4 运行 showcase 视觉回归验证
 - [ ] 8.1.5 运行 billiards + craft 功能回归验证
 

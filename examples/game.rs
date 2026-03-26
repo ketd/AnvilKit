@@ -25,7 +25,7 @@ use anvilkit_render::renderer::{
 use anvilkit_render::plugin::CameraComponent;
 use anvilkit_input::prelude::{InputState, KeyCode};
 use anvilkit_ecs::physics::{
-    Velocity, DeltaTime, CollisionEvents, AabbCollider,
+    Velocity, DeltaTime, CollisionEvent, AabbCollider,
     velocity_integration_system, collision_detection_system,
 };
 // Audio types available: anvilkit_ecs::audio::{AudioSource, PlaybackState}
@@ -149,7 +149,7 @@ fn player_movement_system(
 }
 
 fn collision_response_system(
-    events: Res<CollisionEvents>,
+    mut events: EventReader<CollisionEvent>,
     dt: Res<DeltaTime>,
     mut game_state: ResMut<GameState>,
     mut particles: ResMut<GameParticles>,
@@ -157,7 +157,7 @@ fn collision_response_system(
     obstacle_query: Query<(&Transform, &AabbCollider), (With<Obstacle>, Without<Player>)>,
 ) {
     game_state.collision_cooldown = (game_state.collision_cooldown - dt.0).max(0.0);
-    for event in events.iter() {
+    for event in events.read() {
         // Determine which entity is the player
         let (player_e, obstacle_e) = if player_query.get(event.a).is_ok() {
             (event.a, event.b)
@@ -263,7 +263,7 @@ fn main() {
     // Resources
     app.insert_resource(InputState::new());
     app.insert_resource(DeltaTime(1.0 / 60.0));
-    app.init_resource::<CollisionEvents>();
+    app.add_event::<CollisionEvent>();
     app.init_resource::<GameState>();
     app.insert_resource(GameParticles { system: ParticleSystem::new(500) });
 
