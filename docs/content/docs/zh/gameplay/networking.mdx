@@ -59,7 +59,7 @@ fn handle_events(events: Res<NetworkEvents>) {
 | 方法 | 说明 |
 |--------|-------------|
 | `send(data, current_time) -> PacketHeader` | 分配序列号，加入 ACK 追踪队列 |
-| `receive_ack(ack, ack_bitfield)` | 移除已确认的数据包 |
+| `receive_ack(ack, ack_bitfield)` | 移除已确认的数据包（回绕安全的序列号比较） |
 | `get_resend_packets(current_time, timeout)` | 获取需要重传的数据包 |
 
 ### UnreliableChannel
@@ -108,6 +108,7 @@ assert_eq!(restored, new_state);
 |-------|------|-------------|
 | `inputs` | `VecDeque<(u32, Vec<u8>)>` | (tick, 序列化输入) |
 | `current_tick` | `u32` | 当前模拟 tick |
+| `max_size` | `usize` | 缓冲区最大容量（默认 1024），满时淘汰最旧条目 |
 
 ## NetworkPlugin
 

@@ -79,7 +79,7 @@ let mut server = AssetServer::new("assets/");
 // 同步：注册加载意图（无 I/O）
 let handle = server.load::<Mesh>("models/tree.glb");
 
-// 异步：在后台线程中加载文件
+// 异步：在后台线程中加载文件（固定线程池，1-4 worker）
 let async_handle = server.load_async::<Vec<u8>>("textures/atlas.png");
 
 // 在游戏循环中：轮询已完成的加载
@@ -94,12 +94,12 @@ for result in server.drain_completed() {
 
 ## 热重载
 
-文件监视功能，用于开发期间自动刷新资产（需要 `hot-reload` feature）：
+文件监视功能，用于开发期间自动刷新资产（需要 `hot-reload` feature）。变更事件经过 200ms 防抖处理，同时支持 Remove 事件。
 
 ```rust
 use anvilkit_assets::hot_reload::FileWatcher;
 
-let watcher = FileWatcher::new("assets").unwrap();
+let mut watcher = FileWatcher::new("assets").unwrap();
 
 // 在游戏循环中：
 for path in watcher.poll_changes() {

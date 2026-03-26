@@ -52,7 +52,7 @@ for _ in 0..60 {
 | `insert_resource` | `<R: Resource>(R) -> &mut Self` | 插入类型化全局资源 |
 | `init_resource` | `<R: Resource + FromWorld>() -> &mut Self` | 使用 Default/FromWorld 实现插入资源 |
 | `run` | `(&mut self)` | 阻塞主循环，直到调用 `exit()` |
-| `update` | `(&mut self)` | 执行一帧：Startup（仅首次调用），然后 PreUpdate -> Update -> PostUpdate |
+| `update` | `(&mut self)` | 执行一帧：Startup（仅首次调用），然后 Main -> PreUpdate -> Update -> PostUpdate -> Cleanup + AppExit 检查 |
 | `exit` | `(&mut self)` | 通知应用在当前帧结束后停止 |
 
 ## 插件
@@ -74,7 +74,7 @@ impl Plugin for PhysicsPlugin {
 }
 ```
 
-唯一插件（默认）最多注册一次；重复的 `add_plugins` 调用会被静默跳过。
+唯一插件（默认）最多注册一次；重复的 `add_plugins` 调用会被静默跳过。`PluginGroup` 同样会强制唯一性。
 
 ## 调度阶段
 
@@ -83,7 +83,8 @@ impl Plugin for PhysicsPlugin {
 | 调度 | 变体 | 执行 | 典型用途 |
 |----------|---------|------|-------------|
 | **Startup** | `AnvilKitSchedule::Startup` | 首次 `update()` 时执行一次 | 场景设置、资源加载 |
-| **PreUpdate** | `AnvilKitSchedule::PreUpdate` | 每帧 | 输入轮询、时间更新 |
+| **Main** | `AnvilKitSchedule::Main` | 每帧 | 顶层调度入口，驱动后续阶段 |
+| **PreUpdate** | `AnvilKitSchedule::PreUpdate` | 每帧 | DeltaTime 同步、父子层级同步 |
 | **Update** | `AnvilKitSchedule::Update` | 每帧 | 游戏逻辑、AI、物理 |
 | **PostUpdate** | `AnvilKitSchedule::PostUpdate` | 每帧 | 变换传播、渲染准备 |
 | **Cleanup** | `AnvilKitSchedule::Cleanup` | 每帧 | 临时数据清理、诊断 |

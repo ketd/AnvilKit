@@ -79,7 +79,7 @@ let mut server = AssetServer::new("assets/");
 // Synchronous: register intent (no I/O)
 let handle = server.load::<Mesh>("models/tree.glb");
 
-// Asynchronous: load file in background thread
+// Asynchronous: load file in background (fixed-size thread pool, 1-4 workers)
 let async_handle = server.load_async::<Vec<u8>>("textures/atlas.png");
 
 // In your game loop: poll for completed loads
@@ -94,14 +94,14 @@ for result in server.drain_completed() {
 
 ## Hot Reload
 
-File watching for automatic asset refresh during development (requires `hot-reload` feature):
+File watching for automatic asset refresh during development (requires `hot-reload` feature). Changes are debounced (200ms) to coalesce rapid file-system events. File deletions (`Remove`) are also reported.
 
 ```rust
 use anvilkit_assets::hot_reload::FileWatcher;
 
-let watcher = FileWatcher::new("assets").unwrap();
+let mut watcher = FileWatcher::new("assets").unwrap();
 
-// In your game loop:
+// In your game loop (poll_changes takes &mut self):
 for path in watcher.poll_changes() {
     if FileWatcher::is_shader(&path) {
         // Rebuild render pipeline with new shader

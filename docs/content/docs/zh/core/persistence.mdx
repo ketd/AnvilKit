@@ -46,8 +46,8 @@ description: 设置、存档管理器和世界存储，用于游戏数据
 
 | 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `load` | `(path: &Path) -> Self` | 从 RON 加载；出错时返回默认值 |
-| `save` | `(&self, path: &Path) -> Result<(), String>` | 写入 RON（自动创建目录） |
+| `load` | `(path: &Path) -> Self` | 从 RON 加载；反序列化失败时输出警告并返回默认值 |
+| `save` | `(&self, path: &Path) -> Result<(), AnvilKitError>` | 写入 RON（自动创建目录） |
 | `default_path` | `() -> PathBuf` | `"config/settings.ron"` |
 
 ```rust
@@ -90,11 +90,11 @@ saves/
 
 | 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `new` | `(dir: impl AsRef<Path>, version: &str) -> Result<Self, String>` | 创建/打开存档目录 |
-| `save` | `(&self, slot: &str, play_time: f64, metadata: HashMap) -> Result<PathBuf, String>` | 写入元数据，返回 `data/` 路径 |
+| `new` | `(dir: impl AsRef<Path>, version: &str) -> Result<Self, AnvilKitError>` | 创建/打开存档目录 |
+| `save` | `(&self, slot: &str, play_time: f64, metadata: HashMap) -> Result<PathBuf, AnvilKitError>` | 写入元数据，返回 `data/` 路径 |
 | `list_saves` | `(&self) -> Vec<SaveSlotInfo>` | 所有槽位按最新排序 |
 | `get_save_info` | `(&self, slot: &str) -> Option<SaveSlotInfo>` | 读取单个槽位的元数据 |
-| `delete` | `(&self, slot: &str) -> Result<(), String>` | 递归删除槽位目录 |
+| `delete` | `(&self, slot: &str) -> Result<(), AnvilKitError>` | 递归删除槽位目录 |
 | `slot_data_path` | `(&self, slot: &str) -> PathBuf` | 获取 `data/` 路径而不写入元数据 |
 
 ```rust
@@ -125,12 +125,12 @@ mgr.delete("slot_1").unwrap();
 
 | 方法 | 签名 | 说明 |
 |--------|-----------|-------------|
-| `open` | `(path: impl AsRef<Path>) -> Result<Self, String>` | 打开/创建存储目录 |
+| `open` | `(path: impl AsRef<Path>) -> Result<Self, AnvilKitError>` | 打开/创建存储目录 |
 | `get` | `(&self, key: &str) -> Option<Vec<u8>>` | 读取值；缺失时返回 `None` |
-| `put` | `(&self, key: &str, value: &[u8]) -> Result<(), String>` | 原子写入（tmp + 重命名） |
-| `delete` | `(&self, key: &str) -> Result<(), String>` | 删除一个键 |
+| `put` | `(&self, key: &str, value: &[u8]) -> Result<(), AnvilKitError>` | 原子写入（tmp + 重命名） |
+| `delete` | `(&self, key: &str) -> Result<(), AnvilKitError>` | 删除一个键 |
 | `keys_with_prefix` | `(&self, prefix: &str) -> Vec<String>` | 列出以指定前缀开头的键 |
-| `batch_put` | `(&self, entries: &[(&str, &[u8])]) -> Result<(), String>` | 批量写入多个键（每个均为原子操作） |
+| `batch_put` | `(&self, entries: &[(&str, &[u8])]) -> Result<(), AnvilKitError>` | 批量写入多个键（每个均为原子操作） |
 | `path` | `(&self) -> &Path` | 基目录 |
 
 ```rust

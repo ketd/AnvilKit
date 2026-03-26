@@ -33,6 +33,8 @@ let triangles = vec![
 let navmesh = NavMesh::new(vertices, triangles);
 ```
 
+> **性能：** `build_adjacency` 使用边哈希表在 **O(n)** 时间内完成（*n* 为三角形数量）。
+
 ### API
 
 | 方法 | 签名 | 说明 |
@@ -42,6 +44,8 @@ let navmesh = NavMesh::new(vertices, triangles);
 | `triangle_centroid` | `(&self, usize) -> Vec3` | 获取三角形的质心 |
 | `find_path` | `(&self, Vec3, Vec3) -> Option<Vec<Vec3>>` | A* 寻路，返回路径点 |
 | `point_in_triangle` | `(Vec2, Vec2, Vec2, Vec2) -> bool` | 重心坐标点在三角形内测试 |
+
+> `point_in_triangle` 可安全处理退化三角形（零面积），此时返回 `false` 而非触发除零错误。
 
 ## A* 寻路
 

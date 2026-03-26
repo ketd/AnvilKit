@@ -52,7 +52,7 @@ for _ in 0..60 {
 | `insert_resource` | `<R: Resource>(R) -> &mut Self` | Insert a typed global resource |
 | `init_resource` | `<R: Resource + FromWorld>() -> &mut Self` | Insert a resource using its Default/FromWorld impl |
 | `run` | `(&mut self)` | Blocking main loop until `exit()` is called |
-| `update` | `(&mut self)` | Execute one frame: Startup (first call only), then PreUpdate -> Update -> PostUpdate |
+| `update` | `(&mut self)` | Execute one frame: Startup (first call only), then Main → PreUpdate → Update → PostUpdate → Cleanup. Also checks `AppExit` resource. |
 | `exit` | `(&mut self)` | Signal the app to stop after the current frame |
 
 ## Plugin
@@ -74,7 +74,7 @@ impl Plugin for PhysicsPlugin {
 }
 ```
 
-Unique plugins (default) are registered at most once; duplicate `add_plugins` calls are silently skipped.
+Unique plugins (default) are registered at most once; duplicate `add_plugins` calls are silently skipped. This uniqueness check also applies to plugins inside a `PluginGroup`.
 
 ## Schedule Phases
 
@@ -83,7 +83,8 @@ Unique plugins (default) are registered at most once; duplicate `add_plugins` ca
 | Schedule | Variant | Runs | Typical use |
 |----------|---------|------|-------------|
 | **Startup** | `AnvilKitSchedule::Startup` | Once, on first `update()` | Scene setup, asset loading |
-| **PreUpdate** | `AnvilKitSchedule::PreUpdate` | Every frame | Input polling, time update |
+| **Main** | `AnvilKitSchedule::Main` | Every frame, first | Game-wide logic |
+| **PreUpdate** | `AnvilKitSchedule::PreUpdate` | Every frame | DeltaTime sync, parent-child hierarchy sync |
 | **Update** | `AnvilKitSchedule::Update` | Every frame | Game logic, AI, physics |
 | **PostUpdate** | `AnvilKitSchedule::PostUpdate` | Every frame | Transform propagation, render prep |
 | **Cleanup** | `AnvilKitSchedule::Cleanup` | Every frame | Temp data cleanup, diagnostics |

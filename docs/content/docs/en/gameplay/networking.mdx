@@ -59,7 +59,7 @@ Tracks sent packets with sequence numbers and ACK bitfields. Supports timeout-ba
 | Method | Description |
 |--------|-------------|
 | `send(data, current_time) -> PacketHeader` | Assign sequence, queue for ACK tracking |
-| `receive_ack(ack, ack_bitfield)` | Remove acknowledged packets |
+| `receive_ack(ack, ack_bitfield)` | Remove acknowledged packets (wrapping-safe sequence comparison) |
 | `get_resend_packets(current_time, timeout)` | Get packets needing retransmission |
 
 ### UnreliableChannel
@@ -108,6 +108,7 @@ Stores serialized inputs per tick for replay during reconciliation:
 |-------|------|-------------|
 | `inputs` | `VecDeque<(u32, Vec<u8>)>` | (tick, serialized input) |
 | `current_tick` | `u32` | Current simulation tick |
+| `max_size` | `usize` | Maximum buffer entries (default 1024, oldest evicted on overflow) |
 
 ## NetworkPlugin
 

@@ -46,8 +46,8 @@ Typed configuration stored as RON. Falls back to defaults when the file is missi
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `load` | `(path: &Path) -> Self` | Load from RON; returns defaults on error |
-| `save` | `(&self, path: &Path) -> Result<(), String>` | Write to RON (creates dirs) |
+| `load` | `(path: &Path) -> Self` | Load from RON; logs a warning and returns defaults on deserialization error |
+| `save` | `(&self, path: &Path) -> Result<(), AnvilKitError>` | Write to RON (creates dirs) |
 | `default_path` | `() -> PathBuf` | `"config/settings.ron"` |
 
 ```rust
@@ -90,11 +90,11 @@ saves/
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `new` | `(dir: impl AsRef<Path>, version: &str) -> Result<Self, String>` | Create/open saves directory |
-| `save` | `(&self, slot: &str, play_time: f64, metadata: HashMap) -> Result<PathBuf, String>` | Write metadata, return `data/` path |
+| `new` | `(dir: impl AsRef<Path>, version: &str) -> Result<Self, AnvilKitError>` | Create/open saves directory |
+| `save` | `(&self, slot: &str, play_time: f64, metadata: HashMap) -> Result<PathBuf, AnvilKitError>` | Write metadata, return `data/` path |
 | `list_saves` | `(&self) -> Vec<SaveSlotInfo>` | All slots sorted newest-first |
 | `get_save_info` | `(&self, slot: &str) -> Option<SaveSlotInfo>` | Read one slot's metadata |
-| `delete` | `(&self, slot: &str) -> Result<(), String>` | Remove slot directory recursively |
+| `delete` | `(&self, slot: &str) -> Result<(), AnvilKitError>` | Remove slot directory recursively |
 | `slot_data_path` | `(&self, slot: &str) -> PathBuf` | Get `data/` path without writing metadata |
 
 ```rust
@@ -125,12 +125,12 @@ File-system key-value store. Each key maps to a file under the base directory. S
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `open` | `(path: impl AsRef<Path>) -> Result<Self, String>` | Open/create the storage directory |
+| `open` | `(path: impl AsRef<Path>) -> Result<Self, AnvilKitError>` | Open/create the storage directory |
 | `get` | `(&self, key: &str) -> Option<Vec<u8>>` | Read value; `None` if missing |
-| `put` | `(&self, key: &str, value: &[u8]) -> Result<(), String>` | Write atomically (tmp + rename) |
-| `delete` | `(&self, key: &str) -> Result<(), String>` | Remove a key |
+| `put` | `(&self, key: &str, value: &[u8]) -> Result<(), AnvilKitError>` | Write atomically (tmp + rename) |
+| `delete` | `(&self, key: &str) -> Result<(), AnvilKitError>` | Remove a key |
 | `keys_with_prefix` | `(&self, prefix: &str) -> Vec<String>` | List keys starting with prefix |
-| `batch_put` | `(&self, entries: &[(&str, &[u8])]) -> Result<(), String>` | Write multiple keys (each atomic) |
+| `batch_put` | `(&self, entries: &[(&str, &[u8])]) -> Result<(), AnvilKitError>` | Write multiple keys (each atomic) |
 | `path` | `(&self) -> &Path` | Base directory |
 
 ```rust

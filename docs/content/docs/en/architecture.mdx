@@ -53,9 +53,11 @@ anvilkit-audio (AudioSource, spatial) → anvilkit-ecs
 │     ├─ tick() {                                                │
 │     │    DeltaTime = wall_clock.elapsed()                      │
 │     │    app.update() {                                        │
-│     │       PreUpdate:  (reserved)                             │
+│     │       Main:       (reserved)                             │
+│     │       PreUpdate:  DeltaTime sync, parent-child sync      │
 │     │       Update:     input → physics → camera_fx → camera  │
 │     │       PostUpdate: transform_propagation → render_extract │
+│     │       Cleanup:    (reserved)                             │
 │     │    }                                                     │
 │     │    InputState.end_frame()                                │
 │     │    window.request_redraw()                               │
@@ -79,7 +81,8 @@ anvilkit-audio (AudioSource, spatial) → anvilkit-ecs
 | Phase | Timing | Typical Systems |
 |-------|--------|-----------------|
 | `Startup` | Once at init | Resource setup, initial spawn |
-| `PreUpdate` | Every frame, before Update | (reserved) |
+| `Main` | Every frame, first | (reserved for game-wide logic) |
+| `PreUpdate` | Every frame, before Update | DeltaTime sync, parent-child hierarchy sync |
 | `Update` | Every frame, main logic | Input, physics, game logic, camera |
 | `PostUpdate` | Every frame, after Update | Transform propagation, render extract |
 | `Cleanup` | Every frame, last | (reserved) |
@@ -100,11 +103,11 @@ anvilkit-audio (AudioSource, spatial) → anvilkit-ecs
 
 ### anvilkit-core
 
-Foundation type library: math utilities (Vec3, Mat4, Transform, GlobalTransform, interpolation), time system (Time, Timer), error types (AnvilKitError), persistence system (SaveManager, Settings, WorldStorage).
+Foundation type library: math utilities (Vec3, Mat4, Transform, GlobalTransform, interpolation), time system (Time, Timer), error types (AnvilKitError with category-preserving `with_context`), persistence system (SaveManager, Settings, WorldStorage — all returning `Result<_, AnvilKitError>`).
 
 ### anvilkit-ecs
 
-Application framework based on `bevy_ecs 0.14`: App lifecycle (new → add_plugins → add_systems → run), Plugin system, Schedule dispatching (Startup/PreUpdate/Update/PostUpdate), Transform hierarchy (Parent/Children/GlobalTransform propagation), Physics (AABB collision + rapier3d integration), Scene serialization (RON).
+Application framework based on `bevy_ecs 0.14`: App lifecycle (new → add_plugins → add_systems → run), Plugin system with uniqueness checks, Schedule dispatching (Main/Startup/PreUpdate/Update/PostUpdate/Cleanup), AppExit resource for graceful shutdown, Transform hierarchy (Parent/Children/GlobalTransform propagation with auto-sync), Physics (scale-aware AABB collision + rapier3d integration), Scene serialization (RON).
 
 ### anvilkit-render
 

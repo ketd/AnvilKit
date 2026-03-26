@@ -33,6 +33,8 @@ let triangles = vec![
 let navmesh = NavMesh::new(vertices, triangles);
 ```
 
+> **Performance:** `build_adjacency` runs in **O(n)** time using an edge hash map, where *n* is the number of triangles.
+
 ### API
 
 | Method | Signature | Description |
@@ -42,6 +44,8 @@ let navmesh = NavMesh::new(vertices, triangles);
 | `triangle_centroid` | `(&self, usize) -> Vec3` | Get the centroid of a triangle |
 | `find_path` | `(&self, Vec3, Vec3) -> Option<Vec<Vec3>>` | A* pathfinding, returns waypoints |
 | `point_in_triangle` | `(Vec2, Vec2, Vec2, Vec2) -> bool` | Barycentric point-in-triangle test |
+
+> `point_in_triangle` safely handles degenerate triangles (zero area) by returning `false` instead of dividing by zero.
 
 ## A* Pathfinding
 

@@ -53,9 +53,11 @@ anvilkit-audio (AudioSource, 空间音频) → anvilkit-ecs
 │     ├─ tick() {                                                │
 │     │    DeltaTime = 实际经过时间                               │
 │     │    app.update() {                                        │
-│     │       PreUpdate:  (预留)                                 │
+│     │       Main:       (预留)                                 │
+│     │       PreUpdate:  DeltaTime 同步, 父子层级同步           │
 │     │       Update:     输入 → 物理 → 相机特效 → 相机控制     │
 │     │       PostUpdate: Transform 传播 → 渲染提取              │
+│     │       Cleanup:    (预留)                                 │
 │     │    }                                                     │
 │     │    InputState.end_frame()                                │
 │     │    window.request_redraw()                               │
@@ -79,7 +81,8 @@ anvilkit-audio (AudioSource, 空间音频) → anvilkit-ecs
 | 阶段 | 时机 | 典型系统 |
 |------|------|----------|
 | `Startup` | 初始化时运行一次 | 资源设置，初始生成 |
-| `PreUpdate` | 每帧 Update 之前 | (预留) |
+| `Main` | 每帧最先执行 | (预留，用于全局逻辑) |
+| `PreUpdate` | 每帧 Update 之前 | DeltaTime 同步、父子层级同步 |
 | `Update` | 每帧主逻辑 | 输入、物理、游戏逻辑、相机 |
 | `PostUpdate` | 每帧 Update 之后 | Transform 传播、渲染提取 |
 | `Cleanup` | 每帧最后 | (预留) |
@@ -99,10 +102,10 @@ anvilkit-audio (AudioSource, 空间音频) → anvilkit-ecs
 ## 模块概览
 
 ### anvilkit-core
-基础类型库: 数学工具 (Vec3, Mat4, Transform, GlobalTransform, 插值), 时间系统, 错误类型, 持久化系统 (SaveManager, Settings, WorldStorage)。
+基础类型库: 数学工具 (Vec3, Mat4, Transform, GlobalTransform, 插值), 时间系统, 错误类型 (AnvilKitError，`with_context` 保留原始错误类别), 持久化系统 (SaveManager, Settings, WorldStorage — 均返回 `Result<_, AnvilKitError>`)。
 
 ### anvilkit-ecs
-基于 `bevy_ecs 0.14` 的应用框架: App 生命周期, Plugin 系统, Schedule 调度, Transform 层级传播, 物理 (AABB + rapier3d), 场景序列化 (RON)。
+基于 `bevy_ecs 0.14` 的应用框架: App 生命周期, Plugin 系统（含唯一性检查）, Schedule 调度 (Main/Startup/PreUpdate/Update/PostUpdate/Cleanup), AppExit 优雅退出, Transform 层级传播（自动同步）, 物理（缩放感知 AABB + rapier3d）, 场景序列化 (RON)。
 
 ### anvilkit-render
 统一 2D/3D 渲染管线: PBR + HDR + Bloom + SSAO + CSM + IBL + MSAA + 骨骼动画 + 视锥剔除 + 实例化 + Sprite/Line/Particle/Text/UI。

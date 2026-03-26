@@ -14,7 +14,7 @@ AnvilKit provides two physics options: a lightweight built-in AABB system (defau
 
 | Type | Kind | Description |
 |------|------|-------------|
-| `DeltaTime` | Resource | Frame delta in seconds (default 1/60) |
+| `DeltaTime` | Resource | Frame delta in seconds — auto-synced from `Time` by `update_delta_time_system` |
 | `Velocity` | Component | `linear: Vec3`, `angular: Vec3` |
 | `AabbCollider` | Component | `half_extents: Vec3` |
 | `CollisionEvents` | Resource | `Vec<CollisionEvent>` populated each frame |
@@ -22,8 +22,9 @@ AnvilKit provides two physics options: a lightweight built-in AABB system (defau
 
 | System | Description |
 |--------|-------------|
+| `update_delta_time_system` | Syncs `DeltaTime` from the core `Time` resource (registered in PreUpdate) |
 | `velocity_integration_system` | `transform.translation += velocity.linear * dt` |
-| `collision_detection_system` | N-squared AABB overlap test, writes `CollisionEvents` |
+| `collision_detection_system` | N-squared AABB overlap test (scale-aware), writes `CollisionEvents` |
 
 ```rust
 use anvilkit_ecs::prelude::*;
