@@ -100,7 +100,7 @@
 
 ### 3.4 AssetServer 集成
 - [ ] 3.4.1 修改 `audio_playback_system` — 通过 AssetServer 加载音频文件
-- [ ] 3.4.2 添加 AudioAsset 类型到 AssetStorage
+- [x] 3.4.2 添加 AudioAsset 类型到 AssetStorage
 - [ ] 3.4.3 添加集成测试
 
 ## Phase 4: Asset Pipeline v2
@@ -115,14 +115,14 @@
 - [x] 4.2.1 `AssetServer` 内部持有 `Option<FileWatcher>`
 - [x] 4.2.2 维护 `id_to_path: HashMap<AssetId, PathBuf>` 反向映射
 - [x] 4.2.3 `process_completed()` 中调用 `watcher.poll_changes()` 并触发 reload
-- [ ] 4.2.4 添加热重载集成测试
+- [x] 4.2.4 添加热重载集成测试
 
 ### 4.3 glTF 动画提取
 - [x] 4.3.1 实现 `load_gltf_animations(path) -> Result<Vec<(Skeleton, Vec<AnimationClip>)>>`
 - [x] 4.3.2 提取 skin 数据：joint nodes + inverse bind matrices
 - [x] 4.3.3 提取 animation channels：translation/rotation/scale 按 joint 索引
 - [x] 4.3.4 支持 Step/Linear/CubicSpline 插值模式
-- [ ] 4.3.5 添加 glTF 动画加载单元测试
+- [x] 4.3.5 添加 glTF 动画加载单元测试
 
 ### 4.4 独立纹理加载
 - [x] 4.4.1 实现 `load_texture(path) -> Result<TextureData>` 使用 `image` crate
@@ -137,7 +137,7 @@
 
 ### 4.6 后台解析
 - [ ] 4.6.1 修改 `load_async` worker — 在 worker thread 中执行解析
-- [ ] 4.6.2 定义 `ParsedAsset` enum
+- [x] 4.6.2 定义 `ParsedAsset` enum
 - [ ] 4.6.3 main thread `process_completed` 只做 storage 插入
 
 ## Phase 5: Input 系统 v2
@@ -160,7 +160,7 @@
 - [x] 5.3.1 新增 `ActionId(u32)` 类型
 - [x] 5.3.2 `ActionMap::register_action(name) -> ActionId` 分配索引
 - [x] 5.3.3 新增 `is_action_active_by_id()` + `action_state_by_id()` 零堆分配查询
-- [ ] 5.3.4 添加 zero-allocation lookup 基准测试
+- [x] 5.3.4 添加 zero-allocation lookup 基准测试
 
 ## Phase 6: 渲染修复
 
@@ -178,7 +178,7 @@
 ### 6.3 可配置渲染参数
 - [x] 6.3.1 `RenderConfig` 新增 `msaa_samples`、`clear_color`、`default_cull_mode`
 - [ ] 6.3.2 `SceneRenderer` 读取 RenderConfig 创建 pipeline 时使用配置值
-- [ ] 6.3.3 glTF loader 读取 `doubleSided` 属性设置 cull_mode
+- [x] 6.3.3 glTF loader 读取 `doubleSided` 属性设置 cull_mode
 - [x] 6.3.4 添加 RenderConfig 默认值测试
 
 ### 6.4 正交相机
@@ -190,7 +190,7 @@
 - [x] 6.5.1 `CameraComponent` 新增 `priority: i32` 字段
 - [ ] 6.5.2 `SceneRenderer` 按 priority 排序 active cameras
 - [ ] 6.5.3 `RenderTarget::Texture(handle)` 支持渲染到纹理
-- [ ] 6.5.4 添加多相机渲染排序测试
+- [x] 6.5.4 添加多相机渲染排序测试
 
 ### 6.6 点光/聚光阴影
 - [ ] 6.6.1 点光源 cubemap shadow

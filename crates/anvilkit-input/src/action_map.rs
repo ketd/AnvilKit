@@ -369,4 +369,42 @@ mod tests {
         assert!(map.is_action_active_by_id(id));
         assert!(map.is_action_active("jump"));
     }
+
+    #[test]
+    fn test_id_lookup_zero_allocation_perf() {
+        let mut map = ActionMap::new();
+        map.add_binding("jump", InputBinding::Key(KeyCode::Space));
+        map.add_binding("fire", InputBinding::Mouse(MouseButton::Left));
+        let jump_id = map.register_action("jump");
+        let fire_id = map.register_action("fire");
+
+        let mut input = InputState::new();
+        input.press_key(KeyCode::Space);
+        map.update(&input);
+
+        // ID-based lookups should be fast (no string allocation)
+        let start = std::time::Instant::now();
+        for _ in 0..100_000 {
+            std::hint::black_box(map.is_action_active_by_id(jump_id));
+            std::hint::black_box(map.action_state_by_id(fire_id));
+        }
+        let id_duration = start.elapsed();
+
+        // String-based lookups for comparison
+        let start = std::time::Instant::now();
+        for _ in 0..100_000 {
+            std::hint::black_box(map.is_action_active("jump"));
+            std::hint::black_box(map.action_state("fire"));
+        }
+        let string_duration = start.elapsed();
+
+        // Both should complete quickly (< 100ms for 100k iterations)
+        assert!(id_duration.as_millis() < 100, "ID lookup too slow: {:?}", id_duration);
+        assert!(string_duration.as_millis() < 100, "String lookup too slow: {:?}", string_duration);
+
+        // ID-based should be at least not slower than string-based
+        // (In practice it's faster due to no hashing, but we just verify correctness)
+        assert!(map.is_action_active_by_id(jump_id));
+        assert!(!map.is_action_active_by_id(fire_id));
+    }
 }

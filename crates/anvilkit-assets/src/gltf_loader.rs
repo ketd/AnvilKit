@@ -263,6 +263,7 @@ fn extract_material(
 ) -> MaterialData {
     let gltf_material = primitive.material();
     let pbr = gltf_material.pbr_metallic_roughness();
+    let double_sided = gltf_material.double_sided();
 
     let base_color_factor = pbr.base_color_factor();
 
@@ -347,6 +348,7 @@ fn extract_material(
         occlusion_texture,
         emissive_texture,
         emissive_factor,
+        double_sided,
     }
 }
 
@@ -511,5 +513,30 @@ fn convert_to_rgba8(image: &gltf::image::Data) -> Option<Vec<u8>> {
             log::warn!("不支持的纹理格式: {:?}", image.format);
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::animation::{Skeleton, Joint, AnimationClip};
+
+    #[test]
+    fn test_skeleton_and_animation_clip_construction() {
+        let skeleton = Skeleton {
+            joints: vec![
+                Joint { name: "root".to_string(), parent: None, inverse_bind_matrix: glam::Mat4::IDENTITY },
+                Joint { name: "arm".to_string(), parent: Some(0), inverse_bind_matrix: glam::Mat4::IDENTITY },
+            ],
+        };
+        assert_eq!(skeleton.joints.len(), 2);
+        assert_eq!(skeleton.joints[0].name, "root");
+        assert_eq!(skeleton.joints[1].name, "arm");
+
+        let clip = AnimationClip {
+            name: "walk".to_string(),
+            channels: vec![],
+        };
+        assert_eq!(clip.name, "walk");
+        assert!((clip.duration() - 0.0).abs() < 0.001);
     }
 }

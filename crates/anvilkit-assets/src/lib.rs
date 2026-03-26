@@ -19,6 +19,10 @@ pub mod scene;
 pub mod gltf_loader;
 pub mod asset_server;
 pub mod animation;
+/// 音频资产类型
+pub mod audio_asset;
+/// 统一的解析结果类型
+pub mod parsed_asset;
 /// Procedural mesh generation utilities (sphere, plane, box).
 pub mod procedural;
 /// 独立纹理加载（PNG/JPEG → RGBA8）

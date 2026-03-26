@@ -66,6 +66,8 @@ pub struct MaterialData {
     pub emissive_texture: Option<TextureData>,
     /// 自发光因子 [R, G, B]
     pub emissive_factor: [f32; 3],
+    /// 双面渲染（glTF doubleSided → 禁用背面剔除）
+    pub double_sided: bool,
 }
 
 impl Default for MaterialData {
@@ -81,6 +83,7 @@ impl Default for MaterialData {
             occlusion_texture: None,
             emissive_texture: None,
             emissive_factor: [0.0, 0.0, 0.0],
+            double_sided: false,
         }
     }
 }

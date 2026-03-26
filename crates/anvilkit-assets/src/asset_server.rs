@@ -538,4 +538,14 @@ mod tests {
         let mut server = AssetServer::new("/tmp");
         assert_eq!(server.process_unloads(), 0);
     }
+
+    #[test]
+    fn test_reload_invalidates_cache() {
+        let mut server = AssetServer::new("/tmp/nonexistent_assets");
+        let handle = server.load::<String>("test.txt");
+        // Reload should invalidate cache and re-dispatch load
+        server.reload(handle.id());
+        // Should still be in loading state, not crash
+        assert_eq!(server.load_state(&handle), LoadState::Loading);
+    }
 }

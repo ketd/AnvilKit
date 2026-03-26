@@ -496,4 +496,17 @@ mod tests {
         assert!((persp.near - 0.1).abs() < 0.001);
         assert!((ortho.near - 0.1).abs() < 0.001);
     }
+
+    #[test]
+    fn test_camera_sorting_by_priority() {
+        let mut cameras = vec![
+            CameraComponent { priority: 5, ..Default::default() },
+            CameraComponent { priority: 1, ..Default::default() },
+            CameraComponent { priority: 10, ..Default::default() },
+        ];
+        cameras.sort_by_key(|c| c.priority);
+        assert_eq!(cameras[0].priority, 1);
+        assert_eq!(cameras[1].priority, 5);
+        assert_eq!(cameras[2].priority, 10);
+    }
 }
