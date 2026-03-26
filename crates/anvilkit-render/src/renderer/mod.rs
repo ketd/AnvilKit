@@ -39,6 +39,7 @@ pub mod color_grading;
 pub mod debug_renderer;
 pub mod post_process;
 pub mod standard_material;
+pub mod scene_renderer;
 #[cfg(feature = "capture")]
 pub mod capture;
 

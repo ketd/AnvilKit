@@ -740,42 +740,16 @@ impl RenderApp {
             }
         }
 
-        // 更新 ECS RenderState 中的深度纹理、HDR RT 和 surface_size
+        // 通过 SceneRenderer 重建所有 size-dependent GPU 资源
         if self.gpu_initialized && new_size.width > 0 && new_size.height > 0 {
             if let (Some(app), Some(device)) = (&mut self.app, &self.render_device) {
                 let bloom_mip_count: u32 = app.world.get_resource::<BloomSettings>()
                     .map(|s| s.mip_count)
                     .unwrap_or(5u32);
                 if let Some(mut rs) = app.world.get_resource_mut::<RenderState>() {
-                    rs.surface_size = (new_size.width, new_size.height);
-                    let (_, depth_view) = create_depth_texture_msaa(device, new_size.width, new_size.height, "ECS Depth MSAA");
-                    rs.depth_texture_view = depth_view;
-
-                    // Recreate HDR RT (resolve), MSAA color, and tonemap bind group
-                    let (_, hdr_view) = create_hdr_render_target(device, new_size.width, new_size.height, "ECS HDR RT");
-                    let (_, hdr_msaa_view) = create_hdr_msaa_texture(device, new_size.width, new_size.height, "ECS HDR MSAA");
-                    let sampler = create_sampler(device, "ECS Sampler");
-                    // Resize bloom mip chain
-                    if let Some(ref mut bloom) = rs.bloom {
-                        bloom.resize(device, new_size.width, new_size.height, bloom_mip_count);
-                    }
-
-                    // Recreate tonemap bind group with new HDR + bloom views
-                    let bloom_view = rs.bloom.as_ref()
-                        .and_then(|b| b.mip_views.first());
-                    let bloom_view_ref = bloom_view.unwrap_or(&hdr_view);
-                    let new_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: Some("ECS Tonemap BG"),
-                        layout: &rs.tonemap_bind_group_layout,
-                        entries: &[
-                            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&hdr_view) },
-                            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
-                            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(bloom_view_ref) },
-                        ],
-                    });
-                    rs.hdr_texture_view = hdr_view;
-                    rs.hdr_msaa_texture_view = hdr_msaa_view;
-                    rs.tonemap_bind_group = new_bg;
+                    crate::renderer::scene_renderer::SceneRenderer::handle_resize(
+                        device, &mut rs, new_size.width, new_size.height, bloom_mip_count,
+                    );
                 }
             }
         }
@@ -798,14 +772,15 @@ impl RenderApp {
 
         let Some(app) = &mut self.app else { return };
 
-        // 延迟初始化后处理 GPU 资源（需要 mutable 访问）
+        // 延迟初始化后处理 GPU 资源（通过 SceneRenderer）
         {
             let pp_settings = app.world.get_resource::<crate::renderer::post_process::PostProcessSettings>()
                 .cloned()
                 .unwrap_or_default();
             if let Some(mut rs) = app.world.get_resource_mut::<RenderState>() {
-                let (w, h) = rs.surface_size;
-                rs.post_process.ensure_resources(device, w, h, &pp_settings);
+                crate::renderer::scene_renderer::SceneRenderer::ensure_post_process_resources(
+                    device, &mut rs, &pp_settings,
+                );
             }
         }
 
