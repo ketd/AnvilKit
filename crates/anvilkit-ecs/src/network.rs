@@ -81,7 +81,9 @@ impl Default for NetworkState {
 // ---------------------------------------------------------------------------
 
 /// Network event.
-#[derive(Debug, Clone)]
+///
+/// 通过 `EventWriter<NetworkEvent>` 发送，`EventReader<NetworkEvent>` 接收。
+#[derive(Debug, Clone, Event)]
 pub enum NetworkEvent {
     /// A client connected.
     Connected {
@@ -104,13 +106,15 @@ pub enum NetworkEvent {
     },
 }
 
-/// Network events resource.
+/// Network events resource（已废弃）
+#[deprecated(note = "使用 EventReader<NetworkEvent> 替代")]
 #[derive(Resource, Default)]
 pub struct NetworkEvents {
     /// Pending events.
     pub events: Vec<NetworkEvent>,
 }
 
+#[allow(deprecated)]
 impl NetworkEvents {
     /// Push an event.
     pub fn push(&mut self, event: NetworkEvent) {
@@ -419,6 +423,8 @@ impl Default for InputBuffer {
 // ---------------------------------------------------------------------------
 
 /// System that clears network events at the start of each frame.
+#[deprecated(note = "Bevy Events 自动管理清理，不再需要手动清除")]
+#[allow(deprecated)]
 pub fn network_events_cleanup_system(mut events: ResMut<NetworkEvents>) {
     events.clear();
 }
@@ -431,16 +437,14 @@ pub fn network_events_cleanup_system(mut events: ResMut<NetworkEvents>) {
 pub struct NetworkPlugin;
 
 impl Plugin for NetworkPlugin {
+    #[allow(deprecated)]
     fn build(&self, app: &mut App) {
         app.init_resource::<NetworkConfig>();
         app.init_resource::<NetworkState>();
-        app.init_resource::<NetworkEvents>();
+        app.add_event::<NetworkEvent>();
         app.init_resource::<ReplicationBuffer>();
         app.init_resource::<InputBuffer>();
-        app.add_systems(
-            crate::schedule::AnvilKitSchedule::PreUpdate,
-            network_events_cleanup_system,
-        );
+        // network_events_cleanup_system 不再需要 — Bevy Events 自动管理生命周期
     }
 
     fn name(&self) -> &str {
@@ -554,7 +558,8 @@ mod tests {
 
         assert!(app.world.get_resource::<NetworkConfig>().is_some());
         assert!(app.world.get_resource::<NetworkState>().is_some());
-        assert!(app.world.get_resource::<NetworkEvents>().is_some());
+        // NetworkEvent 现在通过 Events<NetworkEvent> 注册
+        assert!(app.world.get_resource::<Events<NetworkEvent>>().is_some());
     }
 
     use glam::Vec3;

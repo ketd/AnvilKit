@@ -224,6 +224,7 @@ fn camera_system(
 
     active_camera.view_proj = proj * view;
     active_camera.camera_pos = eye;
+    active_camera.fov_radians = camera.fov.to_radians();
 }
 
 /// 渲染提取系统 (PostUpdate, after camera_system)

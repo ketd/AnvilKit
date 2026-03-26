@@ -161,6 +161,8 @@ pub struct ActiveCamera {
     pub view_proj: Mat4,
     /// World-space position of the active camera.
     pub camera_pos: Vec3,
+    /// Vertical field of view in radians (used by CSM shadow mapping).
+    pub fov_radians: f32,
 }
 
 impl Default for ActiveCamera {
@@ -168,6 +170,7 @@ impl Default for ActiveCamera {
         Self {
             view_proj: Mat4::IDENTITY,
             camera_pos: Vec3::ZERO,
+            fov_radians: std::f32::consts::FRAC_PI_4,
         }
     }
 }

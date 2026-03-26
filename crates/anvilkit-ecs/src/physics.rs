@@ -223,7 +223,10 @@ pub fn update_delta_time_system(
 }
 
 /// 碰撞事件
-#[derive(Debug, Clone, Copy)]
+///
+/// 通过 `EventWriter<CollisionEvent>` 发送，`EventReader<CollisionEvent>` 接收。
+/// 事件自动双缓冲，存活 2 帧后由引擎清除。
+#[derive(Debug, Clone, Copy, Event)]
 pub struct CollisionEvent {
     /// First entity involved in the collision.
     pub a: Entity,
@@ -231,13 +234,15 @@ pub struct CollisionEvent {
     pub b: Entity,
 }
 
-/// 碰撞事件列表资源
+/// 碰撞事件列表资源（已废弃）
+#[deprecated(note = "使用 EventReader<CollisionEvent> 替代")]
 #[derive(Resource, Default)]
 pub struct CollisionEvents {
     /// List of collision events detected this frame.
     pub events: Vec<CollisionEvent>,
 }
 
+#[allow(deprecated)]
 impl CollisionEvents {
     /// Removes all collision events from the list.
     pub fn clear(&mut self) { self.events.clear(); }
@@ -276,10 +281,8 @@ pub fn velocity_integration_system(
 /// N² AABB 碰撞检测系统
 pub fn collision_detection_system(
     query: Query<(Entity, &Transform, &AabbCollider)>,
-    mut events: ResMut<CollisionEvents>,
+    mut events: EventWriter<CollisionEvent>,
 ) {
-    events.clear();
-
     let entities: Vec<_> = query.iter().collect();
     for i in 0..entities.len() {
         for j in (i + 1)..entities.len() {
@@ -296,7 +299,7 @@ pub fn collision_detection_system(
                 && a_min.y <= b_max.y && a_max.y >= b_min.y
                 && a_min.z <= b_max.z && a_max.z >= b_min.z
             {
-                events.push(CollisionEvent { a: *ea, b: *eb });
+                events.send(CollisionEvent { a: *ea, b: *eb });
             }
         }
     }
@@ -308,9 +311,9 @@ pub struct PhysicsPlugin;
 impl crate::plugin::Plugin for PhysicsPlugin {
     fn build(&self, app: &mut crate::app::App) {
         app.init_resource::<DeltaTime>();
-        app.init_resource::<CollisionEvents>();
+        app.add_event::<CollisionEvent>();
         app.add_systems(
-            AnvilKitSchedule::Update,
+            AnvilKitSchedule::FixedUpdate,
             (
                 update_delta_time_system,
                 velocity_integration_system.after(update_delta_time_system),
@@ -573,7 +576,7 @@ pub mod rapier_integration {
             app.init_resource::<RapierContext>();
             app.init_resource::<CollisionEvents>();
             app.add_systems(
-                AnvilKitSchedule::Update,
+                AnvilKitSchedule::FixedUpdate,
                 (
                     sync_to_rapier_system,
                     step_physics_system.after(sync_to_rapier_system),
@@ -644,7 +647,7 @@ mod tests {
 
         let mut app = App::new();
         app.init_resource::<DeltaTime>();
-        app.add_systems(AnvilKitSchedule::Update, velocity_integration_system);
+        app.add_systems(AnvilKitSchedule::FixedUpdate, velocity_integration_system);
 
         let entity = app.world.spawn((
             Transform::from_xyz(0.0, 0.0, 0.0),
@@ -663,7 +666,8 @@ mod tests {
         use crate::prelude::*;
 
         let mut app = App::new();
-        app.init_resource::<CollisionEvents>();
+        app.add_event::<CollisionEvent>();
+        // 使用 Update 调度测试碰撞逻辑（FixedUpdate 需要 Time 有非零 delta）
         app.add_systems(AnvilKitSchedule::Update, collision_detection_system);
 
         // Two overlapping entities
@@ -683,8 +687,10 @@ mod tests {
 
         app.update();
 
-        let events = app.world.get_resource::<CollisionEvents>().unwrap();
+        let events = app.world.resource::<Events<CollisionEvent>>();
+        let mut reader = events.get_reader();
+        let count = reader.read(events).count();
         // Entities 0 and 1 collide; entity 2 is too far from both
-        assert_eq!(events.events.len(), 1);
+        assert_eq!(count, 1);
     }
 }

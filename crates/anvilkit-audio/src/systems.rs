@@ -7,6 +7,7 @@ use anvilkit_ecs::audio::{AudioSource, PlaybackState};
 use log::{debug, error};
 use std::io::BufReader;
 use std::fs::File;
+use rodio::Source;
 
 use crate::engine::AudioEngine;
 
@@ -56,7 +57,13 @@ pub fn audio_playback_system(
                                     match engine.get_or_create_sink(entity) {
                                         Ok(sink) => {
                                             sink.set_volume(source.volume);
-                                            sink.append(decoder);
+                                            sink.set_speed(source.pitch);
+                                            if source.looping {
+                                                let buffered = decoder.buffered();
+                                                sink.append(buffered.repeat_infinite());
+                                            } else {
+                                                sink.append(decoder);
+                                            }
                                             debug!("播放音频: {}", source.path);
                                         }
                                         Err(e) => error!("创建 sink 失败 {}: {}", source.path, e),

@@ -106,7 +106,7 @@ pub fn compute_cascade_matrices(
         splits[i] = split_far;
 
         // Compute frustum corners for this cascade slice
-        let proj = glam::Mat4::perspective_rh(fov, aspect, prev_split, split_far);
+        let proj = glam::Mat4::perspective_lh(fov, aspect, prev_split, split_far);
         let inv_vp = (proj * *view).inverse();
 
         // NDC corners → world-space
@@ -129,7 +129,7 @@ pub fn compute_cascade_matrices(
         // Build light view looking at the center of the frustum slice
         let light_pos = center - light_dir * 50.0;
         let up = if light_dir.y.abs() > 0.99 { glam::Vec3::Z } else { glam::Vec3::Y };
-        let light_view = glam::Mat4::look_at_rh(light_pos, center, up);
+        let light_view = glam::Mat4::look_at_lh(light_pos, center, up);
 
         // Find bounding box in light space
         let mut min_ls = glam::Vec3::splat(f32::MAX);
@@ -145,9 +145,9 @@ pub fn compute_cascade_matrices(
         min_ls -= glam::Vec3::splat(margin);
         max_ls += glam::Vec3::splat(margin);
 
-        let light_proj = glam::Mat4::orthographic_rh(
+        let light_proj = glam::Mat4::orthographic_lh(
             min_ls.x, max_ls.x, min_ls.y, max_ls.y,
-            -max_ls.z - 50.0, -min_ls.z + 50.0,
+            min_ls.z - 50.0, max_ls.z + 50.0,
         );
 
         matrices[i] = light_proj * light_view;
@@ -695,9 +695,9 @@ impl RenderApp {
         // Compute CSM cascade matrices for shadow mapping
         let (sw, sh) = render_state.surface_size;
         let cam_aspect = sw as f32 / sh.max(1) as f32;
-        let cam_fov = std::f32::consts::FRAC_PI_4; // 45 degrees default
+        let cam_fov = active_camera.fov_radians;
         // Approximate view matrix from camera position and forward direction
-        let cam_view_approx = glam::Mat4::look_at_rh(
+        let cam_view_approx = glam::Mat4::look_at_lh(
             camera_pos,
             camera_pos + (active_camera.view_proj.inverse() * glam::Vec4::new(0.0, 0.0, -1.0, 0.0)).truncate().normalize(),
             glam::Vec3::Y,

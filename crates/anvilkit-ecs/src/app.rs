@@ -33,6 +33,8 @@
 
 use std::collections::HashSet;
 use bevy_ecs::prelude::*;
+use bevy_ecs::event::{Event, Events, EventRegistry};
+use bevy_ecs::component::Tick;
 use crate::plugin::Plugin;
 use crate::schedule::{AnvilKitSchedule, ScheduleLabel};
 
@@ -71,6 +73,12 @@ pub struct App {
     has_started: bool,
     /// 已注册的唯一插件类型名（防止重复注册）
     pub(crate) registered_plugins: HashSet<String>,
+    /// FixedUpdate 时间累加器（秒）
+    accumulated_time: f32,
+    /// FixedUpdate 固定步长（秒），默认 1/60
+    fixed_timestep: f32,
+    /// Events 上次更新的 change tick
+    last_event_tick: Tick,
 }
 
 impl Default for App {
@@ -100,6 +108,9 @@ impl App {
             should_exit: false,
             has_started: false,
             registered_plugins: HashSet::new(),
+            accumulated_time: 0.0,
+            fixed_timestep: 1.0 / 60.0,
+            last_event_tick: Tick::new(0),
         }
     }
 
@@ -205,6 +216,29 @@ impl App {
         self
     }
 
+    /// 注册事件类型
+    ///
+    /// 注册后可使用 `EventWriter<E>` 发送事件、`EventReader<E>` 读取事件。
+    /// 事件自动双缓冲，存活 2 帧后清除。
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use anvilkit_ecs::prelude::*;
+    /// use bevy_ecs::event::Event;
+    ///
+    /// #[derive(Event)]
+    /// struct PlayerDied { entity: Entity }
+    ///
+    /// let mut app = App::new();
+    /// app.add_event::<PlayerDied>();
+    /// ```
+    pub fn add_event<E: Event>(&mut self) -> &mut Self {
+        self.init_resource::<Events<E>>();
+        EventRegistry::register_event::<E>(&mut self.world);
+        self
+    }
+
     /// 运行应用的主循环
     /// 
     /// 这将持续运行主调度器，直到应用被标记为退出。
@@ -252,9 +286,39 @@ impl App {
         if let Err(e) = self.world.try_run_schedule(AnvilKitSchedule::Main) {
             log::error!("Main schedule 执行失败: {:?}", e);
         }
+
+        // 刷新事件双缓冲（清理 2 帧前的事件，交换缓冲区）
+        if self.world.contains_resource::<EventRegistry>() {
+            let last_tick = self.last_event_tick;
+            self.world.resource_scope(|world, mut registry: Mut<EventRegistry>| {
+                registry.run_updates(world, last_tick);
+            });
+            self.last_event_tick = self.world.change_tick();
+        }
+
         if let Err(e) = self.world.try_run_schedule(AnvilKitSchedule::PreUpdate) {
             log::error!("PreUpdate schedule 执行失败: {:?}", e);
         }
+
+        // FixedUpdate 累加循环：以固定步长运行物理等确定性系统
+        {
+            let dt = self.world
+                .get_resource::<anvilkit_core::time::Time>()
+                .map(|t| t.delta_seconds())
+                .unwrap_or(self.fixed_timestep);
+            self.accumulated_time += dt;
+            let max_ticks = 10; // 防止死循环
+            let mut ticks = 0;
+            while self.accumulated_time >= self.fixed_timestep && ticks < max_ticks {
+                if let Err(e) = self.world.try_run_schedule(AnvilKitSchedule::FixedUpdate) {
+                    log::error!("FixedUpdate schedule 执行失败: {:?}", e);
+                    break;
+                }
+                self.accumulated_time -= self.fixed_timestep;
+                ticks += 1;
+            }
+        }
+
         if let Err(e) = self.world.try_run_schedule(AnvilKitSchedule::Update) {
             log::error!("Update schedule 执行失败: {:?}", e);
         }
@@ -289,6 +353,28 @@ impl App {
     /// 检查应用是否应该退出
     pub fn should_exit(&self) -> bool {
         self.should_exit
+    }
+
+    /// 设置 FixedUpdate 的固定步长（秒）
+    ///
+    /// 默认值为 1/60 秒（60Hz）。较小的步长更精确但更昂贵。
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use anvilkit_ecs::app::App;
+    ///
+    /// let mut app = App::new();
+    /// app.set_fixed_timestep(1.0 / 120.0); // 120Hz 物理更新
+    /// ```
+    pub fn set_fixed_timestep(&mut self, dt: f32) -> &mut Self {
+        self.fixed_timestep = dt.max(0.0001); // 防止零或负值
+        self
+    }
+
+    /// 获取当前 FixedUpdate 固定步长（秒）
+    pub fn fixed_timestep(&self) -> f32 {
+        self.fixed_timestep
     }
 }
 

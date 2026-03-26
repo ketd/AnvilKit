@@ -174,15 +174,47 @@ impl AnvilKitEcsPlugin {
     /// 设置基础调度器
     fn setup_schedules(&self, app: &mut App) {
         use bevy_ecs::schedule::*;
-        use crate::schedule::AnvilKitSchedule;
-        
+        use crate::schedule::{AnvilKitSchedule, AnvilKitSystemSet};
+
         // 创建主要的调度器
-        app.world.add_schedule(Schedule::new(AnvilKitSchedule::Main));
-        app.world.add_schedule(Schedule::new(AnvilKitSchedule::Startup));
-        app.world.add_schedule(Schedule::new(AnvilKitSchedule::PreUpdate));
-        app.world.add_schedule(Schedule::new(AnvilKitSchedule::Update));
-        app.world.add_schedule(Schedule::new(AnvilKitSchedule::PostUpdate));
-        app.world.add_schedule(Schedule::new(AnvilKitSchedule::Cleanup));
+        let schedules_to_create = [
+            AnvilKitSchedule::Main,
+            AnvilKitSchedule::Startup,
+            AnvilKitSchedule::PreUpdate,
+            AnvilKitSchedule::FixedUpdate,
+            AnvilKitSchedule::Update,
+            AnvilKitSchedule::PostUpdate,
+            AnvilKitSchedule::Cleanup,
+        ];
+        for label in schedules_to_create {
+            app.world.add_schedule(Schedule::new(label));
+        }
+
+        // 为 Update 和 FixedUpdate 配置 SystemSet 执行顺序
+        // Input → Time → Physics → GameLogic → Transform → Render → Audio → UI → Network → Debug
+        let configure_order = |schedule: &mut Schedule| {
+            schedule.configure_sets((
+                AnvilKitSystemSet::Input,
+                AnvilKitSystemSet::Time.after(AnvilKitSystemSet::Input),
+                AnvilKitSystemSet::Physics.after(AnvilKitSystemSet::Time),
+                AnvilKitSystemSet::GameLogic.after(AnvilKitSystemSet::Physics),
+                AnvilKitSystemSet::Transform.after(AnvilKitSystemSet::GameLogic),
+                AnvilKitSystemSet::Render.after(AnvilKitSystemSet::Transform),
+                AnvilKitSystemSet::Audio.after(AnvilKitSystemSet::Render),
+                AnvilKitSystemSet::UI.after(AnvilKitSystemSet::Audio),
+                AnvilKitSystemSet::Network.after(AnvilKitSystemSet::UI),
+                AnvilKitSystemSet::Debug.after(AnvilKitSystemSet::Network),
+            ));
+        };
+
+        if let Some(mut schedules) = app.world.get_resource_mut::<Schedules>() {
+            if let Some(schedule) = schedules.get_mut(AnvilKitSchedule::Update) {
+                configure_order(schedule);
+            }
+            if let Some(schedule) = schedules.get_mut(AnvilKitSchedule::FixedUpdate) {
+                configure_order(schedule);
+            }
+        }
     }
 }
 

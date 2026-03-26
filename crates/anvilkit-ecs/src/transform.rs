@@ -493,15 +493,43 @@ impl TransformHierarchy {
     /// 所有后代实体列表
     pub fn get_descendants(world: &World, entity: Entity) -> Vec<Entity> {
         let mut descendants = Vec::new();
-        
+
         if let Some(children) = world.get::<Children>(entity) {
             for &child in children.iter() {
                 descendants.push(child);
                 descendants.extend(Self::get_descendants(world, child));
             }
         }
-        
+
         descendants
+    }
+
+    /// 递归销毁实体及其所有后代
+    ///
+    /// 先销毁所有后代实体（从叶子节点开始），最后销毁实体本身。
+    ///
+    /// # 参数
+    ///
+    /// - `commands`: 命令缓冲区
+    /// - `world`: 世界引用
+    /// - `entity`: 要销毁的根实体
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use anvilkit_ecs::prelude::*;
+    ///
+    /// fn cleanup(mut commands: Commands, world: &World, root: Entity) {
+    ///     TransformHierarchy::despawn_recursive(&mut commands, world, root);
+    /// }
+    /// ```
+    pub fn despawn_recursive(commands: &mut Commands, world: &World, entity: Entity) {
+        let descendants = Self::get_descendants(world, entity);
+        // 从最深的后代开始销毁，避免悬空引用
+        for desc in descendants.into_iter().rev() {
+            commands.entity(desc).despawn();
+        }
+        commands.entity(entity).despawn();
     }
 }
 
