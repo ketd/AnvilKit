@@ -96,6 +96,7 @@ impl Plugin for RenderPlugin {
         // 添加渲染配置资源
         app.insert_resource(RenderConfig {
             window_config: self.window_config.clone(),
+            ..Default::default()
         });
 
         // 注册 ECS 资源
@@ -133,16 +134,31 @@ impl Plugin for RenderPlugin {
 ///
 /// ```rust
 /// use anvilkit_render::plugin::RenderConfig;
-/// use anvilkit_render::window::WindowConfig;
 ///
-/// let config = RenderConfig {
-///     window_config: WindowConfig::default(),
-/// };
+/// let config = RenderConfig::default();
+/// assert_eq!(config.msaa_samples, 4);
 /// ```
 #[derive(Debug, Clone, Resource)]
 pub struct RenderConfig {
     /// 窗口配置
     pub window_config: WindowConfig,
+    /// MSAA 采样数（默认 4，设为 1 禁用）
+    pub msaa_samples: u32,
+    /// 场景清除颜色 (linear RGBA)
+    pub clear_color: [f32; 4],
+    /// 默认背面剔除模式
+    pub default_cull_mode: wgpu::Face,
+}
+
+impl Default for RenderConfig {
+    fn default() -> Self {
+        Self {
+            window_config: WindowConfig::default(),
+            msaa_samples: 4,
+            clear_color: [0.15, 0.3, 0.6, 1.0],
+            default_cull_mode: wgpu::Face::Back,
+        }
+    }
 }
 
 /// 相机组件
@@ -162,11 +178,41 @@ pub struct RenderConfig {
 ///     far: 1000.0,
 ///     is_active: true,
 ///     aspect_ratio: 16.0 / 9.0,
+///     ..Default::default()
 /// };
 /// ```
+/// 相机投影模式
+#[derive(Debug, Clone)]
+pub enum Projection {
+    /// 透视投影（3D 场景默认）
+    Perspective {
+        /// 垂直视野角度（度）
+        fov: f32,
+    },
+    /// 正交投影（2D 场景、UI 等）
+    Orthographic {
+        /// 左边界
+        left: f32,
+        /// 右边界
+        right: f32,
+        /// 下边界
+        bottom: f32,
+        /// 上边界
+        top: f32,
+    },
+}
+
+impl Default for Projection {
+    fn default() -> Self {
+        Projection::Perspective { fov: 60.0 }
+    }
+}
+
 #[derive(Debug, Clone, Component)]
 pub struct CameraComponent {
-    /// 视野角度（度）
+    /// 投影模式
+    pub projection: Projection,
+    /// 视野角度（度）— 向后兼容，perspective 模式下等同于 projection.fov
     pub fov: f32,
     /// 近裁剪面
     pub near: f32,
@@ -176,16 +222,20 @@ pub struct CameraComponent {
     pub is_active: bool,
     /// 宽高比（由 RenderApp 在 resize 时更新，或用户手动设置）
     pub aspect_ratio: f32,
+    /// 渲染优先级（多相机时按优先级排序，高优先级先渲染）
+    pub priority: i32,
 }
 
 impl Default for CameraComponent {
     fn default() -> Self {
         Self {
+            projection: Projection::default(),
             fov: 60.0,
             near: 0.1,
             far: 1000.0,
             is_active: true,
             aspect_ratio: 16.0 / 9.0,
+            priority: 0,
         }
     }
 }
@@ -220,11 +270,21 @@ fn camera_system(
     let target = eye + forward;
 
     let view = glam::Mat4::look_at_lh(eye, target, glam::Vec3::Y);
-    let proj = glam::Mat4::perspective_lh(camera.fov.to_radians(), aspect, camera.near, camera.far);
+    let proj = match &camera.projection {
+        Projection::Perspective { fov } => {
+            glam::Mat4::perspective_lh(fov.to_radians(), aspect, camera.near, camera.far)
+        }
+        Projection::Orthographic { left, right, bottom, top } => {
+            glam::Mat4::orthographic_lh(*left, *right, *bottom, *top, camera.near, camera.far)
+        }
+    };
 
     active_camera.view_proj = proj * view;
     active_camera.camera_pos = eye;
-    active_camera.fov_radians = camera.fov.to_radians();
+    active_camera.fov_radians = match &camera.projection {
+        Projection::Perspective { fov } => fov.to_radians(),
+        Projection::Orthographic { .. } => std::f32::consts::FRAC_PI_4, // default for ortho
+    };
 }
 
 /// 渲染提取系统 (PostUpdate, after camera_system)
@@ -358,10 +418,10 @@ mod tests {
 
     #[test]
     fn test_render_config_default() {
-        let config = RenderConfig {
-            window_config: WindowConfig::default(),
-        };
+        let config = RenderConfig::default();
         assert!(config.window_config.vsync);
+        assert_eq!(config.msaa_samples, 4);
+        assert_eq!(config.clear_color, [0.15, 0.3, 0.6, 1.0]);
     }
 
     #[test]

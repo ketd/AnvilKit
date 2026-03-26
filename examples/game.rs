@@ -336,7 +336,7 @@ fn main() {
     let look_dir = (glam::Vec3::ZERO - eye).normalize();
     let cam_rot = glam::Quat::from_rotation_arc(glam::Vec3::Z, look_dir);
     app.world.spawn((
-        CameraComponent { fov: 50.0, near: 0.1, far: 100.0, is_active: true, aspect_ratio: 1024.0 / 768.0 },
+        CameraComponent { fov: 50.0, near: 0.1, far: 100.0, is_active: true, aspect_ratio: 1024.0 / 768.0, ..Default::default() },
         Transform::from_xyz(eye.x, eye.y, eye.z).with_rotation(cam_rot),
         GlobalTransform::default(),
     ));

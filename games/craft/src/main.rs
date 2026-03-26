@@ -97,6 +97,7 @@ fn main() {
             far: config::FAR_PLANE,
             is_active: true,
             aspect_ratio: 1280.0 / 720.0,
+            ..Default::default()
         },
         {
             let mut cc = CameraController::default();

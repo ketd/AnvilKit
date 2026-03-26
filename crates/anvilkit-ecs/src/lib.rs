@@ -68,6 +68,8 @@ pub mod navigation;
 pub mod network;
 pub mod profiler;
 pub mod console;
+/// 游戏状态机（State/NextState/in_state）
+pub mod state;
 
 /// 预导入模块，包含最常用的类型和 trait
 pub mod prelude {
