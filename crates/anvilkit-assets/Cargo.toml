@@ -16,6 +16,7 @@ readme = "../../README.md"
 anvilkit-core = { version = "0.1.0", path = "../anvilkit-core" }
 gltf = { workspace = true }
 glam = { workspace = true }
+image = { workspace = true }
 log = "0.4"
 notify = { workspace = true, optional = true }
 bevy_ecs = { workspace = true, optional = true }

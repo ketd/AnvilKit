@@ -8,6 +8,10 @@ use bevy_ecs::prelude::*;
 
 use crate::input_state::{InputState, KeyCode, MouseButton};
 
+/// 高性能动作标识符 — 避免 String 堆分配
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ActionId(pub u32);
+
 /// 输入绑定源
 ///
 /// 一个逻辑动作可以绑定到键盘键或鼠标按钮。
@@ -96,6 +100,12 @@ pub struct ActionMap {
     bindings: HashMap<String, Vec<InputBinding>>,
     /// 动作名 → 当前状态
     states: HashMap<String, ActionState>,
+    /// 动作名 → ActionId 映射（高性能查找）
+    name_to_id: HashMap<String, ActionId>,
+    /// ActionId → 动作名 反向映射
+    id_to_name: Vec<String>,
+    /// 下一个 ActionId
+    next_id: u32,
 }
 
 impl ActionMap {
@@ -104,6 +114,9 @@ impl ActionMap {
         Self {
             bindings: HashMap::new(),
             states: HashMap::new(),
+            name_to_id: HashMap::new(),
+            id_to_name: Vec::new(),
+            next_id: 0,
         }
     }
 
@@ -177,6 +190,36 @@ impl ActionMap {
     pub fn clear_bindings(&mut self, action: &str) {
         self.bindings.remove(action);
         self.states.remove(action);
+    }
+
+    /// 注册动作并返回高性能 ActionId
+    ///
+    /// 使用 ActionId 进行后续查询可避免 String 堆分配。
+    /// 同名动作多次注册返回相同 ID。
+    pub fn register_action(&mut self, name: &str) -> ActionId {
+        if let Some(&id) = self.name_to_id.get(name) {
+            return id;
+        }
+        let id = ActionId(self.next_id);
+        self.next_id += 1;
+        self.name_to_id.insert(name.to_string(), id);
+        self.id_to_name.push(name.to_string());
+        id
+    }
+
+    /// 通过 ActionId 查询动作是否激活（零堆分配）
+    pub fn is_action_active_by_id(&self, id: ActionId) -> bool {
+        self.id_to_name.get(id.0 as usize)
+            .and_then(|name| self.states.get(name))
+            .map_or(false, |s| s.is_active())
+    }
+
+    /// 通过 ActionId 查询动作状态（零堆分配）
+    pub fn action_state_by_id(&self, id: ActionId) -> ActionState {
+        self.id_to_name.get(id.0 as usize)
+            .and_then(|name| self.states.get(name))
+            .copied()
+            .unwrap_or(ActionState::Inactive)
     }
 }
 

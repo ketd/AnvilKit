@@ -21,6 +21,8 @@ pub mod asset_server;
 pub mod animation;
 /// Procedural mesh generation utilities (sphere, plane, box).
 pub mod procedural;
+/// 独立纹理加载（PNG/JPEG → RGBA8）
+pub mod texture;
 /// File watching for hot-reload (enabled via `hot-reload` feature).
 pub mod hot_reload;
 
@@ -32,4 +34,5 @@ pub mod prelude {
     pub use crate::gltf_loader::{load_gltf_mesh, load_gltf_scene, load_gltf_scene_multi};
     pub use crate::asset_server::{AssetServer, AssetHandle, AssetStorage, AssetId, LoadState};
     pub use crate::procedural::{generate_sphere, generate_plane, generate_box};
+    pub use crate::texture::{load_texture, load_texture_from_memory};
 }

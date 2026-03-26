@@ -235,8 +235,12 @@ pub struct AssetServer {
     asset_root: PathBuf,
     /// 路径 → AssetId 映射（去重）
     path_to_id: HashMap<PathBuf, AssetId>,
+    /// AssetId → 路径 反向映射（用于 reload）
+    id_to_path: HashMap<AssetId, PathBuf>,
     /// AssetId → 加载状态
     states: HashMap<AssetId, LoadState>,
+    /// AssetId → 已加载字节缓存
+    loaded_cache: HashMap<AssetId, Arc<Vec<u8>>>,
     /// 异步加载结果接收端
     async_rx: mpsc::Receiver<AsyncLoadResult>,
     /// 异步加载结果发送端（用于 clone 给后台线程）
@@ -267,7 +271,9 @@ impl AssetServer {
         Self {
             asset_root: asset_root.into(),
             path_to_id: HashMap::new(),
+            id_to_path: HashMap::new(),
             states: HashMap::new(),
+            loaded_cache: HashMap::new(),
             async_rx: rx,
             async_tx: tx,
             completed: Vec::new(),
@@ -281,6 +287,7 @@ impl AssetServer {
     pub fn load<T>(&mut self, path: impl AsRef<Path>) -> AssetHandle<T> {
         let full_path = self.asset_root.join(path.as_ref());
         let id = *self.path_to_id.entry(full_path.clone()).or_insert_with(AssetId::next);
+        self.id_to_path.entry(id).or_insert_with(|| full_path.clone());
 
         if !self.states.contains_key(&id) {
             self.states.insert(id, LoadState::Loading);
@@ -328,8 +335,9 @@ impl AssetServer {
         let mut count = 0;
         while let Ok(result) = self.async_rx.try_recv() {
             match &result.data {
-                Ok(_) => {
+                Ok(data) => {
                     self.states.insert(result.id, LoadState::Loaded);
+                    self.loaded_cache.insert(result.id, Arc::new(data.clone()));
                     log::debug!("Asset {:?} loaded successfully", result.id);
                 }
                 Err(e) => {
@@ -368,6 +376,45 @@ impl AssetServer {
     /// 获取资产根目录
     pub fn asset_root(&self) -> &Path {
         &self.asset_root
+    }
+
+    /// 强制重新加载指定资产（清除缓存并重新发起异步加载）
+    ///
+    /// # 示例
+    ///
+    /// ```rust,no_run
+    /// use anvilkit_assets::asset_server::{AssetServer, AssetId};
+    ///
+    /// let mut server = AssetServer::new("assets");
+    /// // server.reload(some_id); // 文件修改后强制刷新
+    /// ```
+    pub fn reload(&mut self, id: AssetId) {
+        // 清除缓存
+        self.loaded_cache.remove(&id);
+        self.states.insert(id, LoadState::Loading);
+
+        // 查找路径并重新发起异步加载
+        if let Some(file_path) = self.id_to_path.get(&id).cloned() {
+            let tx = self.async_tx.clone();
+            let _ = self.task_tx.send(Box::new(move || {
+                let result = std::fs::read(&file_path)
+                    .map_err(|e| format!("Failed to reload {:?}: {}", file_path, e));
+                let _ = tx.send(AsyncLoadResult { id, data: result });
+            }));
+        }
+    }
+
+    /// 获取缓存的资产字节数据
+    ///
+    /// 如果资产已加载过，返回 `Some(Arc<Vec<u8>>)`。
+    /// 未加载或加载失败返回 `None`。
+    pub fn get_cached(&self, id: AssetId) -> Option<Arc<Vec<u8>>> {
+        self.loaded_cache.get(&id).cloned()
+    }
+
+    /// 缓存中的资产数量
+    pub fn cache_len(&self) -> usize {
+        self.loaded_cache.len()
     }
 }
 

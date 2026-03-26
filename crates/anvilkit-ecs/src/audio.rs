@@ -66,6 +66,8 @@ pub struct AudioSource {
     pub spatial_range: f32,
     /// 当前播放状态
     pub state: PlaybackState,
+    /// 音频总线分类（用于混音音量控制）
+    pub bus: AudioBusCategory,
 }
 
 impl AudioSource {
@@ -79,6 +81,7 @@ impl AudioSource {
             spatial: false,
             spatial_range: 20.0,
             state: PlaybackState::Stopped,
+            bus: AudioBusCategory::SFX,
         }
     }
 
@@ -116,6 +119,60 @@ impl Default for AudioListener {
     }
 }
 
+/// 音频总线分类
+///
+/// 用于将音频源分组到不同的混音通道。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum AudioBusCategory {
+    /// 音效（默认）
+    #[default]
+    SFX,
+    /// 背景音乐
+    Music,
+    /// 语音/对话
+    Voice,
+}
+
+/// 音频总线资源 — 主音量 + 分类音量
+///
+/// # 示例
+///
+/// ```rust
+/// use anvilkit_ecs::audio::AudioBus;
+///
+/// let bus = AudioBus::default();
+/// assert_eq!(bus.master, 1.0);
+/// ```
+#[derive(Resource, Debug, Clone)]
+pub struct AudioBus {
+    /// 全局主音量 [0.0, 1.0]
+    pub master: f32,
+    /// 音乐音量 [0.0, 1.0]
+    pub music: f32,
+    /// 音效音量 [0.0, 1.0]
+    pub sfx: f32,
+    /// 语音音量 [0.0, 1.0]
+    pub voice: f32,
+}
+
+impl Default for AudioBus {
+    fn default() -> Self {
+        Self { master: 1.0, music: 1.0, sfx: 1.0, voice: 1.0 }
+    }
+}
+
+impl AudioBus {
+    /// 获取指定分类的有效音量（含主音量）
+    pub fn effective_volume(&self, category: AudioBusCategory) -> f32 {
+        let cat_vol = match category {
+            AudioBusCategory::SFX => self.sfx,
+            AudioBusCategory::Music => self.music,
+            AudioBusCategory::Voice => self.voice,
+        };
+        self.master * cat_vol
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,5 +198,25 @@ mod tests {
     fn test_audio_listener() {
         let listener = AudioListener::default();
         assert!(listener.is_active);
+    }
+
+    #[test]
+    fn test_audio_bus_effective_volume() {
+        let mut bus = AudioBus::default();
+        assert_eq!(bus.effective_volume(AudioBusCategory::SFX), 1.0);
+
+        bus.master = 0.5;
+        bus.sfx = 0.8;
+        let vol = bus.effective_volume(AudioBusCategory::SFX);
+        assert!((vol - 0.4).abs() < 0.001);
+
+        bus.master = 0.0;
+        assert_eq!(bus.effective_volume(AudioBusCategory::Music), 0.0);
+    }
+
+    #[test]
+    fn test_audio_bus_category_default() {
+        let src = AudioSource::new("test.ogg");
+        assert_eq!(src.bus, AudioBusCategory::SFX);
     }
 }
