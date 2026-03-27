@@ -24,6 +24,7 @@ anvilkit-camera = { version = "0.1.0", path = "../anvilkit-camera" }
 anvilkit-app = { version = "0.1.0", path = "../anvilkit-app" }
 anvilkit-ui = { version = "0.1.0", path = "../anvilkit-ui" }
 anvilkit-gameplay = { version = "0.1.0", path = "../anvilkit-gameplay" }
+anvilkit-data = { version = "0.1.0", path = "../anvilkit-data" }
 
 [features]
 default = []

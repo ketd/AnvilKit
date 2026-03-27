@@ -141,18 +141,18 @@
 
 ## Phase 6: Data Tables & i18n (数据驱动)
 
-- [ ] 6.1 创建 `crates/anvilkit-data/` crate，添加到 workspace
-- [ ] 6.2 实现 `DataTable<K, V>` — RON/JSON 加载 + hot-reload 支持
-- [ ] 6.3 实现 `DataTablePlugin` — 注册表为 ECS Resource
-- [ ] 6.4 实现 `Locale` 资源 + `translate(key)` + `.ron` 翻译文件加载
-- [ ] 6.5 实现翻译文件 fallback（缺失 key 返回 key 本身）
-- [ ] 6.6 添加 anvilkit-data 到 facade crate
-- [ ] 6.7 单元测试 + `cargo test --workspace`
+- [x] 6.1 创建 `crates/anvilkit-data/` crate，添加到 workspace
+- [x] 6.2 实现 `DataTable<K, V>` — RON/JSON 加载 + hot-reload 支持
+- [x] 6.3 实现 `DataTablePlugin` — 注册表为 ECS Resource
+- [x] 6.4 实现 `Locale` 资源 + `translate(key)` + `.ron` 翻译文件加载
+- [x] 6.5 实现翻译文件 fallback（缺失 key 返回 key 本身）
+- [x] 6.6 添加 anvilkit-data 到 facade crate
+- [x] 6.7 单元测试 + `cargo test --workspace`
 
 ## Phase 7: 收尾
 
-- [ ] 7.1 `cargo check --workspace` 零错误零警告
-- [ ] 7.2 `cargo test --workspace` 全量测试通过
-- [ ] 7.3 两个游戏运行 + 视觉验证
+- [x] 7.1 `cargo check --workspace` 零错误零警告
+- [x] 7.2 `cargo test --workspace` 全量测试通过
+- [ ] 7.3 两个游戏运行 + 视觉验证 — requires GPU runtime
 - [ ] 7.4 更新 project.md 路线图
 - [ ] 7.5 更新 README.md Quick Start（使用 AnvilKitApp::run 模式）

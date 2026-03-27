@@ -2,7 +2,7 @@ use std::thread;
 
 #[allow(unused_imports)]
 use anvilkit::prelude::*;
-use anvilkit_app::prelude::*;
+use anvilkit_app::{AnvilKitApp, GameCallbacks, GameConfig, GameContext};
 
 // 迁移说明: 未来可使用 DefaultPlugins 替代手动 plugin 注册:
 //   app.add_plugins(DefaultPlugins::new().with_window(config));
