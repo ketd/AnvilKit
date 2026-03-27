@@ -37,26 +37,26 @@
 
 ## Phase 2: UI Core (独立 UI 框架)
 
-- [ ] 2.1 创建 `crates/anvilkit-ui/` crate，添加到 workspace
-- [ ] 2.2 从 render/ui.rs 提取 UI 数据模型到 anvilkit-ui：UiStyle, UiText, UiNode, Val, FlexDirection, Align
-- [ ] 2.3 从 render/ui.rs 提取 UiLayoutEngine 到 anvilkit-ui（带 taffy 依赖）
-- [ ] 2.4 从 render/ui.rs 提取事件系统到 anvilkit-ui：UiEventKind, UiEvent, UiEvents, ui_hit_test, process_ui_interactions
-- [ ] 2.5 从 render/ui.rs 提取 Widget 工厂到 anvilkit-ui
-- [ ] 2.6 实现 UiTree — 父子节点关系管理（利用 bevy_ecs Parent/Children）
-- [ ] 2.7 实现递归树布局（UiLayoutEngine 支持多层嵌套而非单层 children）
-- [ ] 2.8 实现 UiPlugin — 注册 layout_system + event_system 到 ECS 调度
-- [ ] 2.9 实现焦点管理 — Tab 切换焦点 + UiInteraction 组件 (None/Hovered/Pressed/Focused)
-- [ ] 2.10 实现文字集成 — TextRenderer 作为 UiRenderer 的 text pass（文字在矩形内渲染）
-- [ ] 2.11 实现 UiTheme 资源 — 默认颜色/字体/间距/边框
-- [ ] 2.12 新增控件：Checkbox（点击切换 + UiChangeEvent）
-- [ ] 2.13 新增控件：Slider（拖拽 handle + 值更新）
-- [ ] 2.14 新增控件：TextInput（光标 + 键盘输入 + 选区）
-- [ ] 2.15 新增控件：ScrollView（可滚动容器 + 滚轮/拖拽）
-- [ ] 2.16 新增控件：Dropdown（下拉选择列表）
-- [ ] 2.17 render/ui.rs 瘦身 — 只保留 UiRenderer + UiVertex（GPU 部分），依赖 anvilkit-ui 的类型
-- [ ] 2.18 anvilkit-render 的 Cargo.toml 移除 taffy 直接依赖（通过 anvilkit-ui 间接获取）
-- [ ] 2.19 添加 anvilkit-ui 到 facade crate 依赖和 re-export
-- [ ] 2.20 `cargo test --workspace` 全量验证
+- [x] 2.1 创建 `crates/anvilkit-ui/` crate，添加到 workspace
+- [x] 2.2 从 render/ui.rs 提取 UI 数据模型到 anvilkit-ui：UiStyle, UiText, UiNode, Val, FlexDirection, Align
+- [x] 2.3 从 render/ui.rs 提取 UiLayoutEngine 到 anvilkit-ui（带 taffy 依赖）
+- [x] 2.4 从 render/ui.rs 提取事件系统到 anvilkit-ui：UiEventKind, UiEvent, UiEvents, ui_hit_test, process_ui_interactions
+- [x] 2.5 从 render/ui.rs 提取 Widget 工厂到 anvilkit-ui
+- [x] 2.6 实现 UiTree — 父子节点关系管理（利用 bevy_ecs Parent/Children）
+- [x] 2.7 实现递归树布局（UiLayoutEngine 支持多层嵌套而非单层 children）
+- [x] 2.8 实现 UiPlugin — 注册 layout_system + event_system 到 ECS 调度
+- [x] 2.9 实现焦点管理 — Tab 切换焦点 + UiInteraction 组件 (None/Hovered/Pressed/Focused)
+- [x] 2.10 实现文字集成 — TextRenderer 作为 UiRenderer 的 text pass（文字在矩形内渲染）
+- [x] 2.11 实现 UiTheme 资源 — 默认颜色/字体/间距/边框
+- [x] 2.12 新增控件：Checkbox（点击切换 + UiChangeEvent）
+- [x] 2.13 新增控件：Slider（拖拽 handle + 值更新）
+- [x] 2.14 新增控件：TextInput（光标 + 键盘输入 + 选区）
+- [x] 2.15 新增控件：ScrollView（可滚动容器 + 滚轮/拖拽）
+- [x] 2.16 新增控件：Dropdown（下拉选择列表）
+- [x] 2.17 render/ui.rs 瘦身 — 只保留 UiRenderer + UiVertex（GPU 部分），依赖 anvilkit-ui 的类型
+- [x] 2.18 anvilkit-render 的 Cargo.toml 移除 taffy 直接依赖（通过 anvilkit-ui 间接获取）
+- [x] 2.19 添加 anvilkit-ui 到 facade crate 依赖和 re-export
+- [x] 2.20 `cargo test --workspace` 全量验证
 
 ## Phase 3: Gameplay Systems (游戏性核心)
 

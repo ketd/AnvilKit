@@ -18,6 +18,7 @@ anvilkit-core = { version = "0.1.0", path = "../anvilkit-core", features = ["bev
 anvilkit-ecs = { version = "0.1.0", path = "../anvilkit-ecs" }
 anvilkit-assets = { version = "0.1.0", path = "../anvilkit-assets" }
 anvilkit-input = { version = "0.1.0", path = "../anvilkit-input" }
+anvilkit-ui = { version = "0.1.0", path = "../anvilkit-ui" }
 
 # ECS 框架（derive 宏需要直接引用）
 bevy_ecs = { workspace = true }
@@ -35,8 +36,8 @@ glam = { workspace = true }
 # 安全的内存布局转换（顶点数据）
 bytemuck = { version = "1", features = ["derive"] }
 
-# UI 布局
-taffy = "0.4"
+# UI 布局 (通过 anvilkit-ui 间接依赖 taffy)
+# taffy = "0.4"  -- removed: now via anvilkit-ui
 
 # 日志记录
 log = "0.4"

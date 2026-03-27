@@ -351,7 +351,7 @@ fn main() {
     // UI nodes
     app.world.spawn(UiNode {
         background_color: [0.0, 0.0, 0.0, 0.7],
-        border_radius: 8.0,
+        corner_radius: 8.0,
         text: Some(UiText::new("Score: 0").with_font_size(24.0)),
         visible: true,
         computed_rect: [10.0, 10.0, 200.0, 40.0],
@@ -360,7 +360,7 @@ fn main() {
     });
     app.world.spawn(UiNode {
         background_color: [0.5, 0.0, 0.0, 0.7],
-        border_radius: 8.0,
+        corner_radius: 8.0,
         text: Some(UiText::new("HP: 100").with_font_size(24.0).with_color([1.0, 0.2, 0.2, 1.0])),
         visible: true,
         computed_rect: [10.0, 60.0, 200.0, 40.0],

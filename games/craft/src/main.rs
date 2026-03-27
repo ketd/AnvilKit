@@ -684,7 +684,7 @@ impl CraftGame {
                 let sx = bar_x + i as f32 * (slot_size + slot_gap);
                 let mut node = UiNode {
                     background_color: bg,
-                    border_radius: 4.0,
+                    corner_radius: 4.0,
                     border_width: if is_selected { 2.0 } else { 1.0 },
                     border_color,
                     text: None,
