@@ -147,8 +147,22 @@ pub enum AnvilKitError {
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
 
+    /// 持久化错误
+    ///
+    /// 包括存档读写、迁移失败、数据损坏等。
+    #[error("持久化错误: {message}")]
+    Persistence {
+        /// 错误消息
+        message: String,
+        /// 相关文件路径
+        path: Option<String>,
+        /// 可选的底层错误
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
+
     /// 通用错误
-    /// 
+    ///
     /// 用于不属于其他特定类别的错误。
     #[error("AnvilKit 错误: {message}")]
     Generic {
@@ -187,6 +201,8 @@ pub enum ErrorCategory {
     Io,
     /// 序列化相关错误
     Serialization,
+    /// 持久化相关错误
+    Persistence,
     /// 通用错误
     Generic,
 }
@@ -205,6 +221,7 @@ impl fmt::Display for ErrorCategory {
             ErrorCategory::Network => "网络",
             ErrorCategory::Io => "I/O",
             ErrorCategory::Serialization => "序列化",
+            ErrorCategory::Persistence => "持久化",
             ErrorCategory::Generic => "通用",
         };
         write!(f, "{}", name)
@@ -342,6 +359,24 @@ impl AnvilKitError {
         }
     }
 
+    /// 创建持久化错误
+    pub fn persistence(message: impl Into<String>) -> Self {
+        Self::Persistence {
+            message: message.into(),
+            path: None,
+            source: None,
+        }
+    }
+
+    /// 创建持久化错误（带文件路径）
+    pub fn persistence_with_path(message: impl Into<String>, path: impl Into<String>) -> Self {
+        Self::Persistence {
+            message: message.into(),
+            path: Some(path.into()),
+            source: None,
+        }
+    }
+
     /// 创建通用错误
     pub fn generic(message: impl Into<String>) -> Self {
         Self::Generic {
@@ -373,6 +408,7 @@ impl AnvilKitError {
             Self::Network { .. } => ErrorCategory::Network,
             Self::Io(_) => ErrorCategory::Io,
             Self::Serialization { .. } => ErrorCategory::Serialization,
+            Self::Persistence { .. } => ErrorCategory::Persistence,
             Self::Generic { .. } => ErrorCategory::Generic,
         }
     }
@@ -393,6 +429,7 @@ impl AnvilKitError {
             Self::Network { message, .. } => Cow::Borrowed(message),
             Self::Io(err) => Cow::Owned(err.to_string()),
             Self::Serialization { message, .. } => Cow::Borrowed(message),
+            Self::Persistence { message, .. } => Cow::Borrowed(message),
             Self::Generic { message, .. } => Cow::Borrowed(message),
         }
     }
@@ -466,6 +503,11 @@ impl AnvilKitError {
             },
             Self::Serialization { message, source } => Self::Serialization {
                 message: format!("{}: {}", context, message),
+                source,
+            },
+            Self::Persistence { message, path, source } => Self::Persistence {
+                message: format!("{}: {}", context, message),
+                path,
                 source,
             },
         }

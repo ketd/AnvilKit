@@ -3,8 +3,6 @@
 //! 提供与 AnvilKit ECS 系统的集成，实现渲染功能的插件化。
 
 use anvilkit_ecs::prelude::*;
-use anvilkit_ecs::physics::DeltaTime;
-use anvilkit_input::prelude::InputState;
 use log::info;
 
 use crate::window::WindowConfig;
@@ -104,8 +102,8 @@ impl Plugin for RenderPlugin {
         app.init_resource::<DrawCommandList>();
         app.init_resource::<RenderAssets>();
         app.init_resource::<SceneLights>();
-        app.insert_resource(InputState::new());
-        app.init_resource::<DeltaTime>();
+        // Note: InputState and DeltaTime are initialized by AnvilKitApp/AutoPlugins,
+        // not by RenderPlugin. Games using RenderPlugin directly must init them manually.
 
         // 帧捕获资源（capture feature）
         #[cfg(feature = "capture")]

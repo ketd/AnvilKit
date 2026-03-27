@@ -78,26 +78,26 @@
 ## Phase 4: Crate Restructuring (结构清理)
 
 ### 4.1 Physics 模块目录化
-- [ ] 4.1.1 physics.rs → physics/ 目录：mod.rs + components.rs + aabb.rs + rapier.rs + events.rs
-- [ ] 4.1.2 删除废弃的 `CollisionEvents` 资源，Rapier 系统改用 `EventWriter<CollisionEvent>`
-- [ ] 4.1.3 更新所有 import path（craft/billiards/examples）
+- [x] 4.1.1 physics.rs → physics/ 目录：mod.rs + components.rs + aabb.rs + rapier.rs + events.rs
+- [x] 4.1.2 删除废弃的 `CollisionEvents` 资源，Rapier 系统改用 `EventWriter<CollisionEvent>`
+- [x] 4.1.3 更新所有 import path（craft/billiards/examples）
 
 ### 4.2 Render 文件整理
-- [ ] 4.2.1 拆分 events.rs (1414 行)：events.rs + lighting.rs + gpu_init.rs + render_loop.rs
-- [ ] 4.2.2 移动 `Aabb` 到 `anvilkit-core::math`，render crate 添加 re-export
-- [ ] 4.2.3 移动 `raycast.rs` 函数到 `anvilkit-core::math::raycast`，render crate 添加 re-export
-- [ ] 4.2.4 从 `RenderPlugin::build()` 移除 `InputState` 和 `DeltaTime` 初始化
-- [ ] 4.2.5 draw.rs 拆分：spatial.rs (Aabb/Frustum) + camera.rs (ActiveCamera) + lighting.rs (lights) + commands.rs (DrawCommandList/MaterialParams) + batching.rs (UniformBatchBuffer/InstanceData)
+- [ ] 4.2.1 拆分 events.rs (1414 行) — deferred: 纯组织性重构，不影响功能
+- [ ] 4.2.2 移动 `Aabb` 到 `anvilkit-core::math` — deferred: 需要 bevy_ecs feature gate 协调
+- [ ] 4.2.3 移动 `raycast.rs` 函数到 `anvilkit-core::math::raycast` — deferred
+- [x] 4.2.4 从 `RenderPlugin::build()` 移除 `InputState` 和 `DeltaTime` 初始化
+- [ ] 4.2.5 draw.rs 拆分 — deferred: 纯组织性重构
 
 ### 4.3 Persistence 独立化
-- [ ] 4.3.1 添加 `AnvilKitError::Persistence` 变体 + `persistence()`/`persistence_with_path()` 构造函数
-- [ ] 4.3.2 persistence 模块所有函数改用 `Persistence` 错误变体替代 `generic()`
-- [ ] 4.3.3 persistence 类型添加 `#[derive(Resource)]`（在 bevy_ecs feature 下）
-- [ ] 4.3.4 实现 `PersistencePlugin` — 注册 SaveManager/AutoSaveConfig/AutoSaveState + auto_save_system
-- [ ] 4.3.5 persistence 类型添加到 core crate prelude（cfg-gated）
+- [x] 4.3.1 添加 `AnvilKitError::Persistence` 变体 + `persistence()`/`persistence_with_path()` 构造函数
+- [ ] 4.3.2 persistence 模块所有函数改用 `Persistence` 错误变体替代 `generic()` — deferred
+- [ ] 4.3.3 persistence 类型添加 `#[derive(Resource)]`（在 bevy_ecs feature 下） — deferred
+- [ ] 4.3.4 实现 `PersistencePlugin` — deferred
+- [ ] 4.3.5 persistence 类型添加到 core crate prelude（cfg-gated） — deferred
 
 ### 4.4 验证
-- [ ] 4.4.1 `cargo test --workspace` 全量验证
+- [x] 4.4.1 `cargo test --workspace` 全量验证
 - [ ] 4.4.2 两个游戏运行验证
 
 ## Phase 5: Fix Disconnections (修复断联系统)
