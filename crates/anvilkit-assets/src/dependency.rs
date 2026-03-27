@@ -19,6 +19,7 @@ pub struct DependencyGraph {
 static EMPTY: std::sync::LazyLock<HashSet<u64>> = std::sync::LazyLock::new(HashSet::new);
 
 impl DependencyGraph {
+    /// Create an empty dependency graph.
     pub fn new() -> Self {
         Self { deps: HashMap::new(), reverse: HashMap::new() }
     }
@@ -114,6 +115,7 @@ impl DependencyGraph {
         cascade
     }
 
+    /// Total number of unique assets in the graph.
     pub fn len(&self) -> usize {
         let mut all = HashSet::new();
         for (k, v) in &self.deps {
@@ -123,10 +125,12 @@ impl DependencyGraph {
         all.len()
     }
 
+    /// Returns true if no dependencies are tracked.
     pub fn is_empty(&self) -> bool {
         self.deps.is_empty() && self.reverse.is_empty()
     }
 
+    /// Remove all entries from the graph.
     pub fn clear(&mut self) {
         self.deps.clear();
         self.reverse.clear();

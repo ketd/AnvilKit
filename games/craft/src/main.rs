@@ -160,7 +160,6 @@ fn main() {
             app,
             initialized: false,
             voxel_gpu: None,
-            world_gen: WorldGenerator::new(seed),
             chunks: ChunkManager::new(request_tx, result_rx),
             line_renderer: None,
             text_renderer: None,
@@ -176,7 +175,6 @@ struct CraftApp {
     app: App,
     initialized: bool,
     voxel_gpu: Option<VoxelGpu>,
-    world_gen: WorldGenerator,
     chunks: ChunkManager,
     // HUD renderers
     line_renderer: Option<LineRenderer>,
