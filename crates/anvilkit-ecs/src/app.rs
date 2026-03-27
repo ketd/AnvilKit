@@ -103,6 +103,22 @@ impl App {
         // 初始化基础调度器
         world.init_resource::<Schedules>();
 
+        // 预创建所有标准调度阶段，避免 try_run_schedule 返回 TryRunScheduleError
+        {
+            let mut schedules = world.resource_mut::<Schedules>();
+            for label in [
+                AnvilKitSchedule::Startup,
+                AnvilKitSchedule::Main,
+                AnvilKitSchedule::PreUpdate,
+                AnvilKitSchedule::FixedUpdate,
+                AnvilKitSchedule::Update,
+                AnvilKitSchedule::PostUpdate,
+                AnvilKitSchedule::Cleanup,
+            ] {
+                schedules.entry(label);
+            }
+        }
+
         Self {
             world,
             should_exit: false,

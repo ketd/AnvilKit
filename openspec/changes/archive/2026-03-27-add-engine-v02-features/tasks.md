@@ -34,23 +34,23 @@
 - [x] 2.2.1 为 Parent/Children 组件 derive serde（conditional on "serde" feature）
 - [x] 2.2.2 实现 `SceneSerializer::save/load`（RON 格式）
 - [x] 2.2.3 添加 `Serializable` marker component
-- [ ] 2.2.4 迁移 Craft 的 persistence.rs 到通用方案（留待后续整合）
+- [x] 2.2.4 迁移 Craft 的 persistence.rs 到通用方案（SaveManager + WorldStorage，保留旧格式自动迁移）
 
 ### 2.3 持久化系统 ✅
 - [x] 2.3.1 实现 `SaveManager`（存档槽位、元数据、list/save/load/delete）
-- [ ] 2.3.2 实现自动存档（定时器 + `_autosave` 槽位）— 接口已有，定时器逻辑由游戏实现
-- [ ] 2.3.3 实现存档版本迁移框架（`SaveMigration` trait）— 留待实际需求驱动
+- [x] 2.3.2 实现自动存档（AutoSaveConfig + AutoSaveState + auto_save_tick，槽位轮转）
+- [x] 2.3.3 实现存档版本迁移框架（SaveMigration trait + MigrationRunner，链式版本升级）
 - [x] 2.3.4 实现 `Settings` 资源（RON 格式、类型化分区、default fallback）
 - [x] 2.3.5 实现 `WorldStorage` KV 后端（文件系统，原子写入 write-tmp-rename）
 - [x] 2.3.6 实现 batch 写入（batch_put，每个 key 原子性）
-- [ ] 2.3.7 实现 `AssetCache`（内容 hash → 编译产物，LRU 逐出）— 留待热重载集成
-- [ ] 2.3.8 迁移 Craft 的 persistence.rs 到引擎 SaveManager + WorldStorage — 留待后续整合
+- [x] 2.3.7 实现 `AssetCache`（SipHash content hash → in-memory LRU 缓存，可配置 max_size）
+- [x] 2.3.8 迁移 Craft 的 persistence.rs 到引擎 SaveManager + WorldStorage（含旧格式自动迁移）
 
 ### 2.4 异步资源加载 ✅
 - [x] 2.4.1 添加后台线程到 AssetServer（std::thread::spawn per load）
 - [x] 2.4.2 实现 `load_async()` 返回 Handle + LoadState
 - [x] 2.4.3 完成通道机制（mpsc channel + process_completed + drain_completed）
-- [ ] 2.4.4 实现资源依赖追踪和级联卸载 — 留待实际需求驱动
+- [x] 2.4.4 实现资源依赖追踪和级联卸载（DependencyGraph，递归孤儿收集）
 
 ### 2.5 资源热重载 ✅
 - [x] 2.5.1 集成 `notify` crate 文件监视（FileWatcher）
@@ -66,15 +66,15 @@
 - [x] 3.1.3 ~~实现 sync_to_rapier → step → sync_from_rapier 管线~~ 已有
 - [x] 3.1.4 实现碰撞事件收集（extract_collision_events_system，从 NarrowPhase 提取）
 - [x] 3.1.5 实现 `RapierContext::raycast()`（遍历 collider_set, ray-shape 检测）
-- [ ] 3.1.6 实现关节约束（Fixed, Revolute, Prismatic, Spherical）— 留待实际需求驱动
-- [ ] 3.1.7 迁移 Craft 的自定义 AABB 物理到引擎物理 — 留待后续整合
+- [x] 3.1.6 实现关节约束（FixedJoint, RevoluteJoint, PrismaticJoint, SphericalJoint + sync_joints_to_rapier_system）
+- [x] 3.1.7 迁移 Craft 物理到引擎 Velocity + AabbCollider 组件（保留体素碰撞逻辑）
 
 ### 3.2 UI 框架 ✅
 - [x] 3.2.1 ~~实现 flexbox 布局引擎~~ 已有（UiLayoutEngine + taffy）
 - [x] 3.2.2 实现 UI 事件系统（ui_hit_test + process_ui_interactions，HoverEnter/Leave/Click）
 - [x] 3.2.3 ~~实现 UI 渲染 pass~~ 已有（UiRenderer + ui.wgsl）
 - [x] 3.2.4 实现基础控件（Widget::button/label/panel/row/column）
-- [ ] 3.2.5 迁移 Craft HUD 到 UI 框架 — 留待后续整合
+- [x] 3.2.5 迁移 Craft HUD 热栏到 UiRenderer（SDF 圆角矩形替代线框，保留 TextRenderer 文字）
 
 ### 3.3 骨骼动画管线 ✅
 - [x] 3.3.1 ~~编写 skinning vertex shader~~ 已有（skinned_pbr.wgsl, MAX_JOINTS=128）

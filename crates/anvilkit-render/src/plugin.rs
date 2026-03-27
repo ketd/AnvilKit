@@ -208,6 +208,7 @@ impl Default for Projection {
     }
 }
 
+/// Camera component with projection, clipping planes, and activation state.
 #[derive(Debug, Clone, Component)]
 pub struct CameraComponent {
     /// 投影模式

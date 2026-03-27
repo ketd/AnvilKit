@@ -24,7 +24,7 @@ pub fn camera_effects_system(
 
         // Landing shake
         if player.on_ground && !player.was_on_ground {
-            let impact = (-player.velocity.y * 0.02).clamp(0.0, 0.3);
+            let impact = (-player.last_vy * 0.02).clamp(0.0, 0.3);
             if impact > 0.02 {
                 fx.add_shake(impact);
             }

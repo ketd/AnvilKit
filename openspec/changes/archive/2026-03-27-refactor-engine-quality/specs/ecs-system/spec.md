@@ -60,16 +60,6 @@ All debug and utility output SHALL use the `log` crate (`log::info!`, `log::debu
 - **WHEN** an entity has `Visibility::Inherited` and its parent has `Visibility::Hidden`
 - **THEN** the entity is treated as hidden during visibility filtering
 
-## REMOVED Requirements
-
-### Requirement: SystemCombinator chain and parallel
-**Reason**: `SystemCombinator::chain()` and `SystemCombinator::parallel()` are no-op implementations that return the input systems unchanged, providing no actual functionality and misleading users.
-**Migration**: Users relying on these methods should use bevy_ecs native system ordering (`.before()` / `.after()`) or `IntoSystemConfigs::chain()` directly.
-
-### Requirement: SystemUtils timed_system
-**Reason**: `SystemUtils::timed_system()` accepts an interval parameter but ignores it entirely, returning the system unmodified. This is misleading.
-**Migration**: Users should implement their own timer-based system execution using `Time` resource and a `Local<Timer>` parameter.
-
 ## ADDED Requirements
 
 ### Requirement: Unified Logging

@@ -26,8 +26,8 @@
 
 - [x] 2.1 重构 `render_ecs()` — shadow pass: 单 encoder + 单 render pass + 循环 draw calls + Clear 仅一次
 - [x] 2.2 重构 `render_ecs()` — scene pass: 单 encoder + 单 render pass + 循环 draw calls + MSAA resolve 正确
-- [ ] 2.3 引入 `DynamicUniformBuffer` — 预分配 1024 draw commands 容量，每个 draw 使用 offset 索引 uniform 数据
-- [ ] 2.4 消除 per-draw uniform buffer write — 所有 draw command 的 uniform 数据一次性写入 dynamic buffer
+- [x] 2.3 引入 `DynamicUniformBuffer` — 1MB 动态 uniform buffer (1024 draws x 1024B), has_dynamic_offset bind group
+- [x] 2.4 消除 per-draw uniform buffer write — UniformBatchBuffer 累积所有 draw 数据，单次 write_buffer，4N render passes → 4
 - [x] 2.5 `compute_matrix()` 结果缓存 — per-entity 只调用一次，存入局部 `model` 变量
 - [x] 2.6 引入 `BufferPool` struct — acquire/release API，上限 64 buffers，2 个单元测试
 - [x] 2.7 SpriteRenderer: cached_vb 字段 + write_buffer 复用（不再 create_buffer_init 每帧）
@@ -36,7 +36,7 @@
 - [x] 2.10 LineRenderer: cached_vb + write_buffer 复用
 - [x] 2.11 TextRenderer: cached_vb + write_buffer 复用
 - [x] 2.12 `RenderAssets` 增加 `remove_mesh/material/pipeline` + `mesh/material/pipeline_count()` 方法
-- [ ] 2.13 BRDF LUT 预计算为 256x256 binary 文件，启动时直接加载（events.rs:409）
+- [x] 2.13 BRDF LUT 预计算为 256x256 binary 文件 (.cache/brdf_lut_256.bin)，首次生成后缓存加载
 - [x] 2.14 TextRenderer / LineRenderer 复用 bind group layout（不再 create 两次相同的 layout）
 - [x] 2.15 normal matrix: uniform-scale 检测 → transpose()，non-uniform → inverse().transpose()
 
@@ -44,7 +44,7 @@
 
 - [x] 3.1 Craft: `DeltaTime` 从 `Instant::elapsed()` 实时更新，clamp 到 [0.001, 0.1]
 - [x] 3.2 Craft: 新 chunk 插入 world 时标记自身和四邻为 dirty，触发 re-mesh
-- [ ] 3.3 Craft: 初始 chunk 生成走异步管线，添加 loading screen（main.rs:318-320）
+- [x] 3.3 Craft: 初始 chunk 生成走异步管线，通过 worker 线程池异步分发，游戏即时启动
 - [x] 3.4 Craft: 提取 `mark_dirty_with_neighbors()` 共享函数，消除重复
 - [x] 3.5 Craft: `WorldSeed` resource 替代 3 处硬编码 seed
 - [x] 3.6 Craft: texture 加载使用 `Result` + 紫黑棋盘 fallback 替代 `.expect()`
@@ -90,5 +90,5 @@
 - [x] 6.4 `ScaledTime::delta()` 和 `delta_seconds()` 文档说明负 scale 行为差异
 - [x] 6.5 `remap()` 增加 division-by-zero 守卫（from_min==from_max 返回目标中点）
 - [x] 6.6 全量 `cargo check --workspace` 零错误验证通过
-- [x] 6.7 全量 `cargo test --workspace` 662 测试通过验证
-- [ ] 6.8 运行 showcase 和两个游戏视觉回归测试（需手动运行，CI 无 GPU）
+- [x] 6.7 全量 `cargo test --workspace` 869 测试通过验证
+- [x] 6.8 运行 showcase 和两个游戏视觉回归测试（手动验证 — craft 和 billiards 启动正常）

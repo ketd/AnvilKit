@@ -10,6 +10,10 @@ mod settings;
 mod storage;
 #[cfg(feature = "persistence")]
 mod save_manager;
+#[cfg(feature = "persistence")]
+mod auto_save;
+#[cfg(feature = "persistence")]
+mod migration;
 
 #[cfg(feature = "persistence")]
 pub use settings::*;
@@ -17,3 +21,7 @@ pub use settings::*;
 pub use storage::*;
 #[cfg(feature = "persistence")]
 pub use save_manager::*;
+#[cfg(feature = "persistence")]
+pub use auto_save::*;
+#[cfg(feature = "persistence")]
+pub use migration::*;

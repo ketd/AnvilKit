@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 anvilkit = { path = "../../crates/anvilkit" }
-anvilkit-core = { path = "../../crates/anvilkit-core", features = ["bevy_ecs"] }
+anvilkit-core = { path = "../../crates/anvilkit-core", features = ["bevy_ecs", "persistence"] }
 anvilkit-ecs = { path = "../../crates/anvilkit-ecs" }
 anvilkit-render = { path = "../../crates/anvilkit-render" }
 anvilkit-assets = { path = "../../crates/anvilkit-assets" }

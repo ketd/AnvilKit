@@ -111,10 +111,17 @@ pub enum NetworkEvent {
 
 /// Network events resource（已废弃）
 #[deprecated(note = "使用 EventReader<NetworkEvent> 替代")]
-#[derive(Resource, Default)]
 pub struct NetworkEvents {
     /// Pending events.
     pub events: Vec<NetworkEvent>,
+}
+
+#[allow(deprecated)]
+impl Resource for NetworkEvents {}
+
+#[allow(deprecated)]
+impl Default for NetworkEvents {
+    fn default() -> Self { Self { events: Vec::new() } }
 }
 
 #[allow(deprecated)]

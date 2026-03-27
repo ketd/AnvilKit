@@ -48,18 +48,22 @@ impl VoxelWorld {
     }
 }
 
-/// Player physics state (camera orientation is now in CameraController).
+/// Player gameplay state.
+///
+/// Physics velocity is now stored per-entity via the engine's `Velocity` component
+/// on the `FpsCamera` entity. This resource holds gameplay flags only.
 #[derive(Debug, Resource)]
 pub struct PlayerState {
     pub flying: bool,
     pub move_speed: f32,
-    pub velocity: glam::Vec3,
     pub on_ground: bool,
     pub jump_requested: bool,
     /// True if player was on_ground last frame (used for landing detection).
     pub was_on_ground: bool,
     /// True if player is sprinting (Ctrl held).
     pub sprinting: bool,
+    /// Cached vertical velocity from last frame (for landing impact FX).
+    pub last_vy: f32,
 }
 
 impl Default for PlayerState {
@@ -67,11 +71,11 @@ impl Default for PlayerState {
         Self {
             flying: true,
             move_speed: 10.0,
-            velocity: glam::Vec3::ZERO,
             on_ground: false,
             jump_requested: false,
             was_on_ground: false,
             sprinting: false,
+            last_vy: 0.0,
         }
     }
 }

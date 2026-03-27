@@ -18,6 +18,8 @@ pub mod material;
 pub mod scene;
 pub mod gltf_loader;
 pub mod asset_server;
+/// Content-addressed asset cache with LRU eviction.
+pub mod asset_cache;
 pub mod animation;
 /// 音频资产类型
 pub mod audio_asset;
@@ -29,6 +31,8 @@ pub mod procedural;
 pub mod texture;
 /// File watching for hot-reload (enabled via `hot-reload` feature).
 pub mod hot_reload;
+/// Asset dependency tracking for cascade unloading.
+pub mod dependency;
 
 /// Prelude module re-exporting the most commonly used types.
 pub mod prelude {
@@ -37,6 +41,8 @@ pub mod prelude {
     pub use crate::scene::{SceneData, Submesh, MultiMeshScene};
     pub use crate::gltf_loader::{load_gltf_mesh, load_gltf_scene, load_gltf_scene_multi, load_gltf_animations};
     pub use crate::asset_server::{AssetServer, AssetHandle, AssetStorage, AssetId, LoadState};
+    pub use crate::asset_cache::{AssetCache, AssetCacheConfig};
     pub use crate::procedural::{generate_sphere, generate_plane, generate_box};
     pub use crate::texture::{load_texture, load_texture_from_memory};
+    pub use crate::dependency::DependencyGraph;
 }

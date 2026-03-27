@@ -13,13 +13,27 @@ use crate::effects::CameraEffects;
 /// Deprecated: the engine now forwards raw mouse motion into [`InputState::mouse_delta()`]
 /// automatically. Use `InputState::mouse_delta()` instead.
 #[deprecated(note = "Use InputState::mouse_delta() instead — engine forwards DeviceEvent::MouseMotion automatically")]
-#[derive(Debug, Default, Resource)]
 pub struct MouseDelta {
     /// Horizontal mouse movement in pixels since last frame.
     pub dx: f32,
     /// Vertical mouse movement in pixels since last frame.
     pub dy: f32,
 }
+
+#[allow(deprecated)]
+impl std::fmt::Debug for MouseDelta {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MouseDelta").field("dx", &self.dx).field("dy", &self.dy).finish()
+    }
+}
+
+#[allow(deprecated)]
+impl Default for MouseDelta {
+    fn default() -> Self { Self { dx: 0.0, dy: 0.0 } }
+}
+
+#[allow(deprecated)]
+impl Resource for MouseDelta {}
 
 /// Core camera controller system.
 ///

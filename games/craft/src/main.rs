@@ -3,8 +3,6 @@ use std::thread;
 #[allow(unused_imports)]
 use anvilkit::prelude::*;
 
-use anvilkit_render::prelude::*;
-
 // 迁移说明: 未来可使用 DefaultPlugins 替代手动 plugin 注册:
 //   app.add_plugins(DefaultPlugins::new().with_window(config));
 use anvilkit_render::renderer::{
@@ -18,8 +16,10 @@ use anvilkit_render::renderer::{
 };
 use anvilkit_render::plugin::CameraComponent;
 use anvilkit_input::prelude::{InputState, MouseButton};
-use anvilkit_ecs::physics::DeltaTime;
-use anvilkit_camera::prelude::*;
+use anvilkit_ecs::physics::{DeltaTime, Velocity, AabbCollider};
+use anvilkit_camera::controller::{CameraController, CameraMode};
+use anvilkit_camera::effects::CameraEffects;
+use anvilkit_camera::systems::camera_controller_system;
 
 use craft::block::BlockType;
 use craft::chunk::CHUNK_SIZE;
@@ -118,6 +118,12 @@ fn main() {
             fx
         },
         Transform::from_xyz(spawn_pos.x, spawn_pos.y, spawn_pos.z),
+        Velocity::zero(),
+        AabbCollider::new(glam::Vec3::new(
+            config::PLAYER_WIDTH * 0.5,
+            config::PLAYER_HEIGHT * 0.5,
+            config::PLAYER_WIDTH * 0.5,
+        )),
     ));
 
     let seed = app.world.resource::<WorldSeed>().0;
@@ -158,6 +164,7 @@ fn main() {
             chunks: ChunkManager::new(request_tx, result_rx),
             line_renderer: None,
             text_renderer: None,
+            ui_renderer: None,
             current_hit: None,
             frame_count: 0,
         })
@@ -174,6 +181,7 @@ struct CraftApp {
     // HUD renderers
     line_renderer: Option<LineRenderer>,
     text_renderer: Option<TextRenderer>,
+    ui_renderer: Option<anvilkit_render::renderer::ui::UiRenderer>,
     // Current raycast hit (updated each frame)
     current_hit: Option<VoxelHit>,
     // Debug frame counter
@@ -201,10 +209,22 @@ impl CraftApp {
             }
         }
 
-        // Generate chunks (doesn't need GPU) — fill any not loaded from save
+        // Request initial chunks asynchronously via the worker thread pool.
+        // Chunks that were loaded from save are already in VoxelWorld;
+        // the async workers will generate any that are missing.
+        // The game starts immediately — chunks arrive via update() polling.
         {
-            let mut world = self.app.world.resource_mut::<VoxelWorld>();
-            ChunkManager::generate_initial_chunks(&mut world, &self.world_gen, 0, 0, self.chunks.load_radius);
+            let world = self.app.world.resource::<VoxelWorld>();
+            let load_radius = self.chunks.load_radius;
+            // Only request chunks not already present from the save file
+            for cx in -load_radius..=load_radius {
+                for cz in -load_radius..=load_radius {
+                    if !world.chunks.contains_key(&(cx, cz)) {
+                        let _ = self.chunks.chunk_request_tx.send((cx, cz));
+                        self.chunks.pending_chunks.insert((cx, cz));
+                    }
+                }
+            }
         }
 
         // Now init GPU and upload
@@ -255,6 +275,7 @@ impl CraftApp {
         // Init HUD renderers
         self.line_renderer = Some(LineRenderer::new(device, format));
         self.text_renderer = Some(TextRenderer::new(device, format));
+        self.ui_renderer = Some(anvilkit_render::renderer::ui::UiRenderer::new(device, format));
 
         self.voxel_gpu = Some(gpu);
         self.initialized = true;
@@ -653,42 +674,49 @@ impl CraftApp {
             tr.draw_text(device, &mut enc, swapchain, &block_text, 8.0, 28.0, 16.0, white, sw, sh);
         }
 
-        // Hotbar: 9-slot block selection bar at bottom center
+        // Hotbar: 9-slot block selection bar at bottom center (UiRenderer)
         {
+            use anvilkit_render::renderer::ui::UiNode;
+
             let slot_size = 36.0_f32;
             let slot_gap = 4.0_f32;
             let total_w = 9.0 * slot_size + 8.0 * slot_gap;
             let bar_x = (sw - total_w) * 0.5;
             let bar_y = sh - slot_size - 16.0;
 
-            let mut hotbar_lines = Vec::new();
-            let gray = glam::Vec3::new(0.5, 0.5, 0.5);
-            let highlight = glam::Vec3::new(1.0, 1.0, 0.0);
-
+            let mut hotbar_nodes: Vec<UiNode> = Vec::with_capacity(9);
             for i in 0..9usize {
+                let is_selected = i == selected_index;
+                let (bg, border_color) = if is_selected {
+                    ([0.15, 0.15, 0.1, 0.7], [1.0, 1.0, 0.0, 1.0])
+                } else {
+                    ([0.1, 0.1, 0.1, 0.5], [0.5, 0.5, 0.5, 0.8])
+                };
                 let sx = bar_x + i as f32 * (slot_size + slot_gap);
-                let sy = bar_y;
-                let color = if i == selected_index { highlight } else { gray };
-
-                // Box corners
-                let tl = glam::Vec3::new(sx, sy, 0.0);
-                let tr_pt = glam::Vec3::new(sx + slot_size, sy, 0.0);
-                let br = glam::Vec3::new(sx + slot_size, sy + slot_size, 0.0);
-                let bl = glam::Vec3::new(sx, sy + slot_size, 0.0);
-
-                hotbar_lines.push((tl, tr_pt, color));
-                hotbar_lines.push((tr_pt, br, color));
-                hotbar_lines.push((br, bl, color));
-                hotbar_lines.push((bl, tl, color));
+                let mut node = UiNode {
+                    background_color: bg,
+                    border_radius: 4.0,
+                    border_width: if is_selected { 2.0 } else { 1.0 },
+                    border_color,
+                    text: None,
+                    style: Default::default(),
+                    visible: true,
+                    computed_rect: [sx, bar_y, slot_size, slot_size],
+                };
+                node.style.width = anvilkit_render::renderer::ui::Val::Px(slot_size);
+                node.style.height = anvilkit_render::renderer::ui::Val::Px(slot_size);
+                hotbar_nodes.push(node);
             }
 
-            if let Some(ref mut lr) = self.line_renderer {
-                lr.render(device, &mut enc, swapchain, &hotbar_lines, &ortho);
+            let node_refs: Vec<&UiNode> = hotbar_nodes.iter().collect();
+            if let Some(ref mut ui) = self.ui_renderer {
+                ui.render(device, &mut enc, swapchain, &node_refs, sw, sh);
             }
 
-            // Draw block name initials in each slot
+            // Draw block name initials in each slot (TextRenderer)
             if let Some(ref mut tr) = self.text_renderer {
                 let labels = ["G", "D", "S", "Sa", "B", "W", "Gl", "C", "P"];
+                let highlight = glam::Vec3::new(1.0, 1.0, 0.0);
                 for i in 0..9usize {
                     let sx = bar_x + i as f32 * (slot_size + slot_gap) + slot_size * 0.25;
                     let sy = bar_y + slot_size * 0.2;
@@ -891,15 +919,20 @@ impl CraftApp {
     fn post_update(&mut self) {
         // Periodic debug log (every 120 frames ~ 2 sec)
         if self.frame_count % 120 == 0 {
-            let player = self.app.world.resource::<PlayerState>();
+            let flying = self.app.world.resource::<PlayerState>().flying;
+            let on_ground = self.app.world.resource::<PlayerState>().on_ground;
+            let vel = {
+                let mut q = self.app.world.query::<&Velocity>();
+                q.iter(&self.app.world).next().map(|v| v.linear).unwrap_or(glam::Vec3::ZERO)
+            };
             if let Some(cam) = self.app.world.get_resource::<ActiveCamera>() {
                 let p = cam.camera_pos;
                 log::debug!(
                     "[F{}] pos=({:.1},{:.1},{:.1}) vel=({:.1},{:.1},{:.1}) fly={} gnd={}",
                     self.frame_count,
                     p.x, p.y, p.z,
-                    player.velocity.x, player.velocity.y, player.velocity.z,
-                    player.flying, player.on_ground,
+                    vel.x, vel.y, vel.z,
+                    flying, on_ground,
                 );
             }
         }

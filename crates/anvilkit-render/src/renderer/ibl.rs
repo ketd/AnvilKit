@@ -5,6 +5,9 @@
 //! 存储 (F0_scale, F0_bias) 以实现能量守恒的环境光镜面反射。
 
 use std::f32::consts::PI;
+use std::fs;
+use std::io::Write;
+use std::path::Path;
 
 /// 生成 BRDF 积分查找表 (LUT)
 ///
@@ -117,6 +120,71 @@ fn importance_sample_ggx(xi: glam::Vec2, n: glam::Vec3, roughness: f32) -> glam:
     let bitangent = n.cross(tangent);
 
     (tangent * h.x + bitangent * h.y + n * h.z).normalize()
+}
+
+/// Save the BRDF LUT to a binary file.
+///
+/// Generates the LUT of the given `size` and writes the raw RGBA8 bytes to `path`.
+/// Parent directories are created automatically.
+///
+/// # Errors
+///
+/// Returns an `io::Error` if the file cannot be written.
+pub fn save_brdf_lut(path: &str, size: u32) -> std::io::Result<()> {
+    let data = generate_brdf_lut(size);
+    if let Some(parent) = Path::new(path).parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut file = fs::File::create(path)?;
+    file.write_all(&data)?;
+    Ok(())
+}
+
+/// Load a previously saved BRDF LUT from a binary file.
+///
+/// Returns `None` if the file does not exist or cannot be read.
+pub fn load_brdf_lut(path: &str) -> Option<Vec<u8>> {
+    fs::read(path).ok()
+}
+
+/// Load the BRDF LUT from cache, or generate + save it if the cache is missing.
+///
+/// The expected file size is `size * size * 4` bytes (RGBA8). If the cached file
+/// exists but has an unexpected size, it is regenerated.
+pub fn get_or_generate_brdf_lut(cache_path: &str, size: u32) -> Vec<u8> {
+    let expected_len = (size * size * 4) as usize;
+
+    if let Some(data) = load_brdf_lut(cache_path) {
+        if data.len() == expected_len {
+            log::info!("Loaded BRDF LUT from cache: {}", cache_path);
+            return data;
+        }
+        log::warn!(
+            "BRDF LUT cache size mismatch (expected {}, got {}), regenerating",
+            expected_len,
+            data.len()
+        );
+    }
+
+    log::info!("Generating BRDF LUT ({}x{}) ...", size, size);
+    let data = generate_brdf_lut(size);
+
+    // Save to cache for next startup
+    if let Some(parent) = Path::new(cache_path).parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    match fs::File::create(cache_path) {
+        Ok(mut f) => {
+            if let Err(e) = f.write_all(&data) {
+                log::warn!("Failed to write BRDF LUT cache: {}", e);
+            } else {
+                log::info!("Saved BRDF LUT cache to {}", cache_path);
+            }
+        }
+        Err(e) => log::warn!("Failed to create BRDF LUT cache file: {}", e),
+    }
+
+    data
 }
 
 /// Smith GGX 几何函数 (IBL 版本，k = roughness² / 2)

@@ -2,6 +2,7 @@
 //!
 //! 基于 winit 0.30 的 ApplicationHandler 实现应用生命周期管理和事件处理。
 
+use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::time::Instant;
 use winit::{
@@ -19,10 +20,10 @@ use anvilkit_input::prelude::{InputState, KeyCode, MouseButton};
 use crate::window::{WindowConfig, WindowState};
 use crate::renderer::{RenderDevice, RenderSurface};
 use crate::renderer::assets::RenderAssets;
-use crate::renderer::draw::{ActiveCamera, DrawCommandList, SceneLights};
+use crate::renderer::draw::{ActiveCamera, DrawCommandList, SceneLights, UniformBatchBuffer};
 use crate::renderer::state::{RenderState, PbrSceneUniform, GpuLight, MAX_LIGHTS};
 use crate::renderer::buffer::{
-    create_uniform_buffer, create_depth_texture_msaa,
+    create_depth_texture_msaa,
     create_hdr_render_target, create_hdr_msaa_texture,
     create_sampler, create_texture, create_texture_linear, create_shadow_sampler,
     create_csm_shadow_map,
@@ -30,7 +31,7 @@ use crate::renderer::buffer::{
 };
 use crate::renderer::state::CSM_CASCADE_COUNT;
 use crate::renderer::{RenderPipelineBuilder, DEPTH_FORMAT};
-use crate::renderer::ibl::generate_brdf_lut;
+use crate::renderer::ibl::get_or_generate_brdf_lut;
 use crate::renderer::bloom::{BloomResources, BloomSettings};
 use anvilkit_core::error::{AnvilKitError, Result};
 
@@ -380,13 +381,23 @@ impl RenderApp {
         let format = surface.format();
         let (w, h) = self.window_state.size();
 
-        // 创建 PBR 场景 Uniform 缓冲区 (992 字节)
-        let initial_uniform = PbrSceneUniform::default();
-        let scene_uniform_buffer = create_uniform_buffer(
-            device,
-            "ECS Scene Uniform",
-            bytemuck::bytes_of(&initial_uniform),
-        );
+        // 创建动态 Uniform 缓冲区 — 容量 1024 draws × 1024 bytes/draw = 1 MB
+        // PbrSceneUniform 为 992 字节，对齐到 256 边界 → 每个 draw 占 1024 字节
+        const UNIFORM_ALIGNMENT: u64 = 256;
+        let uniform_stride = {
+            let raw = std::mem::size_of::<PbrSceneUniform>() as u64;
+            ((raw + UNIFORM_ALIGNMENT - 1) / UNIFORM_ALIGNMENT) * UNIFORM_ALIGNMENT
+        };
+        const MAX_DRAWS: u64 = 1024;
+        let dynamic_uniform_buffer_size = uniform_stride * MAX_DRAWS;
+        let scene_uniform_buffer = device.device().create_buffer(&wgpu::BufferDescriptor {
+            label: Some("ECS Dynamic Uniform Buffer"),
+            size: dynamic_uniform_buffer_size,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let uniform_binding_size = NonZeroU64::new(uniform_stride);
 
         let scene_bind_group_layout = device.device().create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
@@ -396,8 +407,8 @@ impl RenderApp {
                     visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                        has_dynamic_offset: true,
+                        min_binding_size: uniform_binding_size,
                     },
                     count: None,
                 }],
@@ -409,7 +420,11 @@ impl RenderApp {
             layout: &scene_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: scene_uniform_buffer.as_entire_binding(),
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &scene_uniform_buffer,
+                    offset: 0,
+                    size: uniform_binding_size,
+                }),
             }],
         });
 
@@ -491,7 +506,7 @@ impl RenderApp {
             .into_pipeline();
 
         // IBL + Shadow: bind group 2 (BRDF LUT + CSM shadow map array)
-        let brdf_lut_data = generate_brdf_lut(256);
+        let brdf_lut_data = get_or_generate_brdf_lut(".cache/brdf_lut_256.bin", 256);
         let (_, brdf_lut_view) = create_texture_linear(device, 256, 256, &brdf_lut_data, "ECS BRDF LUT");
         let (_shadow_tex, shadow_map_view, shadow_cascade_views) =
             create_csm_shadow_map(device, SHADOW_MAP_SIZE, CSM_CASCADE_COUNT as u32, "ECS CSM Shadow Map");
@@ -551,8 +566,8 @@ impl RenderApp {
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                        has_dynamic_offset: true,
+                        min_binding_size: uniform_binding_size,
                     },
                     count: None,
                 }],
@@ -661,8 +676,8 @@ impl RenderApp {
                         visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                            has_dynamic_offset: true,
+                            min_binding_size: uniform_binding_size,
                         },
                         count: None,
                     }],
@@ -830,53 +845,40 @@ impl RenderApp {
             &wgpu::CommandEncoderDescriptor { label: Some("ECS Frame Encoder") },
         );
 
-        // --- Pass 0: CSM Shadow passes (one per cascade, one sub-pass per object) ---
-        // Each object requires its own uniform data, so we use separate render passes
-        // with write_buffer between them to ensure correct per-object transforms.
-        for cascade_idx in 0..render_state.shadow_cascade_views.len().min(CSM_CASCADE_COUNT) {
-            let cascade_view = &render_state.shadow_cascade_views[cascade_idx];
+        // --- Batch all uniform data into a single CPU buffer, then upload once ---
+        // Alignment: 256 bytes. PbrSceneUniform is 992 bytes -> stride = 1024 bytes.
+        let alignment = 256usize;
+        let mut batch = UniformBatchBuffer::new(alignment);
+
+        // --- Pass 0: CSM Shadow passes (one render pass per cascade, batched draws) ---
+        // Accumulate shadow uniforms for all cascades x objects.
+        // shadow_draw_info[cascade_idx] = vec of (offset, cmd_idx) for draws in that cascade.
+        let num_cascades = render_state.shadow_cascade_views.len().min(CSM_CASCADE_COUNT);
+        let mut shadow_draw_info: Vec<Vec<(u32, usize)>> = vec![Vec::new(); num_cascades];
+
+        for cascade_idx in 0..num_cascades {
             let cascade_vp = cascade_matrices[cascade_idx];
 
-            for (draw_idx, cmd) in draw_list.commands.iter().enumerate() {
-                let Some(gpu_mesh) = render_assets.get_mesh(&cmd.mesh) else { continue };
+            for (cmd_idx, cmd) in draw_list.commands.iter().enumerate() {
+                if render_assets.get_mesh(&cmd.mesh).is_none() { continue; }
 
                 let shadow_uniform = PbrSceneUniform {
                     model: cmd.model_matrix.to_cols_array_2d(),
                     view_proj: cascade_vp.to_cols_array_2d(),
                     ..Default::default()
                 };
-                device.queue().write_buffer(
-                    &render_state.scene_uniform_buffer, 0, bytemuck::bytes_of(&shadow_uniform),
-                );
-
-                let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("CSM Shadow Pass"),
-                    color_attachments: &[],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: cascade_view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: if draw_idx == 0 { wgpu::LoadOp::Clear(1.0) } else { wgpu::LoadOp::Load },
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
-                    }),
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-                rp.set_pipeline(&render_state.shadow_pipeline);
-                rp.set_bind_group(0, &render_state.scene_bind_group, &[]);
-                rp.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
-                rp.set_index_buffer(gpu_mesh.index_buffer.slice(..), gpu_mesh.index_format);
-                rp.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);
+                let offset = batch.push(bytemuck::bytes_of(&shadow_uniform));
+                shadow_draw_info[cascade_idx].push((offset, cmd_idx));
             }
         }
 
-        // --- Pass 1: Scene → HDR render target (one sub-pass per object) ---
-        // Each object gets its own render pass so that write_buffer takes effect
-        // before the draw call. First pass clears, subsequent passes load.
-        for (draw_idx, cmd) in draw_list.commands.iter().enumerate() {
-            let Some(gpu_mesh) = render_assets.get_mesh(&cmd.mesh) else { continue };
-            let Some(gpu_material) = render_assets.get_material(&cmd.material) else { continue };
+        // Scene pass uniforms -- accumulate after shadow uniforms in the same batch buffer.
+        // scene_draw_info = vec of (offset, cmd_idx) for draws that have valid mesh+material.
+        let mut scene_draw_info: Vec<(u32, usize)> = Vec::new();
+
+        for (cmd_idx, cmd) in draw_list.commands.iter().enumerate() {
+            if render_assets.get_mesh(&cmd.mesh).is_none() { continue; }
+            if render_assets.get_material(&cmd.material).is_none() { continue; }
 
             let model = cmd.model_matrix;
             // Normal matrix: inverse transpose of the model matrix.
@@ -900,34 +902,65 @@ impl RenderApp {
                 cascade_splits: [cascade_splits[0], cascade_splits[1], cascade_splits[2], 1.0 / SHADOW_MAP_SIZE as f32],
                 emissive_factor: [cmd.emissive_factor[0], cmd.emissive_factor[1], cmd.emissive_factor[2], CSM_CASCADE_COUNT as f32],
             };
+            let offset = batch.push(bytemuck::bytes_of(&uniform));
+            scene_draw_info.push((offset, cmd_idx));
+        }
+
+        // Single write_buffer uploads ALL uniform data for shadow + scene passes
+        if !batch.as_bytes().is_empty() {
             device.queue().write_buffer(
-                &render_state.scene_uniform_buffer, 0, bytemuck::bytes_of(&uniform),
+                &render_state.scene_uniform_buffer, 0, batch.as_bytes(),
             );
+        }
 
-            let Some(pipeline) = render_assets.get_pipeline(&gpu_material.pipeline_handle) else {
-                log::error!("材质引用了不存在的管线");
-                continue;
-            };
+        // --- Shadow render passes: one per cascade, all draws inside ---
+        for cascade_idx in 0..num_cascades {
+            let cascade_view = &render_state.shadow_cascade_views[cascade_idx];
+            let draws = &shadow_draw_info[cascade_idx];
+            if draws.is_empty() { continue; }
 
-            let is_first = draw_idx == 0;
+            let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("CSM Shadow Pass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: cascade_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            rp.set_pipeline(&render_state.shadow_pipeline);
+
+            for &(offset, cmd_idx) in draws {
+                let cmd = &draw_list.commands[cmd_idx];
+                let gpu_mesh = render_assets.get_mesh(&cmd.mesh).unwrap();
+                rp.set_bind_group(0, &render_state.scene_bind_group, &[offset]);
+                rp.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
+                rp.set_index_buffer(gpu_mesh.index_buffer.slice(..), gpu_mesh.index_format);
+                rp.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);
+            }
+        }
+
+        // --- Pass 1: Scene -> HDR render target (single render pass, all draws) ---
+        if !scene_draw_info.is_empty() {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ECS HDR Scene Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &render_state.hdr_msaa_texture_view,
                     resolve_target: Some(&render_state.hdr_texture_view),
                     ops: wgpu::Operations {
-                        load: if is_first {
-                            wgpu::LoadOp::Clear(wgpu::Color { r: 0.15, g: 0.3, b: 0.6, a: 1.0 })
-                        } else {
-                            wgpu::LoadOp::Load
-                        },
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.15, g: 0.3, b: 0.6, a: 1.0 }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &render_state.depth_texture_view,
                     depth_ops: Some(wgpu::Operations {
-                        load: if is_first { wgpu::LoadOp::Clear(1.0) } else { wgpu::LoadOp::Load },
+                        load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
                     }),
                     stencil_ops: None,
@@ -936,13 +969,27 @@ impl RenderApp {
                 occlusion_query_set: None,
             });
 
-            render_pass.set_pipeline(pipeline);
-            render_pass.set_bind_group(0, &render_state.scene_bind_group, &[]);
-            render_pass.set_bind_group(1, &gpu_material.bind_group, &[]);
-            render_pass.set_bind_group(2, &render_state.ibl_shadow_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(gpu_mesh.index_buffer.slice(..), gpu_mesh.index_format);
-            render_pass.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);
+            for &(offset, cmd_idx) in &scene_draw_info {
+                let cmd = &draw_list.commands[cmd_idx];
+                let gpu_mesh = render_assets.get_mesh(&cmd.mesh).unwrap();
+                let gpu_material = render_assets.get_material(&cmd.material).unwrap();
+
+                let pipeline = match render_assets.get_pipeline(&gpu_material.pipeline_handle) {
+                    Some(p) => p,
+                    None => {
+                        log::error!("材质引用了不存在的管线");
+                        continue;
+                    }
+                };
+
+                render_pass.set_pipeline(pipeline);
+                render_pass.set_bind_group(0, &render_state.scene_bind_group, &[offset]);
+                render_pass.set_bind_group(1, &gpu_material.bind_group, &[]);
+                render_pass.set_bind_group(2, &render_state.ibl_shadow_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
+                render_pass.set_index_buffer(gpu_mesh.index_buffer.slice(..), gpu_mesh.index_format);
+                render_pass.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);
+            }
         }
 
         // --- 后处理管线 (顺序: SSAO → DOF → MotionBlur → Bloom → ColorGrading) ---

@@ -78,6 +78,32 @@ The system SHALL fall back to multi-submit when draw commands exceed the pre-all
 - **WHEN** draw commands exceed the pre-allocated capacity (e.g., >1024)
 - **THEN** the system splits rendering into multiple submits, each within capacity
 
+### Requirement: Image-Based Lighting (IBL)
+The system SHALL support environment lighting through:
+- HDR equirectangular environment map loading (.hdr format)
+- Equirectangular to cubemap conversion (GPU-based)
+- Diffuse irradiance map convolution
+- Specular prefiltered environment map (split-sum approximation, multiple mip levels)
+- BRDF integration LUT (2D lookup texture)
+
+The BRDF LUT SHALL be pre-computed as a binary asset file and loaded at startup, rather than computed on the CPU at runtime.
+
+The ambient lighting term SHALL combine diffuse IBL (irradiance * albedo) and specular IBL (prefiltered env * BRDF LUT).
+
+#### Scenario: Environment reflection
+- **WHEN** a metallic sphere (metallic=1.0, roughness=0.0) is rendered with an HDR environment map
+- **THEN** the sphere shows mirror-like reflections of the environment
+
+#### Scenario: Diffuse environment lighting
+- **WHEN** a dielectric sphere (metallic=0.0) is rendered with an HDR environment map
+- **THEN** the sphere is lit by the environment's average color from all directions (irradiance)
+
+#### Scenario: BRDF LUT loading
+- **WHEN** the render system initializes
+- **THEN** the BRDF LUT is loaded from a pre-computed binary asset in under 1ms, not generated on the CPU
+
+## ADDED Requirements
+
 ### Requirement: GPU Buffer Pool
 The system SHALL provide a `BufferPool` for reusing GPU vertex/index buffers across frames instead of allocating new buffers every frame.
 
@@ -109,32 +135,6 @@ The system SHALL drop the underlying wgpu buffer/texture/pipeline when the last 
 #### Scenario: Dynamic content lifecycle
 - **WHEN** a game loads a new level and unloads the previous one
 - **THEN** GPU resources from the previous level can be explicitly freed via remove methods
-
-### Requirement: Image-Based Lighting (IBL)
-The system SHALL support environment lighting through:
-- HDR equirectangular environment map loading (.hdr format)
-- Equirectangular to cubemap conversion (GPU-based)
-- Diffuse irradiance map convolution
-- Specular prefiltered environment map (split-sum approximation, multiple mip levels)
-- BRDF integration LUT (2D lookup texture)
-
-The BRDF LUT SHALL be pre-computed as a binary asset file and loaded at startup, rather than computed on the CPU at runtime.
-
-The ambient lighting term SHALL combine diffuse IBL (irradiance * albedo) and specular IBL (prefiltered env * BRDF LUT).
-
-#### Scenario: Environment reflection
-- **WHEN** a metallic sphere (metallic=1.0, roughness=0.0) is rendered with an HDR environment map
-- **THEN** the sphere shows mirror-like reflections of the environment
-
-#### Scenario: Diffuse environment lighting
-- **WHEN** a dielectric sphere (metallic=0.0) is rendered with an HDR environment map
-- **THEN** the sphere is lit by the environment's average color from all directions (irradiance)
-
-#### Scenario: BRDF LUT loading
-- **WHEN** the render system initializes
-- **THEN** the BRDF LUT is loaded from a pre-computed binary asset in under 1ms, not generated on the CPU
-
-## ADDED Requirements
 
 ### Requirement: PBR Shader Consistency
 The system SHALL provide a single shared set of PBR BRDF functions (distribution_ggx, geometry_smith, fresnel_schlick) used by both standard and skinned PBR shaders.

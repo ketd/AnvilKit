@@ -1,6 +1,6 @@
 use bevy_ecs::prelude::*;
 use anvilkit_core::math::Transform;
-use anvilkit_ecs::physics::DeltaTime;
+use anvilkit_ecs::physics::{DeltaTime, Velocity};
 use anvilkit_input::prelude::{InputState, KeyCode};
 use anvilkit_camera::prelude::CameraController;
 
@@ -14,9 +14,9 @@ pub fn player_movement_system(
     dt: Res<DeltaTime>,
     input: Res<InputState>,
     mut player: ResMut<PlayerState>,
-    mut query: Query<(&CameraController, &mut Transform), With<FpsCamera>>,
+    mut query: Query<(&CameraController, &mut Transform, &mut Velocity), With<FpsCamera>>,
 ) {
-    let Ok((ctrl, mut transform)) = query.get_single_mut() else { return };
+    let Ok((ctrl, mut transform, mut vel)) = query.get_single_mut() else { return };
 
     // Movement direction based on camera yaw (no pitch influence)
     let forward = ctrl.forward_xz();
@@ -52,8 +52,8 @@ pub fn player_movement_system(
         if dir.length_squared() > 0.0 {
             dir = dir.normalize();
         }
-        player.velocity.x = dir.x * player.move_speed * speed_multiplier;
-        player.velocity.z = dir.z * player.move_speed * speed_multiplier;
+        vel.linear.x = dir.x * player.move_speed * speed_multiplier;
+        vel.linear.z = dir.z * player.move_speed * speed_multiplier;
 
         // Jump request (actual jump handled by physics)
         if input.is_key_pressed(KeyCode::Space) {

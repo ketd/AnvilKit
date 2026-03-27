@@ -236,10 +236,17 @@ pub struct CollisionEvent {
 
 /// 碰撞事件列表资源（已废弃）
 #[deprecated(note = "使用 EventReader<CollisionEvent> 替代")]
-#[derive(Resource, Default)]
 pub struct CollisionEvents {
     /// List of collision events detected this frame.
     pub events: Vec<CollisionEvent>,
+}
+
+#[allow(deprecated)]
+impl Resource for CollisionEvents {}
+
+#[allow(deprecated)]
+impl Default for CollisionEvents {
+    fn default() -> Self { Self { events: Vec::new() } }
 }
 
 #[allow(deprecated)]
@@ -568,6 +575,194 @@ pub mod rapier_integration {
         }
     }
 
+    // ==================== Joint Constraints ====================
+
+    /// Fixed joint: locks two bodies together with no relative movement.
+    #[derive(Component, Debug, Clone)]
+    pub struct FixedJoint {
+        /// The other entity to connect to.
+        pub target: Entity,
+        /// Anchor in this entity's local space.
+        pub local_anchor1: Vec3,
+        /// Anchor in target entity's local space.
+        pub local_anchor2: Vec3,
+    }
+
+    impl FixedJoint {
+        /// Create a fixed joint connecting to `target` at origin anchors.
+        pub fn new(target: Entity) -> Self {
+            Self { target, local_anchor1: Vec3::ZERO, local_anchor2: Vec3::ZERO }
+        }
+        /// Set anchor points.
+        pub fn with_anchors(mut self, a1: Vec3, a2: Vec3) -> Self {
+            self.local_anchor1 = a1;
+            self.local_anchor2 = a2;
+            self
+        }
+    }
+
+    /// Revolute joint: allows rotation around a single axis.
+    #[derive(Component, Debug, Clone)]
+    pub struct RevoluteJoint {
+        pub target: Entity,
+        pub local_anchor1: Vec3,
+        pub local_anchor2: Vec3,
+        /// Rotation axis (normalized).
+        pub axis: Vec3,
+        /// Optional angle limits (min, max) in radians.
+        pub limits: Option<(f32, f32)>,
+    }
+
+    impl RevoluteJoint {
+        pub fn new(target: Entity, axis: Vec3) -> Self {
+            Self {
+                target,
+                local_anchor1: Vec3::ZERO,
+                local_anchor2: Vec3::ZERO,
+                axis: axis.normalize(),
+                limits: None,
+            }
+        }
+        pub fn with_anchors(mut self, a1: Vec3, a2: Vec3) -> Self {
+            self.local_anchor1 = a1;
+            self.local_anchor2 = a2;
+            self
+        }
+        pub fn with_limits(mut self, min: f32, max: f32) -> Self {
+            self.limits = Some((min, max));
+            self
+        }
+    }
+
+    /// Prismatic joint: allows linear sliding along a single axis.
+    #[derive(Component, Debug, Clone)]
+    pub struct PrismaticJoint {
+        pub target: Entity,
+        pub local_anchor1: Vec3,
+        pub local_anchor2: Vec3,
+        /// Sliding axis (normalized).
+        pub axis: Vec3,
+        /// Optional distance limits (min, max).
+        pub limits: Option<(f32, f32)>,
+    }
+
+    impl PrismaticJoint {
+        pub fn new(target: Entity, axis: Vec3) -> Self {
+            Self {
+                target,
+                local_anchor1: Vec3::ZERO,
+                local_anchor2: Vec3::ZERO,
+                axis: axis.normalize(),
+                limits: None,
+            }
+        }
+        pub fn with_anchors(mut self, a1: Vec3, a2: Vec3) -> Self {
+            self.local_anchor1 = a1;
+            self.local_anchor2 = a2;
+            self
+        }
+        pub fn with_limits(mut self, min: f32, max: f32) -> Self {
+            self.limits = Some((min, max));
+            self
+        }
+    }
+
+    /// Spherical joint: allows rotation around all axes (ball-and-socket).
+    #[derive(Component, Debug, Clone)]
+    pub struct SphericalJoint {
+        pub target: Entity,
+        pub local_anchor1: Vec3,
+        pub local_anchor2: Vec3,
+    }
+
+    impl SphericalJoint {
+        pub fn new(target: Entity) -> Self {
+            Self { target, local_anchor1: Vec3::ZERO, local_anchor2: Vec3::ZERO }
+        }
+        pub fn with_anchors(mut self, a1: Vec3, a2: Vec3) -> Self {
+            self.local_anchor1 = a1;
+            self.local_anchor2 = a2;
+            self
+        }
+    }
+
+    /// Marker: this entity's joint has been synced to Rapier.
+    #[derive(Component)]
+    pub struct JointSynced(pub rp::ImpulseJointHandle);
+
+    /// Helper to convert glam Vec3 to rapier nalgebra Point3.
+    fn to_rapier_point(v: Vec3) -> nalgebra::Point3<f32> {
+        nalgebra::Point3::new(v.x, v.y, v.z)
+    }
+
+    /// Helper to convert glam Vec3 to rapier nalgebra UnitVector3.
+    fn to_rapier_axis(v: Vec3) -> nalgebra::Unit<nalgebra::Vector3<f32>> {
+        nalgebra::Unit::new_normalize(nalgebra::Vector3::new(v.x, v.y, v.z))
+    }
+
+    /// Syncs ECS joint components to Rapier's ImpulseJointSet.
+    /// Runs after body sync, before physics step.
+    pub fn sync_joints_to_rapier_system(
+        mut context: ResMut<RapierContext>,
+        fixed: Query<(Entity, &FixedJoint), Without<JointSynced>>,
+        revolute: Query<(Entity, &RevoluteJoint), Without<JointSynced>>,
+        prismatic: Query<(Entity, &PrismaticJoint), Without<JointSynced>>,
+        spherical: Query<(Entity, &SphericalJoint), Without<JointSynced>>,
+        mut commands: Commands,
+    ) {
+        // Fixed joints
+        for (entity, joint) in fixed.iter() {
+            let Some(&body1) = context.entity_to_body.get(&entity) else { continue };
+            let Some(&body2) = context.entity_to_body.get(&joint.target) else { continue };
+            let rapier_joint = rp::FixedJointBuilder::new()
+                .local_anchor1(to_rapier_point(joint.local_anchor1))
+                .local_anchor2(to_rapier_point(joint.local_anchor2))
+                .build();
+            let handle = context.impulse_joint_set.insert(body1, body2, rapier_joint, true);
+            commands.entity(entity).insert(JointSynced(handle));
+        }
+
+        // Revolute joints
+        for (entity, joint) in revolute.iter() {
+            let Some(&body1) = context.entity_to_body.get(&entity) else { continue };
+            let Some(&body2) = context.entity_to_body.get(&joint.target) else { continue };
+            let mut builder = rp::RevoluteJointBuilder::new(to_rapier_axis(joint.axis))
+                .local_anchor1(to_rapier_point(joint.local_anchor1))
+                .local_anchor2(to_rapier_point(joint.local_anchor2));
+            if let Some((min, max)) = joint.limits {
+                builder = builder.limits([min, max]);
+            }
+            let handle = context.impulse_joint_set.insert(body1, body2, builder.build(), true);
+            commands.entity(entity).insert(JointSynced(handle));
+        }
+
+        // Prismatic joints
+        for (entity, joint) in prismatic.iter() {
+            let Some(&body1) = context.entity_to_body.get(&entity) else { continue };
+            let Some(&body2) = context.entity_to_body.get(&joint.target) else { continue };
+            let mut builder = rp::PrismaticJointBuilder::new(to_rapier_axis(joint.axis))
+                .local_anchor1(to_rapier_point(joint.local_anchor1))
+                .local_anchor2(to_rapier_point(joint.local_anchor2));
+            if let Some((min, max)) = joint.limits {
+                builder = builder.limits([min, max]);
+            }
+            let handle = context.impulse_joint_set.insert(body1, body2, builder.build(), true);
+            commands.entity(entity).insert(JointSynced(handle));
+        }
+
+        // Spherical joints
+        for (entity, joint) in spherical.iter() {
+            let Some(&body1) = context.entity_to_body.get(&entity) else { continue };
+            let Some(&body2) = context.entity_to_body.get(&joint.target) else { continue };
+            let rapier_joint = rp::SphericalJointBuilder::new()
+                .local_anchor1(to_rapier_point(joint.local_anchor1))
+                .local_anchor2(to_rapier_point(joint.local_anchor2))
+                .build();
+            let handle = context.impulse_joint_set.insert(body1, body2, rapier_joint, true);
+            commands.entity(entity).insert(JointSynced(handle));
+        }
+    }
+
     /// rapier3d 物理插件
     pub struct RapierPhysicsPlugin;
 
@@ -579,7 +774,8 @@ pub mod rapier_integration {
                 AnvilKitSchedule::FixedUpdate,
                 (
                     sync_to_rapier_system,
-                    step_physics_system.after(sync_to_rapier_system),
+                    sync_joints_to_rapier_system.after(sync_to_rapier_system),
+                    step_physics_system.after(sync_joints_to_rapier_system),
                     sync_from_rapier_system.after(step_physics_system),
                     extract_collision_events_system.after(step_physics_system),
                 ),

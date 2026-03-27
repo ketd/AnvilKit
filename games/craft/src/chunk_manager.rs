@@ -82,6 +82,24 @@ impl ChunkManager {
         }
     }
 
+    /// Send initial chunk requests through the async channel system.
+    ///
+    /// Instead of generating chunks synchronously, this dispatches all chunk
+    /// coordinates within the given radius to the worker thread pool. The
+    /// existing `update()` polling will receive results and the game can start
+    /// immediately with whatever chunks are ready.
+    pub fn request_initial_chunks(&mut self, center_cx: i32, center_cz: i32, radius: i32) {
+        for cx in (center_cx - radius)..=(center_cx + radius) {
+            for cz in (center_cz - radius)..=(center_cz + radius) {
+                let key = (cx, cz);
+                if !self.pending_chunks.contains(&key) {
+                    let _ = self.chunk_request_tx.send(key);
+                    self.pending_chunks.insert(key);
+                }
+            }
+        }
+    }
+
     /// Upload initial chunk meshes to GPU.
     pub fn upload_all(&mut self, world: &VoxelWorld, device: &RenderDevice) {
         let keys: Vec<(i32, i32)> = world
