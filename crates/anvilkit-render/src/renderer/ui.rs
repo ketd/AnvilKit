@@ -10,6 +10,7 @@
 
 use bevy_ecs::prelude::*;
 use bytemuck::{Pod, Zeroable};
+use super::shared::MatrixUniform;
 use wgpu::util::DeviceExt;
 /// Flexbox 排列方向
 ///
@@ -474,13 +475,7 @@ pub struct UiRenderer {
     /// Bind group for the orthographic projection uniform.
     pub ortho_bind_group: wgpu::BindGroup,
     /// Cached vertex buffer for per-frame reuse.
-    cached_vb: Option<(wgpu::Buffer, u64)>,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-struct UiOrthoUniform {
-    projection: [[f32; 4]; 4],
+    cached_vb: super::shared::CachedBuffer,
 }
 
 impl UiRenderer {
@@ -537,9 +532,7 @@ impl UiRenderer {
             multiview: None,
         });
 
-        let initial = UiOrthoUniform {
-            projection: glam::Mat4::IDENTITY.to_cols_array_2d(),
-        };
+        let initial = MatrixUniform::identity();
         let ortho_buffer = device.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("UI Ortho UB"),
             contents: bytemuck::bytes_of(&initial),
@@ -559,7 +552,7 @@ impl UiRenderer {
             pipeline,
             ortho_buffer,
             ortho_bind_group: ortho_bg,
-            cached_vb: None,
+            cached_vb: super::shared::CachedBuffer::vertex("UI VB (cached)"),
         }
     }
 
@@ -579,9 +572,7 @@ impl UiRenderer {
 
         // Update ortho
         let ortho = glam::Mat4::orthographic_lh(0.0, screen_width, screen_height, 0.0, -1.0, 1.0);
-        let uniform = UiOrthoUniform {
-            projection: ortho.to_cols_array_2d(),
-        };
+        let uniform = MatrixUniform::from_mat4(&ortho);
         device.queue().write_buffer(&self.ortho_buffer, 0, bytemuck::bytes_of(&uniform));
 
         // Build vertices
@@ -616,21 +607,7 @@ impl UiRenderer {
 
         // Reuse cached buffer if large enough
         let data = bytemuck::cast_slice(&vertices);
-        let needed = data.len() as u64;
-        let reuse = self.cached_vb.as_ref().map_or(false, |(_, cap)| *cap >= needed);
-        if !reuse {
-            self.cached_vb = Some((
-                device.device().create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("UI VB (cached)"),
-                    size: needed,
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                    mapped_at_creation: false,
-                }),
-                needed,
-            ));
-        }
-        let vb = &self.cached_vb.as_ref().expect("buffer must be initialized above").0;
-        device.queue().write_buffer(vb, 0, data);
+        let vb = self.cached_vb.ensure_and_write(device.device(), device.queue(), data);
 
         {
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

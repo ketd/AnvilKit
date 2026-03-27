@@ -206,13 +206,8 @@ impl Default for Velocity {
 use crate::schedule::AnvilKitSchedule;
 use anvilkit_core::math::Transform;
 
-/// 帧时间资源
-#[derive(Resource)]
-pub struct DeltaTime(pub f32);
-
-impl Default for DeltaTime {
-    fn default() -> Self { Self(1.0 / 60.0) }
-}
+// Re-export DeltaTime from app module (canonical location)
+pub use crate::app::DeltaTime;
 
 /// Syncs DeltaTime from the core Time resource.
 pub fn update_delta_time_system(

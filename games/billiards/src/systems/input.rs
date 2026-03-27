@@ -96,15 +96,5 @@ pub fn shot_execution_system(
     }
 }
 
-/// Window size resource for ray casting.
-#[derive(Resource)]
-pub struct WindowSize {
-    pub width: f32,
-    pub height: f32,
-}
-
-impl Default for WindowSize {
-    fn default() -> Self {
-        Self { width: 1280.0, height: 720.0 }
-    }
-}
+// WindowSize is now provided by anvilkit_app::WindowSize (inserted by the runner).
+pub use anvilkit_app::WindowSize;

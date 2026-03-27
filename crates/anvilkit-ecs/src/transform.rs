@@ -247,27 +247,6 @@ pub fn sync_simple_transforms(
     }
 }
 
-/// 父子关系同步系统
-///
-/// 检测新添加的 `Parent` 组件，并将对应的子实体添加到父实体的 `Children` 列表中。
-/// 如果父实体还没有 `Children` 组件，则自动插入一个。
-pub fn parent_child_sync_system(
-    query: Query<(Entity, &Parent), Added<Parent>>,
-    mut commands: Commands,
-    mut children_query: Query<&mut Children>,
-) {
-    for (child_entity, parent_component) in &query {
-        let parent_entity = parent_component.get();
-        if let Ok(mut children) = children_query.get_mut(parent_entity) {
-            // 父实体已有 Children，添加子实体（push 内部会去重）
-            children.push(child_entity);
-        } else {
-            // 父实体没有 Children 组件，插入新的
-            commands.entity(parent_entity).insert(Children::new(vec![child_entity]));
-        }
-    }
-}
-
 /// 传播变换系统
 ///
 /// 将父实体的全局变换传播到所有子实体。
@@ -419,8 +398,7 @@ impl TransformHierarchy {
         // 使用 try_insert 来避免重复插入
         commands.entity(parent).try_insert(Children::empty());
 
-        // 注意: parent_child_sync_system 负责在下一次系统运行时
-        // 将此子实体实际添加到父实体的 Children 列表中
+        // Children 列表由调用方自行管理，或通过 Commands 插入
     }
 
     /// 移除父子关系

@@ -92,7 +92,7 @@ impl<T> StateValue for T where T: Debug + Clone + Copy + PartialEq + Eq + Hash +
 /// 状态转换事件
 ///
 /// 当状态从 `from` 变为 `to` 时触发。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Event)]
 pub struct StateTransitionEvent<S: StateValue> {
     /// 转换前的状态
     pub from: S,
@@ -130,11 +130,14 @@ pub fn in_state<S: StateValue>(state: S) -> impl Fn(Option<Res<GameState<S>>>) -
 pub fn state_transition_system<S: StateValue>(
     mut current: ResMut<GameState<S>>,
     mut next: ResMut<NextGameState<S>>,
+    mut events: EventWriter<StateTransitionEvent<S>>,
 ) {
     if let Some(new_state) = next.0.take() {
         if current.0 != new_state {
-            log::debug!("状态转换: {:?} → {:?}", current.0, new_state);
+            let from = current.0;
+            log::debug!("状态转换: {:?} → {:?}", from, new_state);
             current.0 = new_state;
+            events.send(StateTransitionEvent { from, to: new_state });
         }
     }
 }
@@ -183,6 +186,7 @@ mod tests {
         app.add_plugins(AnvilKitEcsPlugin);
         app.insert_resource(GameState(TestState::Menu));
         app.insert_resource(NextGameState::<TestState>::default());
+        app.add_event::<StateTransitionEvent<TestState>>();
         app.add_systems(AnvilKitSchedule::PreUpdate, state_transition_system::<TestState>);
 
         // No transition requested — state stays
@@ -196,5 +200,13 @@ mod tests {
 
         // Next should be cleared
         assert_eq!(app.world.resource::<NextGameState<TestState>>().0, None);
+
+        // Verify event was emitted
+        let events = app.world.resource::<Events<StateTransitionEvent<TestState>>>();
+        let mut reader = events.get_reader();
+        let transition_events: Vec<_> = reader.read(events).collect();
+        assert_eq!(transition_events.len(), 1);
+        assert_eq!(transition_events[0].from, TestState::Menu);
+        assert_eq!(transition_events[0].to, TestState::Playing);
     }
 }

@@ -21,6 +21,7 @@ anvilkit-assets = { version = "0.1.0", path = "../anvilkit-assets" }
 anvilkit-input = { version = "0.1.0", path = "../anvilkit-input" }
 anvilkit-audio = { version = "0.1.0", path = "../anvilkit-audio" }
 anvilkit-camera = { version = "0.1.0", path = "../anvilkit-camera" }
+anvilkit-app = { version = "0.1.0", path = "../anvilkit-app" }
 
 [features]
 default = []

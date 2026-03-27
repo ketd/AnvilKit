@@ -2,6 +2,7 @@ use std::thread;
 
 #[allow(unused_imports)]
 use anvilkit::prelude::*;
+use anvilkit_app::prelude::*;
 
 // 迁移说明: 未来可使用 DefaultPlugins 替代手动 plugin 注册:
 //   app.add_plugins(DefaultPlugins::new().with_window(config));
@@ -10,7 +11,7 @@ use anvilkit_render::renderer::{
         create_depth_texture, create_hdr_render_target, create_sampler,
     },
     draw::{ActiveCamera, Frustum},
-    line::LineRenderer,
+    debug::OverlayLineRenderer,
     text::TextRenderer,
     raycast::screen_to_ray,
 };
@@ -152,32 +153,24 @@ fn main() {
     drop(request_rx);
     drop(result_tx);
 
-    let event_loop = EventLoop::new().unwrap();
-    let wconfig = window_config();
-    event_loop
-        .run_app(&mut CraftApp {
-            render_app: RenderApp::new(wconfig),
-            app,
-            initialized: false,
-            voxel_gpu: None,
-            chunks: ChunkManager::new(request_tx, result_rx),
-            line_renderer: None,
-            text_renderer: None,
-            ui_renderer: None,
-            current_hit: None,
-            frame_count: 0,
-        })
-        .unwrap();
+    let config = GameConfig::new("Craft").with_size(1280, 720);
+
+    AnvilKitApp::run(config, app, CraftGame {
+        voxel_gpu: None,
+        chunks: ChunkManager::new(request_tx, result_rx),
+        line_renderer: None,
+        text_renderer: None,
+        ui_renderer: None,
+        current_hit: None,
+        frame_count: 0,
+    });
 }
 
-struct CraftApp {
-    render_app: RenderApp,
-    app: App,
-    initialized: bool,
+struct CraftGame {
     voxel_gpu: Option<VoxelGpu>,
     chunks: ChunkManager,
     // HUD renderers
-    line_renderer: Option<LineRenderer>,
+    line_renderer: Option<OverlayLineRenderer>,
     text_renderer: Option<TextRenderer>,
     ui_renderer: Option<anvilkit_render::renderer::ui::UiRenderer>,
     // Current raycast hit (updated each frame)
@@ -187,15 +180,12 @@ struct CraftApp {
 }
 
 
-impl CraftApp {
-    fn init_scene(&mut self) {
-        if self.initialized {
-            return;
-        }
+impl CraftGame {
+    fn init_scene(&mut self, ctx: &mut GameContext) {
 
         // Try loading saved world first
         {
-            let mut world = self.app.world.resource_mut::<VoxelWorld>();
+            let mut world = ctx.app.world.resource_mut::<VoxelWorld>();
             match persistence::load_world(&mut world) {
                 Ok((seed, loaded)) if !loaded.is_empty() => {
                     println!("Loaded {} modified chunks from save (seed={})", loaded.len(), seed);
@@ -212,7 +202,7 @@ impl CraftApp {
         // the async workers will generate any that are missing.
         // The game starts immediately — chunks arrive via update() polling.
         {
-            let world = self.app.world.resource::<VoxelWorld>();
+            let world = ctx.app.world.resource::<VoxelWorld>();
             let load_radius = self.chunks.load_radius;
             // Only request chunks not already present from the save file
             for cx in -load_radius..=load_radius {
@@ -226,13 +216,13 @@ impl CraftApp {
         }
 
         // Now init GPU and upload
-        let Some(device) = self.render_app.render_device() else {
+        let Some(device) = ctx.render_app.render_device() else {
             return;
         };
-        let Some(format) = self.render_app.surface_format() else {
+        let Some(format) = ctx.render_app.surface_format() else {
             return;
         };
-        let (w, h) = self.render_app.window_state().size();
+        let (w, h) = ctx.render_app.window_state().size();
 
         // Load texture atlas — convert magenta color key (255,0,255) to transparent
         let atlas_path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/textures/texture.png");
@@ -266,20 +256,20 @@ impl CraftApp {
 
         // Upload chunk meshes
         {
-            let world = self.app.world.resource::<VoxelWorld>();
+            let world = ctx.app.world.resource::<VoxelWorld>();
             self.chunks.upload_all(&world, device);
         }
 
         // Init HUD renderers
-        self.line_renderer = Some(LineRenderer::new(device, format));
+        self.line_renderer = Some(OverlayLineRenderer::new(device, format));
         self.text_renderer = Some(TextRenderer::new(device, format));
         self.ui_renderer = Some(anvilkit_render::renderer::ui::UiRenderer::new(device, format));
 
         self.voxel_gpu = Some(gpu);
-        self.initialized = true;
+        // initialization complete
 
         // Hide cursor for FPS mode
-        if let Some(window) = self.render_app.window() {
+        if let Some(window) = ctx.render_app.window() {
             let _ = window.set_cursor_grab(winit::window::CursorGrabMode::Confined)
                 .or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Locked));
             window.set_cursor_visible(false);
@@ -291,28 +281,28 @@ impl CraftApp {
         );
     }
 
-    fn update_chunks(&mut self) {
+    fn update_chunks(&mut self, ctx: &mut GameContext) {
         let cam_pos = {
-            let cam = self.app.world.get_resource::<ActiveCamera>();
+            let cam = ctx.app.world.get_resource::<ActiveCamera>();
             match cam {
                 Some(c) => c.camera_pos,
                 None => return,
             }
         };
-        let mut world = self.app.world.resource_mut::<VoxelWorld>();
+        let mut world = ctx.app.world.resource_mut::<VoxelWorld>();
         self.chunks.update(&mut world, cam_pos);
     }
 
-    fn remesh_dirty_chunks(&mut self) {
-        let Some(device) = self.render_app.render_device() else { return };
-        let world = self.app.world.resource::<VoxelWorld>();
+    fn remesh_dirty_chunks(&mut self, ctx: &mut GameContext) {
+        let Some(device) = ctx.render_app.render_device() else { return };
+        let world = ctx.app.world.resource::<VoxelWorld>();
         self.chunks.remesh_dirty(&world, device);
     }
 
-    fn handle_block_interaction(&mut self) {
-        let (w, h) = self.render_app.window_state().size();
+    fn handle_block_interaction(&mut self, ctx: &mut GameContext) {
+        let (w, h) = ctx.render_app.window_state().size();
         let (cam_vp, cam_pos) = {
-            let Some(cam) = self.app.world.get_resource::<ActiveCamera>() else { return };
+            let Some(cam) = ctx.app.world.get_resource::<ActiveCamera>() else { return };
             (cam.view_proj, cam.camera_pos)
         };
 
@@ -322,7 +312,7 @@ impl CraftApp {
         let (ray_origin, ray_dir) = screen_to_ray(screen_center, window_size, &cam_vp);
 
         // Raycast into voxel world
-        let world = self.app.world.resource::<VoxelWorld>();
+        let world = ctx.app.world.resource::<VoxelWorld>();
         self.current_hit = raycast::raycast_voxels(
             &world,
             [ray_origin.x, ray_origin.y, ray_origin.z],
@@ -332,7 +322,7 @@ impl CraftApp {
 
         // Check mouse buttons
         let (left_just, right_just) = {
-            let input = self.app.world.resource::<InputState>();
+            let input = ctx.app.world.resource::<InputState>();
             (
                 input.is_mouse_just_pressed(MouseButton::Left),
                 input.is_mouse_just_pressed(MouseButton::Right),
@@ -343,7 +333,7 @@ impl CraftApp {
             if left_just {
                 // Break block
                 let [bx, by, bz] = hit.block_pos;
-                let mut world = self.app.world.resource_mut::<VoxelWorld>();
+                let mut world = ctx.app.world.resource_mut::<VoxelWorld>();
                 world.set_block(bx, by, bz, BlockType::Air);
                 self.chunks.mark_dirty_with_neighbors(bx, bz);
             } else if right_just {
@@ -365,8 +355,8 @@ impl CraftApp {
                     && player_max[2] > block_min[2] && player_min[2] < block_max[2];
 
                 if !overlaps {
-                    let selected = self.app.world.resource::<SelectedBlock>().block_type;
-                    let mut world = self.app.world.resource_mut::<VoxelWorld>();
+                    let selected = ctx.app.world.resource::<SelectedBlock>().block_type;
+                    let mut world = ctx.app.world.resource_mut::<VoxelWorld>();
                     world.set_block(px, py, pz, selected);
                     self.chunks.mark_dirty_with_neighbors(px, pz);
                 }
@@ -374,8 +364,8 @@ impl CraftApp {
         }
     }
 
-    fn render_frame(&mut self) {
-        let Some(device) = self.render_app.render_device() else {
+    fn render_frame(&mut self, ctx: &mut GameContext) {
+        let Some(device) = ctx.render_app.render_device() else {
             return;
         };
         let Some(ref gpu) = self.voxel_gpu else {
@@ -384,19 +374,19 @@ impl CraftApp {
 
         // Camera data
         let (cam_vp, cam_pos) = {
-            let Some(cam) = self.app.world.get_resource::<ActiveCamera>() else {
+            let Some(cam) = ctx.app.world.get_resource::<ActiveCamera>() else {
                 return;
             };
             (cam.view_proj, cam.camera_pos)
         };
 
-        let Some(frame) = self.render_app.get_current_frame() else {
+        let Some(frame) = ctx.render_app.get_current_frame() else {
             return;
         };
         let swapchain = frame.texture.create_view(&Default::default());
 
         // Day/night cycle data
-        let cycle = self.app.world.resource::<DayNightCycle>();
+        let cycle = ctx.app.world.resource::<DayNightCycle>();
         let light_dir = cycle.light_dir();
         let ambient = cycle.ambient();
         let fog_color = cycle.fog_color();
@@ -434,9 +424,9 @@ impl CraftApp {
 
         // --- Update filter uniform (before tonemap pass) ---
         {
-            let active_filter = self.app.world.resource::<ActiveFilter>();
-            let cycle = self.app.world.resource::<DayNightCycle>();
-            let is_srgb = self.render_app.surface_format()
+            let active_filter = ctx.app.world.resource::<ActiveFilter>();
+            let cycle = ctx.app.world.resource::<DayNightCycle>();
+            let is_srgb = ctx.render_app.surface_format()
                 .map(|f| f.is_srgb())
                 .unwrap_or(false);
             let filter_uniform = FilterUniform {
@@ -562,9 +552,9 @@ impl CraftApp {
 
         // SSAO pass: depth → half-res AO → blur
         {
-            let ssao_settings = self.app.world.resource::<SsaoSettings>();
+            let ssao_settings = ctx.app.world.resource::<SsaoSettings>();
             // Build projection matrix (same as camera uses)
-            let (w, h) = self.render_app.window_state().size();
+            let (w, h) = ctx.render_app.window_state().size();
             let aspect = w as f32 / h as f32;
             let projection = glam::Mat4::perspective_rh(
                 config::FOV.to_radians(), aspect, config::NEAR_PLANE, config::FAR_PLANE,
@@ -574,7 +564,7 @@ impl CraftApp {
 
         // Bloom passes: downsample → upsample
         {
-            let bloom_settings = self.app.world.resource::<BloomSettings>();
+            let bloom_settings = ctx.app.world.resource::<BloomSettings>();
             gpu.bloom.execute(device, &mut enc, &gpu.hdr_view, &bloom_settings);
         }
 
@@ -605,19 +595,20 @@ impl CraftApp {
         // --- Pass 5: HUD (crosshair, coordinates, block highlight) ---
         // Re-acquire device ref to avoid borrow conflict with &mut self
         let _ = gpu; // end immutable borrow on self.voxel_gpu
-        self.render_hud(&swapchain, &cam_vp, cam_pos);
+        self.render_hud(ctx, &swapchain, &cam_vp, cam_pos);
 
         frame.present();
     }
 
     fn render_hud(
         &mut self,
+        ctx: &mut GameContext,
         swapchain: &wgpu::TextureView,
         cam_vp: &glam::Mat4,
         cam_pos: glam::Vec3,
     ) {
-        let Some(device) = self.render_app.render_device() else { return };
-        let (sw, sh) = self.render_app.window_state().size();
+        let Some(device) = ctx.render_app.render_device() else { return };
+        let (sw, sh) = ctx.render_app.window_state().size();
         let sw = sw as f32;
         let sh = sh as f32;
 
@@ -654,9 +645,9 @@ impl CraftApp {
         }
 
         // Text: coordinates and selected block
-        let selected = self.app.world.resource::<SelectedBlock>();
-        let player = self.app.world.resource::<PlayerState>();
-        let cycle = self.app.world.resource::<DayNightCycle>();
+        let selected = ctx.app.world.resource::<SelectedBlock>();
+        let player = ctx.app.world.resource::<PlayerState>();
+        let cycle = ctx.app.world.resource::<DayNightCycle>();
         let selected_index = selected.index;
 
         if let Some(ref mut tr) = self.text_renderer {
@@ -759,73 +750,71 @@ fn block_wireframe(pos: [i32; 3], color: glam::Vec3) -> Vec<(glam::Vec3, glam::V
     ]
 }
 
-impl ApplicationHandler for CraftApp {
-    fn resumed(&mut self, el: &ActiveEventLoop) {
-        self.render_app.resumed(el);
-        self.init_scene();
+impl GameCallbacks for CraftGame {
+    fn init(&mut self, ctx: &mut GameContext) {
+        self.init_scene(ctx);
     }
 
-    fn window_event(&mut self, el: &ActiveEventLoop, wid: WindowId, ev: WindowEvent) {
-        // Game-specific event handling
-        match &ev {
-            WindowEvent::Resized(s) if self.initialized && s.width > 0 && s.height > 0 => {
-                if let Some(device) = self.render_app.render_device() {
-                    if let Some(ref mut gpu) = self.voxel_gpu {
-                        let (_, dv) = create_depth_texture(device, s.width, s.height, "Voxel Depth");
-                        gpu.depth_view = dv;
-                        let (_, hv) =
-                            create_hdr_render_target(device, s.width, s.height, "Voxel HDR RT");
-                        let samp = create_sampler(device, "Tonemap Sampler");
-                        // Resize bloom + SSAO
-                        let bloom_mips = self.app.world.resource::<BloomSettings>().mip_count;
-                        gpu.bloom.resize(device, s.width, s.height, bloom_mips);
-                        gpu.ssao.resize(device, s.width, s.height);
-                        let bloom_view = gpu.bloom.mip_views.first().unwrap_or(&hv);
-                        gpu.tonemap_bg =
-                            device
-                                .device()
-                                .create_bind_group(&wgpu::BindGroupDescriptor {
-                                    label: Some("Tonemap BG"),
-                                    layout: &gpu.tonemap_bgl,
-                                    entries: &[
-                                        wgpu::BindGroupEntry {
-                                            binding: 0,
-                                            resource: wgpu::BindingResource::TextureView(&hv),
-                                        },
-                                        wgpu::BindGroupEntry {
-                                            binding: 1,
-                                            resource: wgpu::BindingResource::Sampler(&samp),
-                                        },
-                                        wgpu::BindGroupEntry {
-                                            binding: 2,
-                                            resource: gpu.filter_ub.as_entire_binding(),
-                                        },
-                                        wgpu::BindGroupEntry {
-                                            binding: 3,
-                                            resource: wgpu::BindingResource::TextureView(bloom_view),
-                                        },
-                                        wgpu::BindGroupEntry {
-                                            binding: 4,
-                                            resource: wgpu::BindingResource::TextureView(&gpu.ssao.blurred_view),
-                                        },
-                                    ],
-                                });
-                        gpu.hdr_view = hv;
-                    }
-                }
+    fn on_resize(&mut self, ctx: &mut GameContext, width: u32, height: u32) {
+        if let Some(device) = ctx.render_app.render_device() {
+            if let Some(ref mut gpu) = self.voxel_gpu {
+                let (_, dv) = create_depth_texture(device, width, height, "Voxel Depth");
+                gpu.depth_view = dv;
+                let (_, hv) =
+                    create_hdr_render_target(device, width, height, "Voxel HDR RT");
+                let samp = create_sampler(device, "Tonemap Sampler");
+                let bloom_mips = ctx.app.world.resource::<BloomSettings>().mip_count;
+                gpu.bloom.resize(device, width, height, bloom_mips);
+                gpu.ssao.resize(device, width, height);
+                let bloom_view = gpu.bloom.mip_views.first().unwrap_or(&hv);
+                gpu.tonemap_bg =
+                    device
+                        .device()
+                        .create_bind_group(&wgpu::BindGroupDescriptor {
+                            label: Some("Tonemap BG"),
+                            layout: &gpu.tonemap_bgl,
+                            entries: &[
+                                wgpu::BindGroupEntry {
+                                    binding: 0,
+                                    resource: wgpu::BindingResource::TextureView(&hv),
+                                },
+                                wgpu::BindGroupEntry {
+                                    binding: 1,
+                                    resource: wgpu::BindingResource::Sampler(&samp),
+                                },
+                                wgpu::BindGroupEntry {
+                                    binding: 2,
+                                    resource: gpu.filter_ub.as_entire_binding(),
+                                },
+                                wgpu::BindGroupEntry {
+                                    binding: 3,
+                                    resource: wgpu::BindingResource::TextureView(bloom_view),
+                                },
+                                wgpu::BindGroupEntry {
+                                    binding: 4,
+                                    resource: wgpu::BindingResource::TextureView(&gpu.ssao.blurred_view),
+                                },
+                            ],
+                        });
+                gpu.hdr_view = hv;
             }
+        }
+    }
+
+    fn on_window_event(&mut self, ctx: &mut GameContext, ev: &WindowEvent) -> bool {
+        match ev {
             WindowEvent::KeyboardInput { event, .. } => {
                 use winit::keyboard::{KeyCode as WK, PhysicalKey};
                 if let PhysicalKey::Code(code) = event.physical_key {
                     if event.state.is_pressed() {
                         // Ctrl+S: save world
                         if code == WK::KeyS && !event.repeat {
-                            let input = self.app.world.resource::<InputState>();
+                            let input = ctx.app.world.resource::<InputState>();
                             if input.is_key_pressed(anvilkit_input::prelude::KeyCode::LControl)
                                 || input.is_key_pressed(anvilkit_input::prelude::KeyCode::RControl)
                             {
-                                let save_seed = self.app.world.resource::<WorldSeed>().0;
-                                let world = self.app.world.resource::<VoxelWorld>();
+                                let save_seed = ctx.app.world.resource::<WorldSeed>().0;
+                                let world = ctx.app.world.resource::<VoxelWorld>();
                                 match persistence::save_world(&world, &world.modified_chunks, save_seed) {
                                     Ok(n) => println!("Saved {} modified chunks to {:?}", n, persistence::save_path()),
                                     Err(e) => println!("Save failed: {}", e),
@@ -833,25 +822,25 @@ impl ApplicationHandler for CraftApp {
                             }
                         }
                         match code {
-                            WK::Escape => { el.exit(); return; }
+                            WK::Escape => { ctx.app.exit(); return true; }
                             WK::Tab => {
-                                if let Some(mut ps) = self.app.world.get_resource_mut::<PlayerState>() {
+                                if let Some(mut ps) = ctx.app.world.get_resource_mut::<PlayerState>() {
                                     ps.flying = !ps.flying;
                                     println!("Flying: {}", if ps.flying { "ON" } else { "OFF" });
                                 }
                             }
                             WK::F1 => {
-                                if let Some(mut af) = self.app.world.get_resource_mut::<ActiveFilter>() {
+                                if let Some(mut af) = ctx.app.world.get_resource_mut::<ActiveFilter>() {
                                     af.filter = af.filter.cycle();
                                     println!("Filter: {}", af.filter.name());
                                 }
                             }
                             WK::F5 => {
-                                let pos = self.app.world.get_resource::<ActiveCamera>()
+                                let pos = ctx.app.world.get_resource::<ActiveCamera>()
                                     .map(|c| c.camera_pos)
                                     .unwrap_or(glam::Vec3::ZERO);
-                                let mut q = self.app.world.query::<&mut CameraController>();
-                                for mut ctrl in q.iter_mut(&mut self.app.world) {
+                                let mut q = ctx.app.world.query::<&mut CameraController>();
+                                for mut ctrl in q.iter_mut(&mut ctx.app.world) {
                                     ctrl.toggle_perspective(pos);
                                     let mode_name = match &ctrl.mode {
                                         CameraMode::FirstPerson => "First Person",
@@ -861,69 +850,51 @@ impl ApplicationHandler for CraftApp {
                                     println!("Camera: {}", mode_name);
                                 }
                             }
-                            WK::Digit1 => self.select_block(0),
-                            WK::Digit2 => self.select_block(1),
-                            WK::Digit3 => self.select_block(2),
-                            WK::Digit4 => self.select_block(3),
-                            WK::Digit5 => self.select_block(4),
-                            WK::Digit6 => self.select_block(5),
-                            WK::Digit7 => self.select_block(6),
-                            WK::Digit8 => self.select_block(7),
-                            WK::Digit9 => self.select_block(8),
+                            WK::Digit1 => self.select_block(0, ctx),
+                            WK::Digit2 => self.select_block(1, ctx),
+                            WK::Digit3 => self.select_block(2, ctx),
+                            WK::Digit4 => self.select_block(3, ctx),
+                            WK::Digit5 => self.select_block(4, ctx),
+                            WK::Digit6 => self.select_block(5, ctx),
+                            WK::Digit7 => self.select_block(6, ctx),
+                            WK::Digit8 => self.select_block(7, ctx),
+                            WK::Digit9 => self.select_block(8, ctx),
                             _ => {}
                         }
                     }
                 }
+                false // let engine also process for InputState forwarding
             }
-            WindowEvent::RedrawRequested if self.initialized => {
-                self.render_frame();
-                return;
-            }
-            _ => {}
+            _ => false,
         }
-        // Engine handles input forwarding (keyboard→InputState, mouse, cursor, scroll)
-        // and window lifecycle (close, resize surface, focus)
-        RenderApp::forward_input(&mut self.app, &ev);
-        self.render_app.window_event(el, wid, ev);
     }
 
-    fn device_event(
-        &mut self,
-        el: &ActiveEventLoop,
-        did: winit::event::DeviceId,
-        ev: winit::event::DeviceEvent,
-    ) {
-        RenderApp::forward_device_input(&mut self.app, &ev);
-        self.render_app.device_event(el, did, ev);
+    fn render(&mut self, ctx: &mut GameContext) {
+        self.render_frame(ctx);
     }
 
-    fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
+    fn post_update(&mut self, ctx: &mut GameContext) {
         self.frame_count += 1;
-
-        // Engine tick: DeltaTime → app.update() (runs all ECS systems) → end_frame → redraw
-        self.render_app.tick(&mut self.app);
-
-        // Post-update: game logic that depends on ECS system results
-        self.post_update();
+        self.do_post_update(ctx);
     }
 }
 
-impl CraftApp {
+impl CraftGame {
     // Pre-update logic is now handled by ECS systems:
     // - day_night_system: advances DayNightCycle
     // - camera_effects_system: landing shake, sprint FOV, third-person target
 
     /// Post-update: game logic that depends on ECS system results.
-    fn post_update(&mut self) {
+    fn do_post_update(&mut self, ctx: &mut GameContext) {
         // Periodic debug log (every 120 frames ~ 2 sec)
         if self.frame_count % 120 == 0 {
-            let flying = self.app.world.resource::<PlayerState>().flying;
-            let on_ground = self.app.world.resource::<PlayerState>().on_ground;
+            let flying = ctx.app.world.resource::<PlayerState>().flying;
+            let on_ground = ctx.app.world.resource::<PlayerState>().on_ground;
             let vel = {
-                let mut q = self.app.world.query::<&Velocity>();
-                q.iter(&self.app.world).next().map(|v| v.linear).unwrap_or(glam::Vec3::ZERO)
+                let mut q = ctx.app.world.query::<&Velocity>();
+                q.iter(&ctx.app.world).next().map(|v| v.linear).unwrap_or(glam::Vec3::ZERO)
             };
-            if let Some(cam) = self.app.world.get_resource::<ActiveCamera>() {
+            if let Some(cam) = ctx.app.world.get_resource::<ActiveCamera>() {
                 let p = cam.camera_pos;
                 log::debug!(
                     "[F{}] pos=({:.1},{:.1},{:.1}) vel=({:.1},{:.1},{:.1}) fly={} gnd={}",
@@ -936,18 +907,18 @@ impl CraftApp {
         }
 
         // Block interaction (raycast + place/break)
-        self.handle_block_interaction();
+        self.handle_block_interaction(ctx);
 
         // Remesh any dirty chunks
-        self.remesh_dirty_chunks();
+        self.remesh_dirty_chunks(ctx);
 
         // Dynamic chunk loading
-        self.update_chunks();
+        self.update_chunks(ctx);
     }
 
-    fn select_block(&mut self, index: usize) {
+    fn select_block(&mut self, index: usize, ctx: &mut GameContext) {
         if index < BLOCK_PALETTE.len() {
-            if let Some(mut sb) = self.app.world.get_resource_mut::<SelectedBlock>() {
+            if let Some(mut sb) = ctx.app.world.get_resource_mut::<SelectedBlock>() {
                 sb.block_type = BLOCK_PALETTE[index];
                 sb.index = index;
                 println!("Selected: {:?}", sb.block_type);

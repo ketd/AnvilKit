@@ -53,12 +53,7 @@ const FIRST_CHAR: u8 = 32;
 /// ASCII 可打印字符结束码位（不含）
 const LAST_CHAR: u8 = 127;
 
-/// 正交投影 uniform（64 字节）
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct OrthoUniform {
-    projection: [[f32; 4]; 4],
-}
+use super::shared::MatrixUniform;
 
 /// 文字渲染器
 ///
@@ -69,7 +64,7 @@ pub struct TextRenderer {
     ortho_buffer: Buffer,
     ortho_bind_group: BindGroup,
     /// Cached vertex buffer for per-frame reuse
-    cached_vb: Option<(Buffer, u64)>,
+    cached_vb: super::shared::CachedBuffer,
 }
 
 impl TextRenderer {
@@ -123,9 +118,7 @@ impl TextRenderer {
         });
 
         // Ortho uniform
-        let ortho_uniform = OrthoUniform {
-            projection: Mat4::IDENTITY.to_cols_array_2d(),
-        };
+        let ortho_uniform = MatrixUniform::identity();
         let ortho_buffer = create_uniform_buffer(
             device,
             "Text Ortho Uniform",
@@ -211,7 +204,7 @@ impl TextRenderer {
             font_bind_group,
             ortho_buffer,
             ortho_bind_group,
-            cached_vb: None,
+            cached_vb: super::shared::CachedBuffer::vertex("Text VB (cached)"),
         }
     }
 
@@ -245,10 +238,9 @@ impl TextRenderer {
         }
 
         // Update orthographic projection
-        let ortho = OrthoUniform {
-            projection: Mat4::orthographic_lh(0.0, screen_w, screen_h, 0.0, -1.0, 1.0)
-                .to_cols_array_2d(),
-        };
+        let ortho = MatrixUniform::from_mat4(
+            &Mat4::orthographic_lh(0.0, screen_w, screen_h, 0.0, -1.0, 1.0),
+        );
         device
             .queue()
             .write_buffer(&self.ortho_buffer, 0, bytemuck::bytes_of(&ortho));
@@ -292,21 +284,7 @@ impl TextRenderer {
 
         // Reuse cached buffer if large enough
         let data: &[u8] = bytemuck::cast_slice(&vertices);
-        let needed = data.len() as u64;
-        let reuse = self.cached_vb.as_ref().map_or(false, |(_, cap)| *cap >= needed);
-        if !reuse {
-            self.cached_vb = Some((
-                device.device().create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("Text VB (cached)"),
-                    size: needed,
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                    mapped_at_creation: false,
-                }),
-                needed,
-            ));
-        }
-        let vertex_buffer = &self.cached_vb.as_ref().expect("buffer must be initialized above").0;
-        device.queue().write_buffer(vertex_buffer, 0, data);
+        let vb = self.cached_vb.ensure_and_write(device.device(), device.queue(), data);
 
         {
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -327,7 +305,7 @@ impl TextRenderer {
             rp.set_pipeline(&self.pipeline);
             rp.set_bind_group(0, &self.ortho_bind_group, &[]);
             rp.set_bind_group(1, &self.font_bind_group, &[]);
-            rp.set_vertex_buffer(0, vertex_buffer.slice(..));
+            rp.set_vertex_buffer(0, vb.slice(..));
             rp.draw(0..vertices.len() as u32, 0..1);
         }
     }

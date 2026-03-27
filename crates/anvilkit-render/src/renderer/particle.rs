@@ -292,14 +292,6 @@ impl ParticleVertex {
     }
 }
 
-/// 粒子渲染器场景 uniform (64 bytes)
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct ParticleSceneUniform {
-    /// Combined view-projection matrix for the particle camera.
-    pub view_proj: [[f32; 4]; 4],
-}
-
 /// GPU 粒子渲染器
 pub struct ParticleRenderer {
     /// The wgpu render pipeline for particle point-sprites.
@@ -309,7 +301,7 @@ pub struct ParticleRenderer {
     /// Bind group for the scene uniform buffer.
     pub scene_bind_group: wgpu::BindGroup,
     /// Cached instance buffer for per-frame reuse.
-    cached_instance_buf: Option<(wgpu::Buffer, u64)>,
+    cached_instance_buf: super::shared::CachedBuffer,
 }
 
 impl ParticleRenderer {
@@ -366,9 +358,7 @@ impl ParticleRenderer {
             multiview: None,
         });
 
-        let initial = ParticleSceneUniform {
-            view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
-        };
+        let initial = super::shared::MatrixUniform::identity();
         let scene_buffer = device.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Particle Scene UB"),
             contents: bytemuck::bytes_of(&initial),
@@ -388,7 +378,7 @@ impl ParticleRenderer {
             pipeline,
             scene_buffer,
             scene_bind_group: scene_bg,
-            cached_instance_buf: None,
+            cached_instance_buf: super::shared::CachedBuffer::vertex("Particle Instance (cached)"),
         }
     }
 
@@ -415,28 +405,16 @@ impl ParticleRenderer {
         }
 
         // Update view-projection
-        let uniform = ParticleSceneUniform {
-            view_proj: view_proj.to_cols_array_2d(),
-        };
+        let uniform = super::shared::MatrixUniform::from_mat4(view_proj);
         device.queue().write_buffer(&self.scene_buffer, 0, bytemuck::bytes_of(&uniform));
 
         // Reuse cached instance buffer if large enough
-        let data = bytemuck::cast_slice(&vertices);
-        let needed = data.len() as u64;
-        let reuse = self.cached_instance_buf.as_ref().map_or(false, |(_, cap)| *cap >= needed);
-        if !reuse {
-            self.cached_instance_buf = Some((
-                device.device().create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("Particle Instance VB (cached)"),
-                    size: needed,
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                    mapped_at_creation: false,
-                }),
-                needed,
-            ));
-        }
-        let instance_buffer = &self.cached_instance_buf.as_ref().expect("buffer must be initialized above").0;
-        device.queue().write_buffer(instance_buffer, 0, data);
+        let data: &[u8] = bytemuck::cast_slice(&vertices);
+        let instance_buffer = self.cached_instance_buf.ensure_and_write(
+            device.device(),
+            device.queue(),
+            data,
+        );
 
         {
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

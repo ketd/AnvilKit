@@ -21,6 +21,7 @@ pub use anvilkit_assets as assets;
 pub use anvilkit_input as input;
 pub use anvilkit_audio as audio;
 pub use anvilkit_camera as camera;
+pub use anvilkit_app as app;
 
 pub mod default_plugins;
 pub use default_plugins::DefaultPlugins;
@@ -34,5 +35,6 @@ pub mod prelude {
     pub use anvilkit_input::prelude::*;
     pub use anvilkit_camera::prelude::*;
     pub use anvilkit_audio::AudioPlugin;
+    pub use anvilkit_app::prelude::*;
     pub use crate::DefaultPlugins;
 }

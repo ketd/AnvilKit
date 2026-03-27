@@ -90,37 +90,6 @@ impl SystemUtils {
         system.run_if(condition)
     }
 
-    /// 创建定时系统
-    /// 
-    /// 创建一个按指定间隔执行的系统。
-    /// 
-    /// # 参数
-    /// 
-    /// - `interval`: 执行间隔（秒）
-    /// - `system`: 要执行的系统
-    /// 
-    /// # 示例
-    /// 
-    /// ```rust
-    /// use anvilkit_ecs::prelude::*;
-    /// 
-    /// fn periodic_system() {
-    ///     println!("每秒执行一次");
-    /// }
-    /// 
-    /// let mut app = App::new();
-    /// // 注意：这需要一个定时器资源来实现
-    /// ```
-    #[deprecated(since = "0.2.0", note = "不提供定时功能，请使用 Time resource + Local<Timer> 实现")]
-    pub fn timed_system<M, S>(
-        _interval: f32,
-        system: S,
-    ) -> impl IntoSystemConfigs<M>
-    where
-        S: IntoSystemConfigs<M>,
-    {
-        system
-    }
 }
 
 /// 调试系统
@@ -334,65 +303,6 @@ impl UtilitySystems {
         for entity in &query {
             commands.entity(entity).despawn();
         }
-    }
-}
-
-/// 系统组合器
-/// 
-/// 提供系统组合和配置的便捷方法。
-pub struct SystemCombinator;
-
-impl SystemCombinator {
-    /// 创建系统链
-    /// 
-    /// 将多个系统按顺序链接执行。
-    /// 
-    /// # 示例
-    /// 
-    /// ```rust
-    /// use anvilkit_ecs::prelude::*;
-    /// use anvilkit_ecs::schedule::AnvilKitSchedule;
-    ///
-    /// fn system_a() { println!("系统 A"); }
-    /// fn system_b() { println!("系统 B"); }
-    /// fn system_c() { println!("系统 C"); }
-    ///
-    /// let mut app = App::new();
-    /// app.add_systems(AnvilKitSchedule::Update, (
-    ///     system_a,
-    ///     system_b.after(system_a),
-    ///     system_c.after(system_b),
-    /// ));
-    /// ```
-    #[deprecated(since = "0.2.0", note = "不提供链式调度功能，请直接使用 bevy_ecs 的 .before()/.after() 排序")]
-    pub fn chain<M>(systems: impl IntoSystemConfigs<M>) -> impl IntoSystemConfigs<M> {
-        systems
-    }
-
-    /// 创建并行系统组
-    ///
-    /// 将多个系统组合为可并行执行的组。
-    ///
-    /// # 示例
-    ///
-    /// ```rust
-    /// use anvilkit_ecs::prelude::*;
-    /// use anvilkit_ecs::schedule::AnvilKitSchedule;
-    ///
-    /// fn physics_system() { println!("物理系统"); }
-    /// fn audio_system() { println!("音频系统"); }
-    /// fn input_system() { println!("输入系统"); }
-    ///
-    /// let mut app = App::new();
-    /// app.add_systems(AnvilKitSchedule::Update, (
-    ///     physics_system,
-    ///     audio_system,
-    ///     input_system,
-    /// ));
-    /// ```
-    #[deprecated(since = "0.2.0", note = "不提供并行调度功能，bevy_ecs 系统默认并行执行")]
-    pub fn parallel<M>(systems: impl IntoSystemConfigs<M>) -> impl IntoSystemConfigs<M> {
-        systems
     }
 }
 

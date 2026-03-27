@@ -109,41 +109,6 @@ pub enum NetworkEvent {
     },
 }
 
-/// Network events resource（已废弃）
-#[deprecated(note = "使用 EventReader<NetworkEvent> 替代")]
-pub struct NetworkEvents {
-    /// Pending events.
-    pub events: Vec<NetworkEvent>,
-}
-
-#[allow(deprecated)]
-impl Resource for NetworkEvents {}
-
-#[allow(deprecated)]
-impl Default for NetworkEvents {
-    fn default() -> Self { Self { events: Vec::new() } }
-}
-
-#[allow(deprecated)]
-impl NetworkEvents {
-    /// Push an event.
-    pub fn push(&mut self, event: NetworkEvent) {
-        self.events.push(event);
-    }
-    /// Drain all events, returning them as a Vec.
-    pub fn drain(&mut self) -> Vec<NetworkEvent> {
-        std::mem::take(&mut self.events)
-    }
-    /// Iterate over events.
-    pub fn iter(&self) -> impl Iterator<Item = &NetworkEvent> {
-        self.events.iter()
-    }
-    /// Clear all events.
-    pub fn clear(&mut self) {
-        self.events.clear();
-    }
-}
-
 // ---------------------------------------------------------------------------
 //  UDP Transport Abstraction
 // ---------------------------------------------------------------------------
@@ -432,13 +397,6 @@ impl Default for InputBuffer {
 //  Systems
 // ---------------------------------------------------------------------------
 
-/// System that clears network events at the start of each frame.
-#[deprecated(note = "Bevy Events 自动管理清理，不再需要手动清除")]
-#[allow(deprecated)]
-pub fn network_events_cleanup_system(mut events: ResMut<NetworkEvents>) {
-    events.clear();
-}
-
 // ---------------------------------------------------------------------------
 //  Plugin
 // ---------------------------------------------------------------------------
@@ -447,14 +405,12 @@ pub fn network_events_cleanup_system(mut events: ResMut<NetworkEvents>) {
 pub struct NetworkPlugin;
 
 impl Plugin for NetworkPlugin {
-    #[allow(deprecated)]
     fn build(&self, app: &mut App) {
         app.init_resource::<NetworkConfig>();
         app.init_resource::<NetworkState>();
         app.add_event::<NetworkEvent>();
         app.init_resource::<ReplicationBuffer>();
         app.init_resource::<InputBuffer>();
-        // network_events_cleanup_system 不再需要 — Bevy Events 自动管理生命周期
     }
 
     fn name(&self) -> &str {
@@ -546,18 +502,6 @@ mod tests {
         assert_eq!(buf.get_input(0), Some(&[1, 0, 0][..]));
         assert_eq!(buf.get_input(1), Some(&[0, 1, 0][..]));
         assert_eq!(buf.get_input(2), None);
-    }
-
-    #[test]
-    fn test_network_events() {
-        let mut events = NetworkEvents::default();
-        events.push(NetworkEvent::Connected { client_id: 1 });
-        events.push(NetworkEvent::DataReceived { client_id: 1, channel: 0, data: vec![42] });
-        assert_eq!(events.events.len(), 2);
-
-        let drained = events.drain();
-        assert_eq!(drained.len(), 2);
-        assert!(events.events.is_empty());
     }
 
     #[test]

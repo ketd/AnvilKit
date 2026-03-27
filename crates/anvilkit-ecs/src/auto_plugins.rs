@@ -82,12 +82,6 @@ fn time_update_system(mut time: ResMut<anvilkit_core::time::Time>) {
     // which caps at max 10 ticks. Time itself tracks real elapsed time.
 }
 
-/// 最大允许的 delta 时间（秒）
-///
-/// 超过此值的帧时间被视为异常（如调试器暂停），
-/// 防止 FixedUpdate 执行过多 tick。
-pub const MAX_DELTA_SECONDS: f32 = 0.25;
-
 #[cfg(test)]
 mod tests {
     use super::*;

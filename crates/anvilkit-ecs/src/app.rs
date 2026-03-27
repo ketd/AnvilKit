@@ -38,6 +38,17 @@ use bevy_ecs::component::Tick;
 use crate::plugin::Plugin;
 use crate::schedule::{AnvilKitSchedule, ScheduleLabel};
 
+/// Frame-time resource — seconds elapsed since the previous frame.
+///
+/// Updated automatically by the engine's frame loop (or manually if not using
+/// [`AnvilKitApp`]). Common values: ~0.016 at 60 FPS.
+#[derive(Resource)]
+pub struct DeltaTime(pub f32);
+
+impl Default for DeltaTime {
+    fn default() -> Self { Self(1.0 / 60.0) }
+}
+
 /// AnvilKit 应用框架
 /// 
 /// 基于 Bevy ECS 构建的应用容器，提供系统调度、插件管理和生命周期控制。

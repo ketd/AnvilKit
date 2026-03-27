@@ -176,19 +176,7 @@ impl AnvilKitEcsPlugin {
         use bevy_ecs::schedule::*;
         use crate::schedule::{AnvilKitSchedule, AnvilKitSystemSet};
 
-        // 创建主要的调度器
-        let schedules_to_create = [
-            AnvilKitSchedule::Main,
-            AnvilKitSchedule::Startup,
-            AnvilKitSchedule::PreUpdate,
-            AnvilKitSchedule::FixedUpdate,
-            AnvilKitSchedule::Update,
-            AnvilKitSchedule::PostUpdate,
-            AnvilKitSchedule::Cleanup,
-        ];
-        for label in schedules_to_create {
-            app.world.add_schedule(Schedule::new(label));
-        }
+        // 注意: 调度器已在 App::new() 中创建，这里只配置 SystemSet 顺序
 
         // 为 Update 和 FixedUpdate 配置 SystemSet 执行顺序
         // Input → Time → Physics → GameLogic → Transform → Render → Audio → UI → Network → Debug
@@ -215,94 +203,6 @@ impl AnvilKitEcsPlugin {
                 configure_order(schedule);
             }
         }
-    }
-}
-
-/// 插件组
-/// 
-/// 用于将多个相关插件组合在一起。
-/// 
-/// # 示例
-/// 
-/// ```rust
-/// use anvilkit_ecs::prelude::*;
-/// 
-/// struct GamePlugins;
-/// 
-/// impl Plugin for GamePlugins {
-///     fn build(&self, app: &mut App) {
-///         app.add_plugins(AnvilKitEcsPlugin)
-///            .add_plugins(PhysicsPlugin)
-///            .add_plugins(RenderPlugin);
-///     }
-/// }
-/// 
-/// struct PhysicsPlugin;
-/// struct RenderPlugin;
-/// 
-/// impl Plugin for PhysicsPlugin {
-///     fn build(&self, app: &mut App) {
-///         // 物理系统设置
-///     }
-/// }
-/// 
-/// impl Plugin for RenderPlugin {
-///     fn build(&self, app: &mut App) {
-///         // 渲染系统设置
-///     }
-/// }
-/// ```
-pub struct PluginGroup<T> {
-    plugins: Vec<T>,
-}
-
-impl<T> PluginGroup<T> {
-    /// 创建新的插件组
-    pub fn new() -> Self {
-        Self {
-            plugins: Vec::new(),
-        }
-    }
-
-    /// 添加插件到组
-    pub fn add(mut self, plugin: T) -> Self {
-        self.plugins.push(plugin);
-        self
-    }
-
-    /// 获取插件列表
-    pub fn plugins(&self) -> &[T] {
-        &self.plugins
-    }
-}
-
-impl<T> Default for PluginGroup<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T: Plugin> Plugin for PluginGroup<T> {
-    fn build(&self, app: &mut App) {
-        for plugin in &self.plugins {
-            let name = plugin.name().to_string();
-            if plugin.is_unique() && app.registered_plugins.contains(&name) {
-                log::warn!("Plugin '{}' already registered, skipping duplicate in PluginGroup", name);
-                continue;
-            }
-            if plugin.is_unique() {
-                app.registered_plugins.insert(name);
-            }
-            plugin.build(app);
-        }
-    }
-
-    fn name(&self) -> &str {
-        "PluginGroup"
-    }
-
-    fn is_unique(&self) -> bool {
-        false
     }
 }
 
@@ -355,20 +255,6 @@ mod tests {
     }
 
     #[test]
-    fn test_plugin_group() {
-        let mut app = App::new();
-
-        let plugin_group = PluginGroup::new()
-            .add(TestPlugin { initial_value: 10 })
-            .add(TestPlugin { initial_value: 20 }); // 唯一插件，第二个会被跳过
-
-        plugin_group.build(&mut app);
-
-        let resource = app.world.get_resource::<TestResource>().unwrap();
-        assert_eq!(resource.value, 10); // 唯一插件只注册第一个
-    }
-
-    #[test]
     fn test_plugin_name() {
         let plugin = TestPlugin { initial_value: 0 };
         assert!(plugin.name().contains("TestPlugin"));
@@ -378,9 +264,6 @@ mod tests {
     fn test_plugin_uniqueness() {
         let plugin = TestPlugin { initial_value: 0 };
         assert!(plugin.is_unique());
-
-        let plugin_group = PluginGroup::<TestPlugin>::new();
-        assert!(!plugin_group.is_unique());
     }
 
     #[test]

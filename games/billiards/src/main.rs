@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use anvilkit::prelude::*;
+use anvilkit_app::prelude::*;
 
 use anvilkit_render::prelude::*;
 
@@ -13,7 +14,7 @@ use anvilkit_render::renderer::{
     assets::RenderAssets,
     draw::{ActiveCamera, DrawCommandList, SceneLights, DirectionalLight, PointLight, MaterialParams},
     state::{GpuLight, PbrSceneUniform},
-    line::LineRenderer,
+    debug::OverlayLineRenderer,
     text::TextRenderer,
 };
 use anvilkit_render::plugin::CameraComponent;
@@ -199,48 +200,39 @@ fn main() {
 
     println!("Billiard setup: 16 balls + table + 4 cushions + camera");
 
-    let event_loop = EventLoop::new().unwrap();
-    let wconfig = WindowConfig::new().with_title("AnvilKit Billiards").with_size(1280, 720);
-    event_loop.run_app(&mut BilliardApp {
-        render_app: RenderApp::new(wconfig),
-        app,
-        initialized: false,
+    let config = GameConfig::new("AnvilKit Billiards").with_size(1280, 720);
+
+    AnvilKitApp::run(config, app, BilliardGame {
         ball_entities,
         table_entity,
         cushion_entities,
         scene_gpu: None,
         line_renderer: None,
         text_renderer: None,
-        last_frame_time: std::time::Instant::now(),
-    }).unwrap();
+    });
 }
 
 // ---------------------------------------------------------------------------
-//  BilliardApp
+//  BilliardGame
 // ---------------------------------------------------------------------------
 
-struct BilliardApp {
-    render_app: RenderApp,
-    app: App,
-    initialized: bool,
+struct BilliardGame {
     ball_entities: Vec<Entity>,
     table_entity: Entity,
     cushion_entities: Vec<Entity>,
     scene_gpu: Option<setup::SceneGpu>,
-    line_renderer: Option<LineRenderer>,
+    line_renderer: Option<OverlayLineRenderer>,
     text_renderer: Option<TextRenderer>,
-    last_frame_time: std::time::Instant,
 }
 
-impl BilliardApp {
-    fn init_scene(&mut self) {
-        if self.initialized { return; }
-        let Some(device) = self.render_app.render_device() else { return };
-        let Some(format) = self.render_app.surface_format() else { return };
-        let (w, h) = self.render_app.window_state().size();
+impl BilliardGame {
+    fn init_scene(&mut self, ctx: &mut GameContext) {
+        let Some(device) = ctx.render_app.render_device() else { return };
+        let Some(format) = ctx.render_app.surface_format() else { return };
+        let (w, h) = ctx.render_app.window_state().size();
 
-        let config = { let c = self.app.world.resource::<BilliardConfig>(); c.clone() };
-        let mut assets = self.app.world.resource_mut::<RenderAssets>();
+        let config = { let c = ctx.app.world.resource::<BilliardConfig>(); c.clone() };
+        let mut assets = ctx.app.world.resource_mut::<RenderAssets>();
         let gpu = setup::init_scene(device, format, w, h, &mut assets, &config);
 
         // Attach mesh/material handles to ball entities
@@ -248,51 +240,51 @@ impl BilliardApp {
         for (i, &e) in self.ball_entities.iter().enumerate() {
             let ball_num = if i == 0 { 0 } else {
                 // Look up the actual ball number from the entity's NumberedBall component
-                if let Some(nb) = self.app.world.get::<NumberedBall>(e) {
+                if let Some(nb) = ctx.app.world.get::<NumberedBall>(e) {
                     nb.number as usize
                 } else {
                     i
                 }
             };
-            self.app.world.entity_mut(e).insert((gpu.sphere_mesh, gpu.ball_materials[ball_num]));
+            ctx.app.world.entity_mut(e).insert((gpu.sphere_mesh, gpu.ball_materials[ball_num]));
         }
 
         // Table
-        self.app.world.entity_mut(self.table_entity).insert((gpu.plane_mesh, gpu.table_material));
+        ctx.app.world.entity_mut(self.table_entity).insert((gpu.plane_mesh, gpu.table_material));
 
         // Cushions
         for (i, &e) in self.cushion_entities.iter().enumerate() {
             let mesh_idx = i; // 0=+X, 1=-X use X mesh; 2=-Z, 3=+Z use Z mesh
-            self.app.world.entity_mut(e).insert((gpu.cushion_meshes[mesh_idx], gpu.cushion_material));
+            ctx.app.world.entity_mut(e).insert((gpu.cushion_meshes[mesh_idx], gpu.cushion_material));
         }
 
         // Line and text renderers
-        self.line_renderer = Some(LineRenderer::new(device, format));
+        self.line_renderer = Some(OverlayLineRenderer::new(device, format));
         self.text_renderer = Some(TextRenderer::new(device, format));
 
         self.scene_gpu = Some(gpu);
-        self.initialized = true;
+        // initialization complete
         println!("Billiard scene initialized!");
     }
 
-    fn render_frame(&mut self) {
-        let Some(device) = self.render_app.render_device() else { return };
+    fn render_frame(&mut self, ctx: &mut GameContext) {
+        let Some(device) = ctx.render_app.render_device() else { return };
         let Some(ref gpu) = self.scene_gpu else { return };
 
         // Copy camera data to avoid borrow conflicts later
         let (cam_vp, cam_pos) = {
-            let Some(cam) = self.app.world.get_resource::<ActiveCamera>() else { return };
+            let Some(cam) = ctx.app.world.get_resource::<ActiveCamera>() else { return };
             (cam.view_proj, cam.camera_pos)
         };
-        let Some(dl) = self.app.world.get_resource::<DrawCommandList>() else { return };
-        let Some(ra) = self.app.world.get_resource::<RenderAssets>() else { return };
+        let Some(dl) = ctx.app.world.get_resource::<DrawCommandList>() else { return };
+        let Some(ra) = ctx.app.world.get_resource::<RenderAssets>() else { return };
         if dl.commands.is_empty() { return; }
 
-        let Some(frame) = self.render_app.get_current_frame() else { return };
+        let Some(frame) = ctx.render_app.get_current_frame() else { return };
         let swapchain = frame.texture.create_view(&Default::default());
 
         let def_lights = SceneLights::default();
-        let lights = self.app.world.get_resource::<SceneLights>().unwrap_or(&def_lights);
+        let lights = ctx.app.world.get_resource::<SceneLights>().unwrap_or(&def_lights);
         let (gpu_lights, lc) = pack_lights(lights);
         let ld = lights.directional.direction.normalize();
 
@@ -376,8 +368,8 @@ impl BilliardApp {
         if let Some(ref mut lr) = self.line_renderer {
             // Copy data out of world to avoid borrow conflicts
             let aim_data: Option<(glam::Vec3, glam::Vec3)> = {
-                let gs = self.app.world.get_resource::<GameState>();
-                let shot = self.app.world.get_resource::<ShotState>();
+                let gs = ctx.app.world.get_resource::<GameState>();
+                let shot = ctx.app.world.get_resource::<ShotState>();
                 match (gs, shot) {
                     (Some(gs), Some(shot))
                         if (gs.phase == GamePhase::Aiming || gs.phase == GamePhase::PowerCharging)
@@ -389,8 +381,8 @@ impl BilliardApp {
                 }
             };
             if let Some((aim_dir, _aim_pt)) = aim_data {
-                let cue_positions: Vec<glam::Vec3> = self.app.world.query_filtered::<&Transform, With<CueBall>>()
-                    .iter(&self.app.world)
+                let cue_positions: Vec<glam::Vec3> = ctx.app.world.query_filtered::<&Transform, With<CueBall>>()
+                    .iter(&ctx.app.world)
                     .map(|t| t.translation)
                     .collect();
                 if let Some(&cue_pos) = cue_positions.first() {
@@ -410,10 +402,10 @@ impl BilliardApp {
 
         // Text UI
         if let Some(ref mut tr) = self.text_renderer {
-            let (sw, sh) = self.render_app.window_state().size();
+            let (sw, sh) = ctx.render_app.window_state().size();
             let status = {
-                let gs = self.app.world.get_resource::<GameState>().unwrap();
-                let shot = self.app.world.get_resource::<ShotState>().unwrap();
+                let gs = ctx.app.world.get_resource::<GameState>().unwrap();
+                let shot = ctx.app.world.get_resource::<ShotState>().unwrap();
                 ui_update::format_status_text(gs, shot)
             };
             let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Text Enc") });
@@ -427,133 +419,90 @@ impl BilliardApp {
     }
 }
 
-impl ApplicationHandler for BilliardApp {
-    fn resumed(&mut self, el: &ActiveEventLoop) {
-        self.render_app.resumed(el);
-        self.init_scene();
+impl GameCallbacks for BilliardGame {
+    fn init(&mut self, ctx: &mut GameContext) {
+        self.init_scene(ctx);
     }
 
-    fn window_event(&mut self, el: &ActiveEventLoop, wid: WindowId, ev: WindowEvent) {
-        match &ev {
-            WindowEvent::Resized(s) if self.initialized && s.width > 0 && s.height > 0 => {
-                // Update window size resource for ray casting
-                if let Some(mut ws) = self.app.world.get_resource_mut::<input_sys::WindowSize>() {
-                    ws.width = s.width as f32;
-                    ws.height = s.height as f32;
-                }
-                if let Some(device) = self.render_app.render_device() {
-                    if let Some(ref mut gpu) = self.scene_gpu {
-                        let (_, dv) = create_depth_texture_msaa(device, s.width, s.height, "Billiard Depth");
-                        gpu.depth_view = dv;
-                        let (_, hv) = create_hdr_render_target(device, s.width, s.height, "Billiard HDR RT");
-                        let (_, hmv) = create_hdr_msaa_texture(device, s.width, s.height, "Billiard HDR MSAA");
-                        let samp = create_sampler(device, "Billiard Sampler");
+    fn on_resize(&mut self, ctx: &mut GameContext, width: u32, height: u32) {
+        if let Some(device) = ctx.render_app.render_device() {
+            if let Some(ref mut gpu) = self.scene_gpu {
+                let (_, dv) = create_depth_texture_msaa(device, width, height, "Billiard Depth");
+                gpu.depth_view = dv;
+                let (_, hv) = create_hdr_render_target(device, width, height, "Billiard HDR RT");
+                let (_, hmv) = create_hdr_msaa_texture(device, width, height, "Billiard HDR MSAA");
+                let samp = create_sampler(device, "Billiard Sampler");
 
-                        let tex_entry = |b: u32| wgpu::BindGroupLayoutEntry {
-                            binding: b,
+                let tex_entry = |b: u32| wgpu::BindGroupLayoutEntry {
+                    binding: b,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                };
+                let layout = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("Tonemap BGL"),
+                    entries: &[
+                        tex_entry(0),
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
                             visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                             count: None,
-                        };
-                        let layout = device.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                            label: Some("Tonemap BGL"),
-                            entries: &[
-                                tex_entry(0),
-                                wgpu::BindGroupLayoutEntry {
-                                    binding: 1,
-                                    visibility: wgpu::ShaderStages::FRAGMENT,
-                                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                                    count: None,
-                                },
-                            ],
-                        });
-                        gpu.tonemap_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
-                            label: Some("Tonemap BG"),
-                            layout: &layout,
-                            entries: &[
-                                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&hv) },
-                                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&samp) },
-                            ],
-                        });
-                        gpu.hdr_view = hv;
-                        gpu.hdr_msaa_view = hmv;
-                    }
-                }
+                        },
+                    ],
+                });
+                gpu.tonemap_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("Tonemap BG"),
+                    layout: &layout,
+                    entries: &[
+                        wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&hv) },
+                        wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&samp) },
+                    ],
+                });
+                gpu.hdr_view = hv;
+                gpu.hdr_msaa_view = hmv;
             }
+        }
+    }
+
+    fn on_window_event(&mut self, ctx: &mut GameContext, ev: &WindowEvent) -> bool {
+        match ev {
             WindowEvent::KeyboardInput { event, .. } => {
                 use winit::keyboard::{KeyCode as WK, PhysicalKey};
                 if let PhysicalKey::Code(code) = event.physical_key {
-                    if let Some(key) = anvilkit_input::prelude::KeyCode::from_winit(code) {
-                        if let Some(mut input_state) = self.app.world.get_resource_mut::<InputState>() {
-                            if event.state.is_pressed() { input_state.press_key(key); }
-                            else { input_state.release_key(key); }
-                        }
+                    if event.state.is_pressed() && code == WK::Escape {
+                        ctx.app.exit();
+                        return true;
                     }
-                    if event.state.is_pressed() && code == WK::Escape { el.exit(); return; }
-                    // R key to reset game
                     if event.state.is_pressed() && code == WK::KeyR {
-                        self.reset_game();
+                        self.reset_game(ctx);
                     }
                 }
-                return;
+                false // let engine handle InputState forwarding
             }
-            WindowEvent::CursorMoved { position, .. } => {
-                if let Some(mut input_state) = self.app.world.get_resource_mut::<InputState>() {
-                    input_state.set_mouse_position(glam::Vec2::new(position.x as f32, position.y as f32));
-                }
-                return;
-            }
-            WindowEvent::MouseInput { state, button, .. } => {
-                if let Some(mb) = anvilkit_input::prelude::MouseButton::from_winit(*button) {
-                    if let Some(mut input_state) = self.app.world.get_resource_mut::<InputState>() {
-                        if state.is_pressed() { input_state.press_mouse(mb); }
-                        else { input_state.release_mouse(mb); }
-                    }
-                }
-                return;
-            }
-            WindowEvent::RedrawRequested if self.initialized => {
-                self.render_frame();
-                return;
-            }
-            _ => {}
+            _ => false,
         }
-        self.render_app.window_event(el, wid, ev);
     }
 
-    fn device_event(&mut self, el: &ActiveEventLoop, did: winit::event::DeviceId, ev: winit::event::DeviceEvent) {
-        self.render_app.device_event(el, did, ev);
-    }
-
-    fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
-        // Update real DeltaTime
-        let now = std::time::Instant::now();
-        let dt = now.duration_since(self.last_frame_time).as_secs_f32().clamp(0.001, 0.1);
-        self.last_frame_time = now;
-        self.app.world.insert_resource(DeltaTime(dt));
-
-        self.app.update();
-        if let Some(mut input_state) = self.app.world.get_resource_mut::<InputState>() {
-            input_state.end_frame();
-        }
-        if let Some(w) = self.render_app.window() { w.request_redraw(); }
+    fn render(&mut self, ctx: &mut GameContext) {
+        self.render_frame(ctx);
     }
 }
 
-impl BilliardApp {
-    fn reset_game(&mut self) {
-        let config = { let c = self.app.world.resource::<BilliardConfig>(); c.clone() };
+impl BilliardGame {
+    fn reset_game(&mut self, ctx: &mut GameContext) {
+        let config = { let c = ctx.app.world.resource::<BilliardConfig>(); c.clone() };
         let rack_pos = rack_positions(&config);
         // Reset cue ball
         if let Some(cue_e) = self.ball_entities.first() {
-            if let Some(mut t) = self.app.world.get_mut::<Transform>(*cue_e) {
+            if let Some(mut t) = ctx.app.world.get_mut::<Transform>(*cue_e) {
                 t.translation = glam::Vec3::new(0.0, config.ball_radius, -config.table_half_depth * 0.5);
             }
-            if let Some(mut v) = self.app.world.get_mut::<Velocity>(*cue_e) {
+            if let Some(mut v) = ctx.app.world.get_mut::<Velocity>(*cue_e) {
                 v.linear = glam::Vec3::ZERO;
             }
         }
@@ -561,25 +510,25 @@ impl BilliardApp {
         // Reset numbered balls
         for i in 0..15 {
             let e = self.ball_entities[i + 1];
-            if let Some(mut t) = self.app.world.get_mut::<Transform>(e) {
+            if let Some(mut t) = ctx.app.world.get_mut::<Transform>(e) {
                 t.translation = rack_pos[i];
             }
-            if let Some(mut v) = self.app.world.get_mut::<Velocity>(e) {
+            if let Some(mut v) = ctx.app.world.get_mut::<Velocity>(e) {
                 v.linear = glam::Vec3::ZERO;
             }
-            if let Some(mut nb) = self.app.world.get_mut::<NumberedBall>(e) {
+            if let Some(mut nb) = ctx.app.world.get_mut::<NumberedBall>(e) {
                 nb.potted = false;
             }
         }
 
         // Reset resources
-        if let Some(mut gs) = self.app.world.get_resource_mut::<GameState>() {
+        if let Some(mut gs) = ctx.app.world.get_resource_mut::<GameState>() {
             *gs = GameState::default();
         }
-        if let Some(mut shot) = self.app.world.get_resource_mut::<ShotState>() {
+        if let Some(mut shot) = ctx.app.world.get_resource_mut::<ShotState>() {
             *shot = ShotState::default();
         }
-        if let Some(mut tracker) = self.app.world.get_resource_mut::<BallTracker>() {
+        if let Some(mut tracker) = ctx.app.world.get_resource_mut::<BallTracker>() {
             tracker.on_table = [true; 16];
         }
 
