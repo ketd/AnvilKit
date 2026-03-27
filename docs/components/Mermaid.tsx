@@ -51,11 +51,18 @@ export function Mermaid({ chart }: MermaidProps) {
     return () => { cancelled = true; };
   }, [chart, id]);
 
-  // Mouse wheel zoom
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setScale((s) => Math.min(Math.max(s * delta, 0.3), 5));
+  // Mouse wheel zoom — must use native event to preventDefault on non-passive listener
+  const viewportRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      setScale((s) => Math.min(Math.max(s * delta, 0.3), 5));
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
   }, []);
 
   // Mouse drag pan
@@ -126,8 +133,8 @@ export function Mermaid({ chart }: MermaidProps) {
 
       {/* Pan/Zoom viewport */}
       <div
+        ref={viewportRef}
         className={`overflow-hidden ${fullscreen ? 'h-full' : 'max-h-[600px]'} ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
-        onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
