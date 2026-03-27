@@ -9,6 +9,7 @@ members = [
     "crates/anvilkit-camera",
     "crates/anvilkit-app",
     "crates/anvilkit-ui",
+    "crates/anvilkit-gameplay",
     "crates/anvilkit",
     "games/billiards",
     "games/craft",

@@ -60,20 +60,20 @@
 
 ## Phase 3: Gameplay Systems (游戏性核心)
 
-- [ ] 3.1 创建 `crates/anvilkit-gameplay/` crate，添加到 workspace，features = ["stats", "inventory", "cooldown", "status-effect", "entity-pool"]
-- [ ] 3.2 实现 `Stat<T>` — 泛型属性组件（base_value + modifier_stack + computed_value）
-- [ ] 3.3 实现 modifier 系统 — Additive/Multiplicative/Override 修改器 + 优先级排序
-- [ ] 3.4 实现 `Health` 组件 — current/max/regen_rate，基于 Stat<f32>
-- [ ] 3.5 实现 `DamageEvent`/`HealEvent`/`DeathEvent` + `health_system`
-- [ ] 3.6 实现 `Inventory` trait + `SlotInventory`（固定槽位网格）
-- [ ] 3.7 实现 `StackInventory`（可堆叠物品 + max_stack_size）
-- [ ] 3.8 实现 `ItemStack`/`ItemDef` 数据类型
-- [ ] 3.9 实现 `Cooldown` 组件 + `CooldownPlugin`（cooldown_tick_system）
-- [ ] 3.10 实现 `StatusEffect` 组件 + `StatusEffectPlugin`（duration tick + stack policy: Replace/Extend/Stack）
-- [ ] 3.11 实现 `EntityPool<T>`（acquire/release，预分配 + 动态增长）
-- [ ] 3.12 每个模块编写单元测试（≥5 个/模块）
-- [ ] 3.13 添加 anvilkit-gameplay 到 facade crate 依赖
-- [ ] 3.14 `cargo test --workspace` 全量验证
+- [x] 3.1 创建 `crates/anvilkit-gameplay/` crate，添加到 workspace，features = ["stats", "inventory", "cooldown", "status-effect", "entity-pool"]
+- [x] 3.2 实现 `Stat<T>` — 泛型属性组件（base_value + modifier_stack + computed_value）
+- [x] 3.3 实现 modifier 系统 — Additive/Multiplicative/Override 修改器 + 优先级排序
+- [x] 3.4 实现 `Health` 组件 — current/max/regen_rate，基于 Stat<f32>
+- [x] 3.5 实现 `DamageEvent`/`HealEvent`/`DeathEvent` + `health_system`
+- [x] 3.6 实现 `Inventory` trait + `SlotInventory`（固定槽位网格）
+- [x] 3.7 实现 `StackInventory`（可堆叠物品 + max_stack_size）
+- [x] 3.8 实现 `ItemStack`/`ItemDef` 数据类型
+- [x] 3.9 实现 `Cooldown` 组件 + `CooldownPlugin`（cooldown_tick_system）
+- [x] 3.10 实现 `StatusEffect` 组件 + `StatusEffectPlugin`（duration tick + stack policy: Replace/Extend/Stack）
+- [x] 3.11 实现 `EntityPool<T>`（acquire/release，预分配 + 动态增长）
+- [x] 3.12 每个模块编写单元测试（≥5 个/模块）
+- [x] 3.13 添加 anvilkit-gameplay 到 facade crate 依赖
+- [x] 3.14 `cargo test --workspace` 全量验证
 
 ## Phase 4: Crate Restructuring (结构清理)
 

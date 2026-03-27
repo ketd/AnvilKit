@@ -23,6 +23,7 @@ pub use anvilkit_audio as audio;
 pub use anvilkit_camera as camera;
 pub use anvilkit_app as app;
 pub use anvilkit_ui as ui;
+pub use anvilkit_gameplay as gameplay;
 
 pub mod default_plugins;
 pub use default_plugins::DefaultPlugins;
