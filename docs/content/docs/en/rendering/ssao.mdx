@@ -10,7 +10,16 @@ description: Screen-space ambient occlusion
 
 Screen-space ambient occlusion using hemisphere kernel sampling with depth-reconstructed normals.
 
-**Pipeline**: Depth buffer → reconstruct view-space normals (cross-product of screen-space derivatives) → hemisphere sampling with 4×4 noise texture rotation → half-resolution AO → 4×4 box blur → multiply into scene in tonemap.
+**Pipeline**:
+
+<Mermaid chart={`
+flowchart LR
+  A["Depth Buffer"] --> B["Reconstruct Normals"]
+  B --> C["Hemisphere Sampling"]
+  C --> D["Half-res AO"]
+  D --> E["4×4 Box Blur"]
+  E --> F["Tonemap Composite"]
+`} />
 
 **Configuration** (`SsaoSettings` ECS resource):
 

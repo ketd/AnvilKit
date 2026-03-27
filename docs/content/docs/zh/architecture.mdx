@@ -7,82 +7,102 @@ description: AnvilKit 引擎的整体架构设计
 
 AnvilKit 采用分层模块化设计，每层只依赖下层：
 
-```
-┌──────────────────────────────────────────────┐
-│            游戏层 (games/)                    │
-│        billiards / craft / your_game         │
-├──────────────────────────────────────────────┤
-│          伞 crate: anvilkit                  │
-│   (re-exports 所有子 crate + DefaultPlugins) │
-├──────────────────────────────────────────────┤
-│            系统层（高级）                     │
-│    anvilkit-camera   anvilkit-audio          │
-│    anvilkit-input    anvilkit-assets         │
-├──────────────────────────────────────────────┤
-│            核心层（低级）                     │
-│    anvilkit-core     anvilkit-ecs            │
-│    anvilkit-render                           │
-├──────────────────────────────────────────────┤
-│            第三方依赖                        │
-│    bevy_ecs / wgpu / rapier / glam / taffy   │
-└──────────────────────────────────────────────┘
-```
+<Mermaid chart={`
+flowchart TB
+  subgraph game["🎮 游戏层"]
+    billiards["billiards"]
+    craft["craft"]
+    your_game["your_game"]
+  end
+  subgraph system["📦 系统层"]
+    umbrella["anvilkit (伞 crate)"]
+    camera["anvilkit-camera"]
+    audio["anvilkit-audio"]
+    input["anvilkit-input"]
+    assets["anvilkit-assets"]
+  end
+  subgraph core["⚙️ 核心层"]
+    ecs["anvilkit-ecs"]
+    render["anvilkit-render"]
+    corelib["anvilkit-core"]
+  end
+  subgraph deps["🔧 第三方依赖"]
+    bevy["bevy_ecs"]
+    wgpu["wgpu"]
+    rapier["rapier3d"]
+    glam["glam"]
+    taffy["taffy"]
+  end
+  game --> system --> core --> deps
+`} />
 
 ## Crate 依赖图
 
-```
-anvilkit-core (数学, 时间, 错误, 持久化)
-    ↑
-anvilkit-ecs (App, Plugin, Schedule, Transform, Physics)
-    ↑           ↑
-anvilkit-render  anvilkit-input (InputState, ActionMap)
-    ↑               ↑
-anvilkit-camera (控制器, 特效)
+<Mermaid chart={`
+flowchart BT
+  core["anvilkit-core\n(数学, 时间, 错误, 持久化)"]
+  ecs["anvilkit-ecs\n(App, Plugin, Schedule, Transform, Physics)"]
+  render["anvilkit-render"]
+  input["anvilkit-input\n(InputState, ActionMap)"]
+  camera["anvilkit-camera\n(控制器, 效果)"]
+  assets["anvilkit-assets\n(glTF, 动画, AssetServer)"]
+  audio["anvilkit-audio\n(AudioSource, 空间音频)"]
 
-anvilkit-assets (glTF, 动画, AssetServer) → anvilkit-core
-anvilkit-audio (AudioSource, 空间音频) → anvilkit-ecs
-```
+  core --> ecs
+  ecs --> render
+  ecs --> input
+  render --> camera
+  input --> camera
+  core --> assets
+  ecs --> audio
+`} />
 
 ## 每帧生命周期
 
-```
-┌─ 事件循环 (winit) ────────────────────────────────────────────┐
-│                                                                │
-│  1. window_event / device_event                                │
-│     ├─ forward_input()     → InputState (键盘, 鼠标, 滚轮)    │
-│     └─ forward_device_input() → InputState.mouse_delta         │
-│                                                                │
-│  2. about_to_wait                                              │
-│     ├─ tick() {                                                │
-│     │    DeltaTime = 实际经过时间                               │
-│     │    app.update() {                                        │
-│     │       Main:       (预留)                                 │
-│     │       事件:      刷新双缓冲                        │
-│     │       PreUpdate:  DeltaTime 同步, 父子层级同步           │
-│     │       FixedUpdate: 0-N tick (1/60s 累加器)        │
-│     │       Update:     输入 → 物理 → 相机特效 → 相机控制     │
-│     │       PostUpdate: Transform 传播 → 渲染提取              │
-│     │       Cleanup:    (预留)                                 │
-│     │    }                                                     │
-│     │    InputState.end_frame()                                │
-│     │    window.request_redraw()                               │
-│     │ }                                                        │
-│     └─ post_update (游戏特有: chunk, raycast 等)               │
-│                                                                │
-│  3. RedrawRequested                                            │
-│     └─ render_frame() {                                        │
-│          Shadow Pass ×3 (CSM cascade)                          │
-│          HDR 场景 Pass (PBR + MSAA 4×)                         │
-│          SSAO Pass (半分辨率 + blur)                           │
-│          DOF Pass (CoC → blur → composite)                     │
-│          MotionBlur Pass (速度缓冲 tile-based)                 │
-│          Bloom Pass (降采样 ×5 + 升采样 ×4)                    │
-│          ColorGrading Pass (lift/gamma/gain + LUT)             │
-│          Tonemap Pass (HDR × AO + bloom → ACES → sRGB)        │
-│          HUD Pass (线段, 文本, UI)                             │
-│        }                                                       │
-└────────────────────────────────────────────────────────────────┘
-```
+<Mermaid chart={`
+flowchart TD
+  subgraph EL["事件循环 (winit)"]
+    direction TB
+
+    subgraph E1["1. window_event / device_event"]
+      fwd_input["forward_input() → InputState"]
+      fwd_device["forward_device_input() → mouse_delta"]
+    end
+
+    subgraph E2["2. about_to_wait → tick()"]
+      dt["DeltaTime = elapsed()"]
+      subgraph update["app.update()"]
+        direction TB
+        evflush["事件刷新"]
+        main["Main"]
+        pre["PreUpdate"]
+        fixed["FixedUpdate (0-N tick)"]
+        upd["Update"]
+        post["PostUpdate"]
+        cleanup["Cleanup"]
+        evflush --> main --> pre --> fixed --> upd --> post --> cleanup
+      end
+      endframe["InputState.end_frame()"]
+      redraw["window.request_redraw()"]
+      dt --> update --> endframe --> redraw
+    end
+
+    subgraph E3["3. RedrawRequested → render_frame()"]
+      shadow["阴影 Pass ×3 (CSM)"]
+      hdr["HDR 场景 Pass (PBR + MSAA 4×)"]
+      ssao["SSAO Pass"]
+      dof["DOF Pass"]
+      mblur["运动模糊 Pass"]
+      bloom["Bloom Pass"]
+      cg["色彩分级 Pass"]
+      tone["Tonemap Pass"]
+      hud["HUD Pass"]
+      shadow --> hdr --> ssao --> dof --> mblur --> bloom --> cg --> tone --> hud
+    end
+
+    E1 --> E2 --> E3
+  end
+`} />
 
 ## ECS Schedule 阶段
 

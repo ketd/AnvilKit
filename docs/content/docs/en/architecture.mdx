@@ -7,80 +7,102 @@ description: AnvilKit engine architecture design
 
 AnvilKit uses a layered modular design where each layer depends only on layers below it:
 
-```
-┌──────────────────────────────────────────────┐
-│            Game Layer (games/)                │
-│        billiards / craft / your_game         │
-├──────────────────────────────────────────────┤
-│          System Layer (High-level)           │
-│    anvilkit (umbrella + DefaultPlugins)      │
-│    anvilkit-camera   anvilkit-audio          │
-│    anvilkit-input    anvilkit-assets         │
-├──────────────────────────────────────────────┤
-│           Core Layer (Low-level)             │
-│    anvilkit-core     anvilkit-ecs            │
-│    anvilkit-render                           │
-├──────────────────────────────────────────────┤
-│          Third-party Dependencies            │
-│    bevy_ecs / wgpu / rapier / glam / taffy   │
-└──────────────────────────────────────────────┘
-```
+<Mermaid chart={`
+flowchart TB
+  subgraph game["🎮 Game Layer"]
+    billiards["billiards"]
+    craft["craft"]
+    your_game["your_game"]
+  end
+  subgraph system["📦 System Layer"]
+    umbrella["anvilkit (umbrella)"]
+    camera["anvilkit-camera"]
+    audio["anvilkit-audio"]
+    input["anvilkit-input"]
+    assets["anvilkit-assets"]
+  end
+  subgraph core["⚙️ Core Layer"]
+    ecs["anvilkit-ecs"]
+    render["anvilkit-render"]
+    corelib["anvilkit-core"]
+  end
+  subgraph deps["🔧 Third-party"]
+    bevy["bevy_ecs"]
+    wgpu["wgpu"]
+    rapier["rapier3d"]
+    glam["glam"]
+    taffy["taffy"]
+  end
+  game --> system --> core --> deps
+`} />
 
 ## Crate Dependency Graph
 
-```
-anvilkit-core (math, time, error, persistence)
-    ↑
-anvilkit-ecs (App, Plugin, Schedule, Transform, Physics)
-    ↑           ↑
-anvilkit-render  anvilkit-input (InputState, ActionMap)
-    ↑               ↑
-anvilkit-camera (controller, effects)
+<Mermaid chart={`
+flowchart BT
+  core["anvilkit-core\n(math, time, error, persistence)"]
+  ecs["anvilkit-ecs\n(App, Plugin, Schedule, Transform, Physics)"]
+  render["anvilkit-render"]
+  input["anvilkit-input\n(InputState, ActionMap)"]
+  camera["anvilkit-camera\n(controller, effects)"]
+  assets["anvilkit-assets\n(glTF, animation, AssetServer)"]
+  audio["anvilkit-audio\n(AudioSource, spatial)"]
 
-anvilkit-assets (glTF, animation, AssetServer) → anvilkit-core
-anvilkit-audio (AudioSource, spatial) → anvilkit-ecs
-```
+  core --> ecs
+  ecs --> render
+  ecs --> input
+  render --> camera
+  input --> camera
+  core --> assets
+  ecs --> audio
+`} />
 
 ## Per-Frame Lifecycle
 
-```
-┌─ Event Loop (winit) ──────────────────────────────────────────┐
-│                                                                │
-│  1. window_event / device_event                                │
-│     ├─ forward_input()     → InputState (keys, mouse, scroll) │
-│     └─ forward_device_input() → InputState.mouse_delta        │
-│                                                                │
-│  2. about_to_wait                                              │
-│     ├─ tick() {                                                │
-│     │    DeltaTime = wall_clock.elapsed()                      │
-│     │    app.update() {                                        │
-│     │       Main:       (reserved)                             │
-│     │       PreUpdate:  DeltaTime sync, parent-child sync      │
-│     │       Events:    flush double-buffer                │
-│     │       FixedUpdate: 0-N ticks (1/60s accumulator)   │
-│     │       Update:     input → physics → camera_fx → camera  │
-│     │       PostUpdate: transform_propagation → render_extract │
-│     │       Cleanup:    (reserved)                             │
-│     │    }                                                     │
-│     │    InputState.end_frame()                                │
-│     │    window.request_redraw()                               │
-│     │ }                                                        │
-│     └─ post_update (game-specific: chunks, raycast, etc.)      │
-│                                                                │
-│  3. RedrawRequested                                            │
-│     └─ render_frame() {                                        │
-│          Shadow Pass ×3 (CSM cascades)                         │
-│          HDR Scene Pass (PBR + MSAA 4×)                        │
-│          SSAO Pass (half-res + blur)                           │
-│          DOF Pass (depth-of-field)                             │
-│          Motion Blur Pass                                      │
-│          Bloom Pass (downsample ×5 + upsample ×4)             │
-│          Color Grading Pass                                    │
-│          Tonemap Pass (HDR × AO + bloom → ACES → sRGB)        │
-│          HUD Pass (lines, text, UI)                            │
-│        }                                                       │
-└────────────────────────────────────────────────────────────────┘
-```
+<Mermaid chart={`
+flowchart TD
+  subgraph EL["Event Loop (winit)"]
+    direction TB
+
+    subgraph E1["1. window_event / device_event"]
+      fwd_input["forward_input() → InputState"]
+      fwd_device["forward_device_input() → mouse_delta"]
+    end
+
+    subgraph E2["2. about_to_wait → tick()"]
+      dt["DeltaTime = elapsed()"]
+      subgraph update["app.update()"]
+        direction TB
+        evflush["Events flush"]
+        main["Main"]
+        pre["PreUpdate"]
+        fixed["FixedUpdate (0-N ticks)"]
+        upd["Update"]
+        post["PostUpdate"]
+        cleanup["Cleanup"]
+        evflush --> main --> pre --> fixed --> upd --> post --> cleanup
+      end
+      endframe["InputState.end_frame()"]
+      redraw["window.request_redraw()"]
+      dt --> update --> endframe --> redraw
+    end
+
+    subgraph E3["3. RedrawRequested → render_frame()"]
+      shadow["Shadow Pass ×3 (CSM)"]
+      hdr["HDR Scene Pass (PBR + MSAA 4×)"]
+      ssao["SSAO Pass"]
+      dof["DOF Pass"]
+      mblur["Motion Blur Pass"]
+      bloom["Bloom Pass"]
+      cg["Color Grading Pass"]
+      tone["Tonemap Pass"]
+      hud["HUD Pass"]
+      shadow --> hdr --> ssao --> dof --> mblur --> bloom --> cg --> tone --> hud
+    end
+
+    E1 --> E2 --> E3
+  end
+`} />
 
 ## ECS Schedule Phases
 

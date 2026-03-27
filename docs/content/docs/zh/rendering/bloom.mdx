@@ -10,7 +10,14 @@ description: 基于物理的 HDR 泛光后处理
 
 基于物理的泛光效果，从超过亮度阈值的 HDR 值中提取。
 
-**管线**：13-tap 加权降采样（防止萤火虫伪影） → 渐进式 5 级 mip 链 → 9-tap 帐篷滤波器上采样与叠加混合 → 在色调映射着色器中合成。
+**管线**：
+
+<Mermaid chart={`
+flowchart LR
+  A["13-tap 降采样"] --> B["5 级 Mip 链"]
+  B --> C["9-tap 帐篷滤波\n上采样"]
+  C --> D["Tonemap 合成"]
+`} />
 
 **配置** (`BloomSettings` ECS 资源)：
 

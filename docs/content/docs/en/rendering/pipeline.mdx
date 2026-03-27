@@ -12,13 +12,20 @@ description: Multi-pass HDR rendering pipeline architecture
 
 The engine runs a multi-pass HDR pipeline per frame:
 
-```
-Pass 0  CSM Shadow (×3 cascades)     → D2Array depth texture
-Pass 1  HDR Scene (PBR + MSAA 4×)    → Rgba16Float RT (resolve)
-Pass 2  SSAO (half-res + blur)        → R8Unorm AO texture
-Pass 3  Bloom (downsample ×5 + upsample ×4) → Rgba16Float mip[0]
-Pass 4  Tonemap (HDR × AO + Bloom → ACES Filmic → sRGB) → Swapchain
-```
+<Mermaid chart={`
+flowchart LR
+  P0["Pass 0\nCSM Shadow"]
+  P1["Pass 1\nHDR Scene"]
+  P2["Pass 2\nSSAO"]
+  P3["Pass 3\nBloom"]
+  P4["Pass 4\nTonemap"]
+
+  P0 -->|"shadow_map"| P1
+  P1 -->|"hdr_texture"| P2
+  P2 -->|"ao_texture"| P3
+  P3 -->|"bloom_texture"| P4
+  P4 -->|"sRGB output"| screen["Screen"]
+`} />
 
 All passes share a single `CommandEncoder` per frame for minimal CPU overhead.
 
