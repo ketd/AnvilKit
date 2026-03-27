@@ -160,6 +160,96 @@ fn game_logic(actions: Res<ActionMap>) {
 }
 ```
 
+## Gamepad Support
+
+`GamepadState` tracks connected gamepads, buttons, and analog axes:
+
+```rust
+use anvilkit_input::prelude::*;
+
+let mut gamepad = GamepadState::default();
+
+// Connection events
+gamepad.connect(0);
+assert!(gamepad.is_connected(0));
+
+// Button input
+gamepad.press_button(0, GamepadButton::South);
+assert!(gamepad.is_button_pressed(0, GamepadButton::South));
+
+// Analog axes (range: -1.0 to 1.0)
+gamepad.set_axis(0, GamepadAxis::LeftStickX, 0.75);
+let value = gamepad.axis_value(0, GamepadAxis::LeftStickX);
+
+gamepad.end_frame(); // Clear just_pressed/just_released
+```
+
+### GamepadButton Variants
+
+| Button | Description |
+|--------|-------------|
+| `South` / `East` / `West` / `North` | Face buttons (A/B/X/Y or Cross/Circle/Square/Triangle) |
+| `DPadUp/Down/Left/Right` | Directional pad |
+| `LeftShoulder` / `RightShoulder` | Bumpers (L1/R1) |
+| `LeftTrigger` / `RightTrigger` | Triggers (L2/R2) |
+| `LeftThumb` / `RightThumb` | Stick click (L3/R3) |
+| `Start` / `Select` | Menu buttons |
+
+### GamepadAxis Variants
+
+| Axis | Description |
+|------|-------------|
+| `LeftStickX` / `LeftStickY` | Left analog stick |
+| `RightStickX` / `RightStickY` | Right analog stick |
+| `LeftTrigger` / `RightTrigger` | Analog triggers (0.0 to 1.0) |
+
+> **Note:** winit 0.30 removed built-in gamepad support. A separate backend (e.g., `gilrs`) is required to populate `GamepadState`. `AutoInputPlugin` handles keyboard/mouse only.
+
+## ActionId (Zero-Allocation Lookups)
+
+For hot-loop performance, register actions to get an `ActionId` and query without string hashing:
+
+```rust
+let mut map = ActionMap::new();
+map.add_binding("jump", InputBinding::Key(KeyCode::Space));
+let jump_id = map.register_action("jump");
+
+// In game loop — no heap allocation
+if map.is_action_active_by_id(jump_id) {
+    player.jump();
+}
+```
+
+| Method | Description |
+|--------|-------------|
+| `register_action(name) -> ActionId` | Allocate a numeric ID for the named action (idempotent) |
+| `is_action_active_by_id(id) -> bool` | Zero-allocation active check |
+| `action_state_by_id(id) -> ActionState` | Zero-allocation full state query |
+
+## Axis Bindings
+
+Analog input via keyboard or gamepad axes:
+
+```rust
+use anvilkit_input::prelude::*;
+
+let mut map = ActionMap::new();
+
+// Keyboard: A/D → -1.0 / +1.0
+map.bind_axis("move_x", AxisBinding::KeyboardAxis {
+    negative: KeyCode::A,
+    positive: KeyCode::D,
+});
+
+// Gamepad analog stick
+map.bind_axis("move_x", AxisBinding::GamepadAxis(GamepadAxis::LeftStickX));
+
+// Query merged value (max absolute across all bindings)
+let x = map.axis_value("move_x", &input, gamepad.as_ref());
+```
+
+When both A and D are pressed simultaneously, they cancel out to 0.0.
+
 ## RenderApp Integration
 
 When using `anvilkit-render`'s `RenderApp`, three helper methods bridge OS window events into the ECS `InputState` resource automatically. Games with a custom `ApplicationHandler` can call these directly.

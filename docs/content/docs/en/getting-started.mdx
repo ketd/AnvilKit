@@ -35,26 +35,32 @@ If you prefer manual setup, add dependencies in your workspace `Cargo.toml`:
 
 ```toml
 [dependencies]
-anvilkit-core = { path = "../../crates/anvilkit-core" }
-anvilkit-ecs = { path = "../../crates/anvilkit-ecs" }
-anvilkit-render = { path = "../../crates/anvilkit-render" }
+anvilkit = { path = "../../crates/anvilkit" }
 ```
 
 ## Minimal Example
 
 ```rust
-use anvilkit_ecs::prelude::*;
-use anvilkit_render::prelude::*;
+use anvilkit::prelude::*;
 
 fn main() {
     App::new()
-        .add_plugin(RenderPlugin::default())
-        .add_system(Update, hello_system)
+        .add_plugins(DefaultPlugins::new())
+        .add_systems(AnvilKitSchedule::Startup, setup)
+        .add_systems(AnvilKitSchedule::Update, hello_system)
         .run();
 }
 
+fn setup(mut commands: Commands) {
+    // Spawn a camera
+    commands.spawn((
+        CameraComponent::default(),
+        Transform::from_xyz(0.0, 2.0, -5.0),
+    ));
+}
+
 fn hello_system() {
-    println!("Hello, AnvilKit!");
+    // Your game logic here
 }
 ```
 

@@ -30,6 +30,55 @@ description: Cook-Torrance PBR、级联阴影贴图、骨骼动画
 
 **文件**：`events.rs` (`compute_cascade_matrices`)、`pbr.wgsl` (`calculate_shadow`)
 
+## 点光源阴影
+
+点光源使用 cubemap 阴影贴图（每个光源 6 个面）：
+
+```rust
+use anvilkit_render::renderer::shadow::PointShadowConfig;
+
+let config = PointShadowConfig {
+    resolution: 512,   // 每个面的分辨率
+    near: 0.1,
+    far: 50.0,
+    bias: 0.005,       // 防止阴影失真
+};
+```
+
+### 聚光灯阴影
+
+聚光灯使用单张 2D 阴影贴图：
+
+```rust
+use anvilkit_render::renderer::shadow::SpotShadowConfig;
+
+let config = SpotShadowConfig {
+    resolution: 1024,
+    bias: 0.005,
+    normal_bias: 0.02,
+};
+```
+
+### 阴影 Atlas
+
+`ShadowAtlas` 管理所有阴影投射光源的 GPU 资源分配：
+
+```rust
+use anvilkit_render::renderer::shadow::ShadowAtlas;
+use anvilkit_render::renderer::draw::MAX_SHADOW_LIGHTS;
+
+let mut atlas = ShadowAtlas::new();
+assert_eq!(atlas.max_lights, MAX_SHADOW_LIGHTS); // 4
+
+if let Some(slot) = atlas.allocate() {
+    // 将此光源的阴影贴图渲染到对应槽位
+}
+
+atlas.reset(); // 每帧调用
+```
+
+最大同时投射阴影的光源数：`MAX_SHADOW_LIGHTS = 4`。超出限制的光源仍参与光照计算但不投射阴影。
+
 ## PBR 材质系统
 
 Cook-Torrance 镜面 BRDF，使用 GGX 分布、Smith 几何函数、Fresnel-Schlick 近似。

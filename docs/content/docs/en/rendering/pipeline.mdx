@@ -42,3 +42,79 @@ let (buffer, capacity) = pool.acquire(device, needed_size, BufferUsages::VERTEX)
 // ... use buffer ...
 pool.release(buffer, capacity, BufferUsages::VERTEX);
 ```
+
+## PostProcessSettings
+
+Unified post-processing configuration as an ECS resource:
+
+```rust
+use anvilkit_render::renderer::post_process::PostProcessSettings;
+
+app.insert_resource(PostProcessSettings {
+    bloom: Some(BloomSettings { intensity: 0.3, threshold: 1.0 }),
+    ssao: Some(SsaoSettings { radius: 0.5, bias: 0.025 }),
+    dof: None,           // disabled
+    motion_blur: None,   // disabled
+    color_grading: None, // disabled
+    ao_input_enabled: true,
+    ..Default::default()
+});
+```
+
+Execution order: **SSAO → DOF → Motion Blur → Bloom → Color Grading → Tonemap**
+
+Each stage is skipped when its `Option` is `None`.
+
+## StandardMaterial
+
+High-level PBR material component with builder pattern:
+
+```rust
+use anvilkit_render::renderer::standard_material::StandardMaterial;
+
+commands.spawn((
+    mesh_handle,
+    StandardMaterial::new()
+        .with_base_color([0.8, 0.2, 0.1, 1.0])
+        .with_metallic(0.9)
+        .with_roughness(0.1),
+    Transform::default(),
+    GlobalTransform::default(),
+));
+```
+
+`render_extract_system` queries `(MeshHandle, StandardMaterial, GlobalTransform)` and auto-generates `DrawCommand`s. Entities with `StandardMaterial` use the default PBR pipeline via `DefaultMaterialHandle`.
+
+## PipelineCache / BindGroupCache
+
+GPU resource deduplication:
+
+- **PipelineCache**: Caches render pipelines by `PipelineKey` (vertex_format, BlendMode, CullMode). Uses `get_or_create()` to avoid redundant GPU pipeline creation.
+- **BindGroupCache**: Caches material bind groups by material ID with a dirty flag for invalidation. Dirty entries are automatically recreated on next access.
+
+```rust
+let mut cache = PipelineCache::new();
+let handle = cache.get_or_create(key, |k| create_pipeline(device, k));
+```
+
+## Camera Projection
+
+`CameraComponent` supports perspective and orthographic projection:
+
+```rust
+use anvilkit_render::plugin::{CameraComponent, Projection};
+
+// Perspective (default)
+let camera = CameraComponent::default();
+
+// Orthographic (2D, UI)
+let ortho_camera = CameraComponent {
+    projection: Projection::Orthographic {
+        left: -10.0, right: 10.0, bottom: -10.0, top: 10.0,
+    },
+    ..Default::default()
+};
+
+// Multi-camera: higher priority renders first
+let minimap = CameraComponent { priority: 10, ..Default::default() };
+```

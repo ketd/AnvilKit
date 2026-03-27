@@ -13,6 +13,19 @@ description: 应用生命周期、插件系统、调度、系统与 Bundle
 App::new() → add_plugins() → insert_resource() → add_systems() → run() / update()
 ```
 
+大多数项目推荐使用 `DefaultPlugins` 一行初始化：
+
+```rust
+use anvilkit::prelude::*;
+
+App::new()
+    .add_plugins(DefaultPlugins::new())
+    .add_systems(AnvilKitSchedule::Startup, setup)
+    .run();
+```
+
+`DefaultPlugins` 包含：`AnvilKitEcsPlugin` + `RenderPlugin` + `AudioPlugin` + `AutoInputPlugin` + `AutoDeltaTimePlugin`。
+
 ```rust
 use anvilkit_ecs::prelude::*;
 use anvilkit_ecs::schedule::AnvilKitSchedule;
@@ -51,8 +64,12 @@ for _ in 0..60 {
 | `add_systems` | `(impl ScheduleLabel, impl IntoSystemConfigs) -> &mut Self` | 将系统添加到调度中 |
 | `insert_resource` | `<R: Resource>(R) -> &mut Self` | 插入类型化全局资源 |
 | `init_resource` | `<R: Resource + FromWorld>() -> &mut Self` | 使用 Default/FromWorld 实现插入资源 |
+| `add_event` | `<E: Event>() -> &mut Self` | 注册事件类型；启用 `EventWriter<E>` 和 `EventReader<E>`，自动双缓冲清理 |
+| `set_fixed_timestep` | `(f32) -> &mut Self` | 设置 FixedUpdate 间隔（秒），默认 1/60，最小 0.0001 |
+| `fixed_timestep` | `() -> f32` | 获取当前 FixedUpdate 间隔 |
+| `register_serializable` | `<T: 'static>(&str) -> &mut Self` | 注册组件类型用于场景序列化 |
 | `run` | `(&mut self)` | 阻塞主循环，直到调用 `exit()` |
-| `update` | `(&mut self)` | 执行一帧：Startup（仅首次调用），然后 Main -> PreUpdate -> Update -> PostUpdate -> Cleanup + AppExit 检查 |
+| `update` | `(&mut self)` | 执行一帧：Startup（仅首次） → 事件刷新 → Main → PreUpdate → FixedUpdate（累加器驱动，0-N tick） → Update → PostUpdate → Cleanup + AppExit 检查 |
 | `exit` | `(&mut self)` | 通知应用在当前帧结束后停止 |
 
 ## 插件
@@ -65,8 +82,8 @@ pub struct PhysicsPlugin;
 impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DeltaTime>()
-           .init_resource::<CollisionEvents>()
-           .add_systems(AnvilKitSchedule::Update, (
+           .add_event::<CollisionEvent>()
+           .add_systems(AnvilKitSchedule::FixedUpdate, (
                velocity_integration_system,
                collision_detection_system.after(velocity_integration_system),
            ));
@@ -85,6 +102,7 @@ impl Plugin for PhysicsPlugin {
 | **Startup** | `AnvilKitSchedule::Startup` | 首次 `update()` 时执行一次 | 场景设置、资源加载 |
 | **Main** | `AnvilKitSchedule::Main` | 每帧 | 顶层调度入口，驱动后续阶段 |
 | **PreUpdate** | `AnvilKitSchedule::PreUpdate` | 每帧 | DeltaTime 同步、父子层级同步 |
+| **FixedUpdate** | `AnvilKitSchedule::FixedUpdate` | 每帧 0-N 次 | 确定性物理、固定速率模拟（默认 1/60s） |
 | **Update** | `AnvilKitSchedule::Update` | 每帧 | 游戏逻辑、AI、物理 |
 | **PostUpdate** | `AnvilKitSchedule::PostUpdate` | 每帧 | 变换传播、渲染准备 |
 | **Cleanup** | `AnvilKitSchedule::Cleanup` | 每帧 | 临时数据清理、诊断 |
@@ -115,6 +133,66 @@ app.add_systems(AnvilKitSchedule::Update, (
 ));
 ```
 
+## 事件系统
+
+AnvilKit 使用 `bevy_ecs` 事件实现系统间解耦通信：
+
+```rust
+use bevy_ecs::event::Event;
+
+#[derive(Event)]
+struct DamageEvent {
+    target: Entity,
+    amount: f32,
+}
+
+// 在插件中注册
+app.add_event::<DamageEvent>();
+
+// 发送事件
+fn attack_system(mut events: EventWriter<DamageEvent>) {
+    events.send(DamageEvent { target: enemy, amount: 25.0 });
+}
+
+// 接收事件（支持多个读者）
+fn health_system(mut events: EventReader<DamageEvent>) {
+    for event in events.read() {
+        println!("实体 {:?} 受到 {} 点伤害", event.target, event.amount);
+    }
+}
+```
+
+事件采用双缓冲机制，2 帧后自动清除。
+
+## 游戏状态机
+
+`GameState<S>` 提供游戏流程的状态管理（菜单、游戏、暂停）：
+
+```rust
+use anvilkit_ecs::state::{GameState, NextGameState, in_state, StateValue};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum AppState { Menu, Playing, Paused }
+impl StateValue for AppState {}
+
+// 初始化状态
+app.insert_resource(GameState::new(AppState::Menu));
+app.init_resource::<NextGameState<AppState>>();
+app.add_systems(AnvilKitSchedule::PreUpdate, state_transition_system::<AppState>);
+
+// 仅在特定状态下运行系统
+app.add_systems(AnvilKitSchedule::Update,
+    player_movement.run_if(in_state(AppState::Playing))
+);
+
+// 状态转换
+fn pause_system(input: Res<InputState>, mut next: ResMut<NextGameState<AppState>>) {
+    if input.is_key_just_pressed(KeyCode::Escape) {
+        next.set(AppState::Paused);
+    }
+}
+```
+
 ## 系统
 
 系统是普通函数，其参数声明数据访问方式：
@@ -130,8 +208,8 @@ fn move_system(
     }
 }
 
-fn collision_handler(events: Res<CollisionEvents>) {
-    for event in events.iter() {
+fn collision_handler(mut events: EventReader<CollisionEvent>) {
+    for event in events.read() {
         println!("Collision: {:?} <-> {:?}", event.a, event.b);
     }
 }

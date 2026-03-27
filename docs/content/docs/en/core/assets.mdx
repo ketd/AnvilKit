@@ -39,18 +39,46 @@ player.update(dt);
 let joint_transforms = player.joint_transforms();
 ```
 
-## Procedural Meshes
+## Procedural Mesh Generation
+
+`MeshData` provides factory methods for common primitives:
 
 ```rust
-use anvilkit_assets::procedural::*;
+use anvilkit_assets::mesh::MeshData;
 
-let cube = create_cube(1.0);
-let sphere = create_sphere(0.5, 32, 16);
-let plane = create_plane(10.0, 10.0);
-let cylinder = create_cylinder(0.5, 2.0, 16);
+let cube = MeshData::generate_box(1.0);       // 24 vertices, 36 indices
+let plane = MeshData::generate_plane(10.0);    // 4 vertices, 6 indices (XZ plane, +Y normal)
+let sphere = MeshData::generate_sphere(1.0, 32, 16); // UV sphere
 
-mesh_data.validate()?; // Check attribute array consistency
+// Convert to GPU-ready format
+let pbr_vertices = cube.to_pbr_vertices();
 ```
+
+| Method | Parameters | Description |
+|--------|-----------|-------------|
+| `generate_box(size)` | `f32` | Centered cube, 6 faces with independent normals |
+| `generate_plane(size)` | `f32` | XZ plane centered at origin, +Y normal |
+| `generate_sphere(radius, segments, rings)` | `f32, u32, u32` | UV sphere |
+| `to_pbr_vertices()` | — | Convert to interleaved `InterleavedPbrVertex` (48 bytes/vertex) |
+
+### StandardMaterial
+
+For high-level PBR rendering, use `StandardMaterial` (in `anvilkit-render`):
+
+```rust
+use anvilkit_render::renderer::standard_material::StandardMaterial;
+
+commands.spawn((
+    mesh_handle,
+    StandardMaterial::new()
+        .with_base_color([1.0, 0.2, 0.1, 1.0])
+        .with_metallic(0.0)
+        .with_roughness(0.7),
+    Transform::default(),
+));
+```
+
+`render_extract_system` automatically generates `DrawCommand`s from `(MeshHandle, StandardMaterial, GlobalTransform)` queries.
 
 ## Materials
 

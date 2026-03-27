@@ -87,3 +87,30 @@ fn load_game(world: &mut World) {
 ```
 
 RON 文件存储 `SerializedScene { version: u32, entities: Vec<SerializedEntity> }`，其中每个实体以 `TransformData { translation: [f32; 3], rotation: [f32; 4], scale: [f32; 3] }` 的形式捕获其 `Transform`。
+
+## 序列化注册表
+
+注册自定义组件类型用于场景序列化：
+
+```rust
+use anvilkit_ecs::scene::SerializableRegistry;
+
+let mut app = App::new();
+app.register_serializable::<Health>("Health");
+app.register_serializable::<Inventory>("Inventory");
+
+// 或直接操作注册表：
+let mut registry = SerializableRegistry::new();
+registry.register::<Health>("Health");
+assert!(registry.is_registered("Health"));
+```
+
+### 层级保留
+
+场景序列化保留父子关系：
+
+- `parent_index`：引用 `entities` 数组中父实体的位置
+- `name` / `tag`：从 `Name` 和 `Tag` 组件捕获
+- `custom_data`：`HashMap<String, String>` 供用户扩展
+
+序列化器使用两遍方法：第一遍创建所有实体，第二遍恢复 `Parent`/`Children` 组件。

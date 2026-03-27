@@ -45,12 +45,25 @@ fn setup_physics(mut commands: Commands) {
     ));
 }
 
-fn read_collisions(events: Res<CollisionEvents>) {
-    for event in events.iter() {
+fn read_collisions(mut events: EventReader<CollisionEvent>) {
+    for event in events.read() {
         log::info!("Hit: {:?} <-> {:?}", event.a, event.b);
     }
 }
 ```
+
+### 推荐调度
+
+物理系统应在 `FixedUpdate` 中运行以实现确定性模拟：
+
+```rust
+app.add_systems(AnvilKitSchedule::FixedUpdate, (
+    velocity_integration_system,
+    collision_detection_system.after(velocity_integration_system),
+));
+```
+
+`FixedUpdate` 以固定 1/60s 时间步长运行（可通过 `app.set_fixed_timestep()` 配置），独立于帧率。确保不同硬件上的物理行为一致。
 
 ## Rapier 集成（feature `"rapier"`）
 

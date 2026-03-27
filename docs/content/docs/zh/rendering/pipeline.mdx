@@ -42,3 +42,79 @@ let (buffer, capacity) = pool.acquire(device, needed_size, BufferUsages::VERTEX)
 // ... 使用缓冲区 ...
 pool.release(buffer, capacity, BufferUsages::VERTEX);
 ```
+
+## 后处理设置
+
+统一的后处理配置 ECS 资源：
+
+```rust
+use anvilkit_render::renderer::post_process::PostProcessSettings;
+
+app.insert_resource(PostProcessSettings {
+    bloom: Some(BloomSettings { intensity: 0.3, threshold: 1.0 }),
+    ssao: Some(SsaoSettings { radius: 0.5, bias: 0.025 }),
+    dof: None,           // 禁用
+    motion_blur: None,   // 禁用
+    color_grading: None, // 禁用
+    ao_input_enabled: true,
+    ..Default::default()
+});
+```
+
+执行顺序：**SSAO → DOF → 运动模糊 → Bloom → 色彩分级 → Tonemap**
+
+当 `Option` 为 `None` 时自动跳过对应阶段。
+
+## StandardMaterial
+
+高级 PBR 材质组件，支持 builder 模式：
+
+```rust
+use anvilkit_render::renderer::standard_material::StandardMaterial;
+
+commands.spawn((
+    mesh_handle,
+    StandardMaterial::new()
+        .with_base_color([0.8, 0.2, 0.1, 1.0])
+        .with_metallic(0.9)
+        .with_roughness(0.1),
+    Transform::default(),
+    GlobalTransform::default(),
+));
+```
+
+`render_extract_system` 查询 `(MeshHandle, StandardMaterial, GlobalTransform)` 自动生成 `DrawCommand`。使用 `DefaultMaterialHandle` 作为默认 PBR 管线。
+
+## 管线缓存 / BindGroup 缓存
+
+GPU 资源去重：
+
+- **PipelineCache**：按 `PipelineKey`（vertex_format, BlendMode, CullMode）缓存渲染管线。使用 `get_or_create()` 避免重复的 GPU 管线创建。
+- **BindGroupCache**：按材质 ID 缓存 bind group，带 dirty flag 支持失效重建。
+
+```rust
+let mut cache = PipelineCache::new();
+let handle = cache.get_or_create(key, |k| create_pipeline(device, k));
+```
+
+## 相机投影
+
+`CameraComponent` 支持透视和正交投影：
+
+```rust
+use anvilkit_render::plugin::{CameraComponent, Projection};
+
+// 透视投影（默认）
+let camera = CameraComponent::default();
+
+// 正交投影（2D、UI）
+let ortho_camera = CameraComponent {
+    projection: Projection::Orthographic {
+        left: -10.0, right: 10.0, bottom: -10.0, top: 10.0,
+    },
+    ..Default::default()
+};
+
+// 多相机：优先级越高越先渲染
+let minimap = CameraComponent { priority: 10, ..Default::default() };
+```

@@ -42,3 +42,58 @@ fn play_hit_sound(
 | `.wav` | WAV — 推荐用于短音效 |
 | `.mp3` | MP3 — 兼容格式 |
 | `.flac` | FLAC — 无损格式 |
+
+## ECS 音频系统
+
+推荐使用 ECS 组件管理音频：
+
+### AudioSource 组件
+
+```rust
+use anvilkit_ecs::audio::{AudioSource, AudioBusCategory};
+
+// 生成音频源实体
+commands.spawn(AudioSource {
+    path: "sounds/bgm.ogg".to_string(),
+    volume: 0.8,
+    looping: true,
+    pitch: 1.0,
+    spatial: false,
+    bus: AudioBusCategory::Music,
+    ..Default::default()
+});
+```
+
+| 字段 | 类型 | 默认值 | 说明 |
+|-------|------|---------|-------------|
+| `path` | `String` | `""` | 音频文件路径 |
+| `volume` | `f32` | `1.0` | 音源音量（0.0–1.0） |
+| `looping` | `bool` | `false` | 循环播放 |
+| `pitch` | `f32` | `1.0` | 播放速度倍率 |
+| `spatial` | `bool` | `false` | 启用 3D 空间音频 |
+| `bus` | `AudioBusCategory` | `SFX` | 混音总线路由 |
+
+### AudioBus（音量混合）
+
+```rust
+use anvilkit_ecs::audio::{AudioBus, AudioBusCategory};
+
+let mut bus = AudioBus::default();
+bus.master = 0.8;
+bus.music = 0.6;
+bus.sfx = 1.0;
+bus.voice = 0.9;
+
+// 有效音量 = 分类音量 × 主音量
+let vol = bus.effective_volume(AudioBusCategory::Music); // 0.48
+```
+
+| 分类 | 用途 |
+|----------|----------|
+| `SFX` | 音效（默认） |
+| `Music` | 背景音乐 |
+| `Voice` | 对话、旁白 |
+
+### 空间音频
+
+要使用 3D 定位音频，在相机上添加 `AudioListener` 组件，并在音频源上设置 `spatial: true`。`spatial_audio_system` 会自动计算距离衰减。

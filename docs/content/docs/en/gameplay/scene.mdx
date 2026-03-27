@@ -87,3 +87,30 @@ fn load_game(world: &mut World) {
 ```
 
 The RON file stores a `SerializedScene { version: u32, entities: Vec<SerializedEntity> }` where each entity captures its `Transform` as `TransformData { translation: [f32; 3], rotation: [f32; 4], scale: [f32; 3] }`.
+
+### Hierarchy Preservation
+
+Scene serialization preserves parent-child relationships:
+
+- `parent_index`: References the parent entity's position in the `entities` array
+- `name` / `tag`: Captured from `Name` and `Tag` components
+- `custom_data`: `HashMap<String, String>` for user extensions
+
+The serializer uses a two-pass approach: first pass creates all entities, second pass restores `Parent`/`Children` components.
+
+## SerializableRegistry
+
+Register custom component types for scene serialization:
+
+```rust
+use anvilkit_ecs::scene::SerializableRegistry;
+
+let mut app = App::new();
+app.register_serializable::<Health>("Health");
+app.register_serializable::<Inventory>("Inventory");
+
+// Or directly:
+let mut registry = SerializableRegistry::new();
+registry.register::<Health>("Health");
+assert!(registry.is_registered("Health"));
+```

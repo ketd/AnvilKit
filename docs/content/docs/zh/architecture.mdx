@@ -12,6 +12,9 @@ AnvilKit 采用分层模块化设计，每层只依赖下层：
 │            游戏层 (games/)                    │
 │        billiards / craft / your_game         │
 ├──────────────────────────────────────────────┤
+│          伞 crate: anvilkit                  │
+│   (re-exports 所有子 crate + DefaultPlugins) │
+├──────────────────────────────────────────────┤
 │            系统层（高级）                     │
 │    anvilkit-camera   anvilkit-audio          │
 │    anvilkit-input    anvilkit-assets         │
@@ -54,7 +57,9 @@ anvilkit-audio (AudioSource, 空间音频) → anvilkit-ecs
 │     │    DeltaTime = 实际经过时间                               │
 │     │    app.update() {                                        │
 │     │       Main:       (预留)                                 │
+│     │       事件:      刷新双缓冲                        │
 │     │       PreUpdate:  DeltaTime 同步, 父子层级同步           │
+│     │       FixedUpdate: 0-N tick (1/60s 累加器)        │
 │     │       Update:     输入 → 物理 → 相机特效 → 相机控制     │
 │     │       PostUpdate: Transform 传播 → 渲染提取              │
 │     │       Cleanup:    (预留)                                 │
@@ -69,7 +74,10 @@ anvilkit-audio (AudioSource, 空间音频) → anvilkit-ecs
 │          Shadow Pass ×3 (CSM cascade)                          │
 │          HDR 场景 Pass (PBR + MSAA 4×)                         │
 │          SSAO Pass (半分辨率 + blur)                           │
+│          DOF Pass (CoC → blur → composite)                     │
+│          MotionBlur Pass (速度缓冲 tile-based)                 │
 │          Bloom Pass (降采样 ×5 + 升采样 ×4)                    │
+│          ColorGrading Pass (lift/gamma/gain + LUT)             │
 │          Tonemap Pass (HDR × AO + bloom → ACES → sRGB)        │
 │          HUD Pass (线段, 文本, UI)                             │
 │        }                                                       │
@@ -83,6 +91,7 @@ anvilkit-audio (AudioSource, 空间音频) → anvilkit-ecs
 | `Startup` | 初始化时运行一次 | 资源设置，初始生成 |
 | `Main` | 每帧最先执行 | (预留，用于全局逻辑) |
 | `PreUpdate` | 每帧 Update 之前 | DeltaTime 同步、父子层级同步 |
+| `FixedUpdate` | 每帧 0-N 次（累加器） | 确定性物理、固定速率游戏逻辑 |
 | `Update` | 每帧主逻辑 | 输入、物理、游戏逻辑、相机 |
 | `PostUpdate` | 每帧 Update 之后 | Transform 传播、渲染提取 |
 | `Cleanup` | 每帧最后 | (预留) |
@@ -105,23 +114,29 @@ anvilkit-audio (AudioSource, 空间音频) → anvilkit-ecs
 基础类型库: 数学工具 (Vec3, Mat4, Transform, GlobalTransform, 插值), 时间系统, 错误类型 (AnvilKitError，`with_context` 保留原始错误类别), 持久化系统 (SaveManager, Settings, WorldStorage — 均返回 `Result<_, AnvilKitError>`)。
 
 ### anvilkit-ecs
-基于 `bevy_ecs 0.14` 的应用框架: App 生命周期, Plugin 系统（含唯一性检查）, Schedule 调度 (Main/Startup/PreUpdate/Update/PostUpdate/Cleanup), AppExit 优雅退出, Transform 层级传播（自动同步）, 物理（缩放感知 AABB + rapier3d）, 场景序列化 (RON)。
+基于 `bevy_ecs 0.14` 的应用框架: App 生命周期, Plugin 系统（含唯一性检查）, Schedule 调度 (Main/Startup/PreUpdate/Update/PostUpdate/Cleanup), AppExit 优雅退出, Transform 层级传播（自动同步）, 物理（缩放感知 AABB + rapier3d）, 场景序列化 (RON)，FixedUpdate 调度（基于累加器的确定性时间步长）、事件系统（bevy_ecs Events<T>/EventWriter/EventReader）、GameState<S> 状态机、SerializableRegistry 类型擦除场景序列化、AutoInputPlugin 和 AutoDeltaTimePlugin 自动帧管理。
 
 ### anvilkit-render
-统一 2D/3D 渲染管线: PBR + HDR + Bloom + SSAO + CSM + IBL + MSAA + 骨骼动画 + 视锥剔除 + 实例化 + Sprite/Line/Particle/Text/UI。
+统一 2D/3D 渲染管线: PBR + HDR + Bloom + SSAO + CSM + IBL + MSAA + 骨骼动画 + 视锥剔除 + 实例化 + Sprite/Line/Particle/Text/UI，StandardMaterial 组件（PBR builder 模式）、PostProcessSettings（SSAO/DOF/运动模糊/Bloom/色彩分级）、DemoApp 脚手架、正交/透视投影枚举、多相机优先级、PipelineCache/BindGroupCache、点光/聚光阴影系统（ShadowAtlas）。
 
 ### anvilkit-assets
 资产管线: glTF 加载, AssetServer (同步+异步), 热重载, 过程化网格生成。
 
 ### anvilkit-audio
-基于 `rodio` 的音频: BGM/SFX, 空间音频, 音量控制。
+基于 `rodio` 的音频系统：AudioSource ECS 组件、AudioBus（master/music/sfx/voice 音量混合）、空间音频（通过 AudioListener 距离衰减）、循环播放和变调控制。
 
 ### anvilkit-input
-输入抽象: InputState, ActionMap, RenderApp 辅助方法。
+输入抽象：InputState（键盘/鼠标 pressed/just_pressed/released、mouse_delta、scroll_delta）、GamepadState（16 个按钮、6 个轴）、ActionMap（逻辑动作 → 物理绑定）、ActionId（零分配查询）、AxisBinding（键盘/手柄模拟轴）。
 
 ### anvilkit-camera
 相机系统: 第一/第三人称/自由控制器, CameraEffects, 万向锁保护。
 
 ## 坐标系
 
-AnvilKit 使用**右手坐标系**（与 wgpu/glam 默认一致）：+X 向右, +Y 向上, -Z 指向屏幕内。
+AnvilKit 使用**左手坐标系**：
+
+- +X 向右
+- +Y 向上
+- +Z 向屏幕内（前方）
+
+投影使用 `perspective_lh` 和 `look_at_lh`。

@@ -5,6 +5,61 @@ description: Audio system — BGM, sound effects, spatial audio
 
 `anvilkit-audio` provides game audio playback capabilities, supporting background music and sound effects.
 
+## ECS Audio System
+
+The recommended approach uses ECS components for audio management:
+
+### AudioSource Component
+
+```rust
+use anvilkit_ecs::audio::{AudioSource, AudioBusCategory};
+
+// Spawn an audio source entity
+commands.spawn(AudioSource {
+    path: "sounds/bgm.ogg".to_string(),
+    volume: 0.8,
+    looping: true,
+    pitch: 1.0,
+    spatial: false,
+    bus: AudioBusCategory::Music,
+    ..Default::default()
+});
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `path` | `String` | `""` | Audio file path |
+| `volume` | `f32` | `1.0` | Source volume (0.0–1.0) |
+| `looping` | `bool` | `false` | Loop playback |
+| `pitch` | `f32` | `1.0` | Playback speed multiplier |
+| `spatial` | `bool` | `false` | Enable 3D spatial audio |
+| `bus` | `AudioBusCategory` | `SFX` | Mix bus routing |
+
+### AudioBus (Volume Mixing)
+
+```rust
+use anvilkit_ecs::audio::{AudioBus, AudioBusCategory};
+
+let mut bus = AudioBus::default();
+bus.master = 0.8;
+bus.music = 0.6;
+bus.sfx = 1.0;
+bus.voice = 0.9;
+
+// Effective volume = category × master
+let vol = bus.effective_volume(AudioBusCategory::Music); // 0.48
+```
+
+| Category | Use case |
+|----------|----------|
+| `SFX` | Sound effects (default) |
+| `Music` | Background music |
+| `Voice` | Dialog, narration |
+
+### Spatial Audio
+
+For 3D positional audio, add an `AudioListener` component to the camera and set `spatial: true` on audio sources. Distance attenuation is calculated automatically by `spatial_audio_system`.
+
 ## AudioEngine
 
 ```rust

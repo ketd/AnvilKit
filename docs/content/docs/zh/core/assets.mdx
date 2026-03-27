@@ -39,18 +39,46 @@ player.update(dt);
 let joint_transforms = player.joint_transforms();
 ```
 
-## 程序化网格
+## 程序化网格生成
+
+`MeshData` 提供常用几何体的工厂方法：
 
 ```rust
-use anvilkit_assets::procedural::*;
+use anvilkit_assets::mesh::MeshData;
 
-let cube = create_cube(1.0);
-let sphere = create_sphere(0.5, 32, 16);
-let plane = create_plane(10.0, 10.0);
-let cylinder = create_cylinder(0.5, 2.0, 16);
+let cube = MeshData::generate_box(1.0);       // 24 顶点, 36 索引
+let plane = MeshData::generate_plane(10.0);    // 4 顶点, 6 索引（XZ 平面, +Y 法线）
+let sphere = MeshData::generate_sphere(1.0, 32, 16); // UV 球体
 
-mesh_data.validate()?; // 检查属性数组一致性
+// 转换为 GPU 上传格式
+let pbr_vertices = cube.to_pbr_vertices();
 ```
+
+| 方法 | 参数 | 说明 |
+|--------|-----------|-------------|
+| `generate_box(size)` | `f32` | 居中立方体，6 面独立法线 |
+| `generate_plane(size)` | `f32` | 原点居中 XZ 平面，+Y 法线 |
+| `generate_sphere(radius, segments, rings)` | `f32, u32, u32` | UV 球体 |
+| `to_pbr_vertices()` | — | 转换为交错 `InterleavedPbrVertex`（48 字节/顶点） |
+
+### StandardMaterial
+
+高级 PBR 渲染使用 `StandardMaterial`（位于 `anvilkit-render`）：
+
+```rust
+use anvilkit_render::renderer::standard_material::StandardMaterial;
+
+commands.spawn((
+    mesh_handle,
+    StandardMaterial::new()
+        .with_base_color([1.0, 0.2, 0.1, 1.0])
+        .with_metallic(0.0)
+        .with_roughness(0.7),
+    Transform::default(),
+));
+```
+
+`render_extract_system` 自动从 `(MeshHandle, StandardMaterial, GlobalTransform)` 查询生成 `DrawCommand`。
 
 ## 材质
 

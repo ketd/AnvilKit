@@ -30,6 +30,55 @@ Shadow map texture: `Depth32Float`, `2048×2048`, `depth_or_array_layers = 3` (`
 
 **Files**: `events.rs` (`compute_cascade_matrices`), `pbr.wgsl` (`calculate_shadow`)
 
+## Point Light Shadows
+
+Point lights use cubemap shadow maps (6 faces per light):
+
+```rust
+use anvilkit_render::renderer::shadow::PointShadowConfig;
+
+let config = PointShadowConfig {
+    resolution: 512,   // per-face resolution
+    near: 0.1,
+    far: 50.0,
+    bias: 0.005,       // prevents shadow acne
+};
+```
+
+### Spot Light Shadows
+
+Spot lights use a single 2D shadow map:
+
+```rust
+use anvilkit_render::renderer::shadow::SpotShadowConfig;
+
+let config = SpotShadowConfig {
+    resolution: 1024,
+    bias: 0.005,
+    normal_bias: 0.02,
+};
+```
+
+### Shadow Atlas
+
+`ShadowAtlas` manages GPU shadow map slots across all shadow-casting lights:
+
+```rust
+use anvilkit_render::renderer::shadow::ShadowAtlas;
+use anvilkit_render::renderer::draw::MAX_SHADOW_LIGHTS;
+
+let mut atlas = ShadowAtlas::new();
+assert_eq!(atlas.max_lights, MAX_SHADOW_LIGHTS); // 4
+
+if let Some(slot) = atlas.allocate() {
+    // Render shadow map for this light into slot
+}
+
+atlas.reset(); // Call each frame
+```
+
+Maximum simultaneous shadow-casting lights: `MAX_SHADOW_LIGHTS = 4`. Lights beyond this limit still contribute to lighting but do not cast shadows.
+
 ## PBR Material System
 
 Cook-Torrance specular BRDF with GGX distribution, Smith geometry, Fresnel-Schlick.

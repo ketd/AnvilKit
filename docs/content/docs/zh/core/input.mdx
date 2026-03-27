@@ -160,6 +160,96 @@ fn game_logic(actions: Res<ActionMap>) {
 }
 ```
 
+## 手柄支持
+
+`GamepadState` 追踪已连接的手柄、按钮和模拟轴：
+
+```rust
+use anvilkit_input::prelude::*;
+
+let mut gamepad = GamepadState::default();
+
+// 连接事件
+gamepad.connect(0);
+assert!(gamepad.is_connected(0));
+
+// 按钮输入
+gamepad.press_button(0, GamepadButton::South);
+assert!(gamepad.is_button_pressed(0, GamepadButton::South));
+
+// 模拟轴（范围：-1.0 到 1.0）
+gamepad.set_axis(0, GamepadAxis::LeftStickX, 0.75);
+let value = gamepad.axis_value(0, GamepadAxis::LeftStickX);
+
+gamepad.end_frame(); // 清除 just_pressed/just_released
+```
+
+### GamepadButton 变体
+
+| 按钮 | 说明 |
+|--------|-------------|
+| `South` / `East` / `West` / `North` | 面板按钮（A/B/X/Y 或 ×/○/□/△） |
+| `DPadUp/Down/Left/Right` | 方向键 |
+| `LeftShoulder` / `RightShoulder` | 肩键（L1/R1） |
+| `LeftTrigger` / `RightTrigger` | 扳机（L2/R2） |
+| `LeftThumb` / `RightThumb` | 摇杆按下（L3/R3） |
+| `Start` / `Select` | 菜单按钮 |
+
+### GamepadAxis 变体
+
+| 轴 | 说明 |
+|------|-------------|
+| `LeftStickX` / `LeftStickY` | 左摇杆 |
+| `RightStickX` / `RightStickY` | 右摇杆 |
+| `LeftTrigger` / `RightTrigger` | 模拟扳机（0.0 到 1.0） |
+
+> **注意:** winit 0.30 移除了内置手柄支持。需要单独的后端（如 `gilrs`）来填充 `GamepadState`。`AutoInputPlugin` 仅处理键盘/鼠标。
+
+## ActionId（零分配查询）
+
+在热循环中使用 `ActionId` 避免字符串哈希开销：
+
+```rust
+let mut map = ActionMap::new();
+map.add_binding("jump", InputBinding::Key(KeyCode::Space));
+let jump_id = map.register_action("jump");
+
+// 游戏循环中 — 无堆分配
+if map.is_action_active_by_id(jump_id) {
+    player.jump();
+}
+```
+
+| 方法 | 说明 |
+|--------|-------------|
+| `register_action(name) -> ActionId` | 为命名动作分配数字 ID（幂等） |
+| `is_action_active_by_id(id) -> bool` | 零分配激活检查 |
+| `action_state_by_id(id) -> ActionState` | 零分配完整状态查询 |
+
+## 轴向绑定
+
+通过键盘或手柄轴的模拟输入：
+
+```rust
+use anvilkit_input::prelude::*;
+
+let mut map = ActionMap::new();
+
+// 键盘：A/D → -1.0 / +1.0
+map.bind_axis("move_x", AxisBinding::KeyboardAxis {
+    negative: KeyCode::A,
+    positive: KeyCode::D,
+});
+
+// 手柄模拟摇杆
+map.bind_axis("move_x", AxisBinding::GamepadAxis(GamepadAxis::LeftStickX));
+
+// 查询合并值（所有绑定中绝对值最大的）
+let x = map.axis_value("move_x", &input, gamepad.as_ref());
+```
+
+同时按下 A 和 D 时，互相抵消为 0.0。
+
 ## RenderApp 集成
 
 使用 `anvilkit-render` 的 `RenderApp` 时，三个辅助方法会自动将操作系统窗口事件桥接到 ECS 的 `InputState` 资源中。使用自定义 `ApplicationHandler` 的游戏可以直接调用这些方法。

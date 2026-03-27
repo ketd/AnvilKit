@@ -13,6 +13,19 @@ description: Application lifecycle, Plugin system, Schedules, Systems, and Bundl
 App::new() → add_plugins() → insert_resource() → add_systems() → run() / update()
 ```
 
+For most projects, use `DefaultPlugins` for one-line initialization:
+
+```rust
+use anvilkit::prelude::*;
+
+App::new()
+    .add_plugins(DefaultPlugins::new())
+    .add_systems(AnvilKitSchedule::Startup, setup)
+    .run();
+```
+
+`DefaultPlugins` bundles: `AnvilKitEcsPlugin` + `RenderPlugin` + `AudioPlugin` + `AutoInputPlugin` + `AutoDeltaTimePlugin`.
+
 ```rust
 use anvilkit_ecs::prelude::*;
 use anvilkit_ecs::schedule::AnvilKitSchedule;
@@ -51,8 +64,12 @@ for _ in 0..60 {
 | `add_systems` | `(impl ScheduleLabel, impl IntoSystemConfigs) -> &mut Self` | Add systems to a schedule |
 | `insert_resource` | `<R: Resource>(R) -> &mut Self` | Insert a typed global resource |
 | `init_resource` | `<R: Resource + FromWorld>() -> &mut Self` | Insert a resource using its Default/FromWorld impl |
+| `add_event` | `<E: Event>() -> &mut Self` | Register an event type; enables `EventWriter<E>` and `EventReader<E>` with automatic double-buffered cleanup |
+| `set_fixed_timestep` | `(f32) -> &mut Self` | Set the FixedUpdate interval in seconds (default 1/60). Clamped to min 0.0001 |
+| `fixed_timestep` | `() -> f32` | Get the current FixedUpdate interval |
+| `register_serializable` | `<T: 'static>(&str) -> &mut Self` | Register a component type for scene serialization |
 | `run` | `(&mut self)` | Blocking main loop until `exit()` is called |
-| `update` | `(&mut self)` | Execute one frame: Startup (first call only), then Main → PreUpdate → Update → PostUpdate → Cleanup. Also checks `AppExit` resource. |
+| `update` | `(&mut self)` | Execute one frame: Startup (first call only) → Events flush → Main → PreUpdate → FixedUpdate (accumulator-based, 0-N ticks) → Update → PostUpdate → Cleanup. Also checks `AppExit` resource. |
 | `exit` | `(&mut self)` | Signal the app to stop after the current frame |
 
 ## Plugin
@@ -65,8 +82,8 @@ pub struct PhysicsPlugin;
 impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DeltaTime>()
-           .init_resource::<CollisionEvents>()
-           .add_systems(AnvilKitSchedule::Update, (
+           .add_event::<CollisionEvent>()
+           .add_systems(AnvilKitSchedule::FixedUpdate, (
                velocity_integration_system,
                collision_detection_system.after(velocity_integration_system),
            ));
@@ -85,9 +102,70 @@ Unique plugins (default) are registered at most once; duplicate `add_plugins` ca
 | **Startup** | `AnvilKitSchedule::Startup` | Once, on first `update()` | Scene setup, asset loading |
 | **Main** | `AnvilKitSchedule::Main` | Every frame, first | Game-wide logic |
 | **PreUpdate** | `AnvilKitSchedule::PreUpdate` | Every frame | DeltaTime sync, parent-child hierarchy sync |
+| **FixedUpdate** | `AnvilKitSchedule::FixedUpdate` | 0-N times per frame | Deterministic physics, fixed-rate simulation (default 1/60s) |
 | **Update** | `AnvilKitSchedule::Update` | Every frame | Game logic, AI, physics |
 | **PostUpdate** | `AnvilKitSchedule::PostUpdate` | Every frame | Transform propagation, render prep |
 | **Cleanup** | `AnvilKitSchedule::Cleanup` | Every frame | Temp data cleanup, diagnostics |
+
+## Events
+
+AnvilKit uses `bevy_ecs` events for decoupled communication between systems:
+
+```rust
+use bevy_ecs::event::Event;
+
+#[derive(Event)]
+struct DamageEvent {
+    target: Entity,
+    amount: f32,
+}
+
+// Register in plugin
+app.add_event::<DamageEvent>();
+
+// Send events
+fn attack_system(mut events: EventWriter<DamageEvent>) {
+    events.send(DamageEvent { target: enemy, amount: 25.0 });
+}
+
+// Receive events (multiple readers supported)
+fn health_system(mut events: EventReader<DamageEvent>) {
+    for event in events.read() {
+        println!("Entity {:?} took {} damage", event.target, event.amount);
+    }
+}
+```
+
+Events are double-buffered and automatically cleared after 2 frames.
+
+## Game State Machine
+
+`GameState<S>` provides state management for game flow (menu, gameplay, pause):
+
+```rust
+use anvilkit_ecs::state::{GameState, NextGameState, in_state, StateValue};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum AppState { Menu, Playing, Paused }
+impl StateValue for AppState {}
+
+// Initialize state
+app.insert_resource(GameState::new(AppState::Menu));
+app.init_resource::<NextGameState<AppState>>();
+app.add_systems(AnvilKitSchedule::PreUpdate, state_transition_system::<AppState>);
+
+// Run systems only in specific states
+app.add_systems(AnvilKitSchedule::Update,
+    player_movement.run_if(in_state(AppState::Playing))
+);
+
+// Transition states
+fn pause_system(input: Res<InputState>, mut next: ResMut<NextGameState<AppState>>) {
+    if input.is_key_just_pressed(KeyCode::Escape) {
+        next.set(AppState::Paused);
+    }
+}
+```
 
 ## SystemSet
 
@@ -130,8 +208,8 @@ fn move_system(
     }
 }
 
-fn collision_handler(events: Res<CollisionEvents>) {
-    for event in events.iter() {
+fn collision_handler(mut events: EventReader<CollisionEvent>) {
+    for event in events.read() {
         println!("Collision: {:?} <-> {:?}", event.a, event.b);
     }
 }

@@ -13,6 +13,7 @@ AnvilKit uses a layered modular design where each layer depends only on layers b
 │        billiards / craft / your_game         │
 ├──────────────────────────────────────────────┤
 │          System Layer (High-level)           │
+│    anvilkit (umbrella + DefaultPlugins)      │
 │    anvilkit-camera   anvilkit-audio          │
 │    anvilkit-input    anvilkit-assets         │
 ├──────────────────────────────────────────────┤
@@ -55,6 +56,8 @@ anvilkit-audio (AudioSource, spatial) → anvilkit-ecs
 │     │    app.update() {                                        │
 │     │       Main:       (reserved)                             │
 │     │       PreUpdate:  DeltaTime sync, parent-child sync      │
+│     │       Events:    flush double-buffer                │
+│     │       FixedUpdate: 0-N ticks (1/60s accumulator)   │
 │     │       Update:     input → physics → camera_fx → camera  │
 │     │       PostUpdate: transform_propagation → render_extract │
 │     │       Cleanup:    (reserved)                             │
@@ -69,7 +72,10 @@ anvilkit-audio (AudioSource, spatial) → anvilkit-ecs
 │          Shadow Pass ×3 (CSM cascades)                         │
 │          HDR Scene Pass (PBR + MSAA 4×)                        │
 │          SSAO Pass (half-res + blur)                           │
+│          DOF Pass (depth-of-field)                             │
+│          Motion Blur Pass                                      │
 │          Bloom Pass (downsample ×5 + upsample ×4)             │
+│          Color Grading Pass                                    │
 │          Tonemap Pass (HDR × AO + bloom → ACES → sRGB)        │
 │          HUD Pass (lines, text, UI)                            │
 │        }                                                       │
@@ -83,6 +89,7 @@ anvilkit-audio (AudioSource, spatial) → anvilkit-ecs
 | `Startup` | Once at init | Resource setup, initial spawn |
 | `Main` | Every frame, first | (reserved for game-wide logic) |
 | `PreUpdate` | Every frame, before Update | DeltaTime sync, parent-child hierarchy sync |
+| `FixedUpdate` | 0-N per frame (accumulator) | Deterministic physics, fixed-rate gameplay |
 | `Update` | Every frame, main logic | Input, physics, game logic, camera |
 | `PostUpdate` | Every frame, after Update | Transform propagation, render extract |
 | `Cleanup` | Every frame, last | (reserved) |
@@ -107,7 +114,7 @@ Foundation type library: math utilities (Vec3, Mat4, Transform, GlobalTransform,
 
 ### anvilkit-ecs
 
-Application framework based on `bevy_ecs 0.14`: App lifecycle (new → add_plugins → add_systems → run), Plugin system with uniqueness checks, Schedule dispatching (Main/Startup/PreUpdate/Update/PostUpdate/Cleanup), AppExit resource for graceful shutdown, Transform hierarchy (Parent/Children/GlobalTransform propagation with auto-sync), Physics (scale-aware AABB collision + rapier3d integration), Scene serialization (RON).
+Application framework based on `bevy_ecs 0.14`: App lifecycle (new → add_plugins → add_systems → run), Plugin system with uniqueness checks, Schedule dispatching (Main/Startup/PreUpdate/Update/PostUpdate/Cleanup), AppExit resource for graceful shutdown, Transform hierarchy (Parent/Children/GlobalTransform propagation with auto-sync), Physics (scale-aware AABB collision + rapier3d integration), Scene serialization (RON), FixedUpdate schedule (accumulator-based deterministic timestep), Events system (bevy_ecs Events<T>/EventWriter/EventReader), GameState<S> state machine, SerializableRegistry for type-erased scene serialization, AutoInputPlugin and AutoDeltaTimePlugin for automatic frame management.
 
 ### anvilkit-render
 
@@ -122,6 +129,12 @@ Unified 2D/3D rendering pipeline:
 - GPU skeletal animation (Linear Blend Skinning, 128 joints)
 - Frustum culling + GPU instancing + batched draw sorting
 - Sprite, Line, Particle, Text, UI renderers
+- StandardMaterial component (PBR with builder pattern)
+- PostProcessSettings (SSAO/DOF/MotionBlur/Bloom/ColorGrading)
+- DemoApp scaffold
+- Orthographic/Perspective projection enum, multi-camera priority
+- PipelineCache/BindGroupCache
+- Point/spot shadow system (ShadowAtlas)
 
 ### anvilkit-assets
 
@@ -129,11 +142,11 @@ Asset pipeline: glTF model loading (mesh, material, skeleton, animation), AssetS
 
 ### anvilkit-audio
 
-Audio system based on `rodio`: BGM and SFX playback, spatial audio (distance attenuation, panning), volume control (master/music/sfx).
+Audio system based on `rodio`: AudioSource component with ECS integration, AudioBus (master/music/sfx/voice volume mixing), spatial audio (distance attenuation via AudioListener), looping and pitch control.
 
 ### anvilkit-input
 
-Input abstraction: InputState (keyboard/mouse pressed/just_pressed/released, mouse_delta, scroll_delta), ActionMap (logical action → physical key binding), RenderApp helpers (forward_input, forward_device_input, tick).
+Input abstraction: InputState (keyboard/mouse pressed/just_pressed/released, mouse_delta, scroll_delta), GamepadState (16 buttons, 6 axes), ActionMap (logical action → physical binding), ActionId (zero-allocation lookups), AxisBinding (keyboard/gamepad analog axes).
 
 ### anvilkit-camera
 
@@ -141,10 +154,10 @@ Camera system: first-person / third-person / free controllers, CameraEffects (he
 
 ## Coordinate System
 
-AnvilKit uses a **right-handed coordinate system** (consistent with wgpu/glam defaults):
+AnvilKit uses a **left-handed coordinate system**:
 
 - +X points right
 - +Y points up
-- -Z points into the screen (forward)
+- +Z points into the screen (forward)
 
-Projection uses `perspective_rh` and `look_at_rh`.
+Projection uses `perspective_lh` and `look_at_lh`.

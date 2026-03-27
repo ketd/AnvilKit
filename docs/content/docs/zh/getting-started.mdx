@@ -35,26 +35,32 @@ anvilkit new my_game --template 3d-basic
 
 ```toml
 [dependencies]
-anvilkit-core = { path = "../../crates/anvilkit-core" }
-anvilkit-ecs = { path = "../../crates/anvilkit-ecs" }
-anvilkit-render = { path = "../../crates/anvilkit-render" }
+anvilkit = { path = "../../crates/anvilkit" }
 ```
 
 ## 最小示例
 
 ```rust
-use anvilkit_ecs::prelude::*;
-use anvilkit_render::prelude::*;
+use anvilkit::prelude::*;
 
 fn main() {
     App::new()
-        .add_plugin(RenderPlugin::default())
-        .add_system(Update, hello_system)
+        .add_plugins(DefaultPlugins::new())
+        .add_systems(AnvilKitSchedule::Startup, setup)
+        .add_systems(AnvilKitSchedule::Update, hello_system)
         .run();
 }
 
+fn setup(mut commands: Commands) {
+    // 生成相机
+    commands.spawn((
+        CameraComponent::default(),
+        Transform::from_xyz(0.0, 2.0, -5.0),
+    ));
+}
+
 fn hello_system() {
-    println!("Hello, AnvilKit!");
+    // 游戏逻辑写在这里
 }
 ```
 
