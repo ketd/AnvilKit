@@ -7,6 +7,8 @@
 pub mod controller;
 /// Camera visual effects (head bob, FOV shifts).
 pub mod effects;
+/// Camera plugin for engine integration.
+pub mod plugin;
 /// Camera controller ECS systems.
 pub mod systems;
 
@@ -14,5 +16,6 @@ pub mod systems;
 pub mod prelude {
     pub use crate::controller::{CameraMode, CameraController};
     pub use crate::effects::CameraEffects;
+    pub use crate::plugin::CameraPlugin;
     pub use crate::systems::camera_controller_system;
 }

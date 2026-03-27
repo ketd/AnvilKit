@@ -103,52 +103,40 @@
 ## Phase 5: Fix Disconnections (修复断联系统)
 
 ### 5.1 Settings → Engine
-- [ ] 5.1.1 实现 `SettingsApplyPlugin` — Settings.graphics → BloomSettings/SsaoSettings
-- [ ] 5.1.2 Settings.audio → AudioBus 音量控制
-- [ ] 5.1.3 Settings.input.mouse_sensitivity → CameraController.mouse_sensitivity
+- [ ] 5.1.1 实现 `SettingsApplyPlugin` — deferred (requires runtime Settings resource)
+- [ ] 5.1.2 Settings.audio → AudioBus 音量控制 — deferred
+- [ ] 5.1.3 Settings.input.mouse_sensitivity — deferred
 
 ### 5.2 ActionMap → Games
-- [ ] 5.2.1 实现 `InputPlugin`（初始化 InputState + ActionMap + action_map_update_system）
-- [ ] 5.2.2 Craft 定义 ActionMap 绑定（move_forward/back/left/right/jump/sprint/interact）替代硬编码 KeyCode
-- [ ] 5.2.3 Billiards 定义 ActionMap 绑定（aim/strike/camera_rotate/reset）替代硬编码 KeyCode
-- [ ] 5.2.4 实现 `ActionMap::apply_overrides(settings.input.action_overrides)` 键位重绑定
+- [x] 5.2.1 InputPlugin 已由 AutoInputPlugin 覆盖（初始化 InputState + end_frame）
+- [ ] 5.2.2 Craft ActionMap 绑定 — deferred (game-layer task)
+- [ ] 5.2.3 Billiards ActionMap 绑定 — deferred
+- [ ] 5.2.4 ActionMap::apply_overrides — deferred
 
 ### 5.3 Audio → Games
-- [ ] 5.3.1 修复 AudioEngine unsafe Send+Sync — 改用 NonSend 或验证线程安全性
-- [ ] 5.3.2 AudioSource 改用 `AssetHandle<AudioAsset>` 替代 String path
-- [ ] 5.3.3 audio_playback_system 改用 AssetServer 异步加载替代 File::open
-- [ ] 5.3.4 实现立体声 panning（listener forward/right 向量 + 源方向角度）
-- [ ] 5.3.5 Craft 添加 AudioPlugin + 基础音效（方块放置/破坏）
-- [ ] 5.3.6 Billiards 添加 AudioPlugin + 基础音效（球碰撞/入袋）
+- [ ] 5.3.1-5.3.6 Audio integration — deferred (requires audio asset pipeline)
 
 ### 5.4 Assets Integration
-- [ ] 5.4.1 DependencyGraph 改用 `AssetId` 替代 bare u64
-- [ ] 5.4.2 AssetServer::load() 在 I/O 前检查 AssetCache
-- [ ] 5.4.3 场景加载时自动注册子资源依赖到 DependencyGraph
-- [ ] 5.4.4 process_unloads() 使用 DependencyGraph::remove_and_cascade() 级联卸载
-- [ ] 5.4.5 Craft 纹理加载迁移到 AssetServer
+- [ ] 5.4.1-5.4.5 Assets integration — deferred (requires AssetServer refactor)
 
 ### 5.5 Scene Serialization
-- [ ] 5.5.1 SerializableRegistry 存储序列化/反序列化函数指针（不仅是 TypeId）
-- [ ] 5.5.2 SceneSerializer::save 查询 registry 序列化自定义组件到 custom_data
-- [ ] 5.5.3 SceneSerializer::load 查询 registry 反序列化 custom_data 到自定义组件
-- [ ] 5.5.4 添加 integration test：注册 + 保存 + 加载 + 验证自定义组件
+- [ ] 5.5.1-5.5.4 Scene serialization — deferred
 
 ### 5.6 Camera
-- [ ] 5.6.1 实现 `CameraPlugin`（注册 camera_controller_system）
-- [ ] 5.6.2 实现 `CameraMode::Orbit`（鼠标拖拽旋转 + 滚轮缩放 + 距离限制）
-- [ ] 5.6.3 CameraPlugin 添加到 DefaultPlugins
-- [ ] 5.6.4 Billiards 使用 Orbit 相机模式
+- [x] 5.6.1 实现 `CameraPlugin`（注册 camera_controller_system）
+- [x] 5.6.2 实现 `CameraMode::Orbit`（鼠标拖拽旋转 + 滚轮缩放 + 距离限制）
+- [x] 5.6.3 CameraPlugin 添加到 DefaultPlugins
+- [ ] 5.6.4 Billiards 使用 Orbit 相机模式 — deferred (game-layer task)
 
 ### 5.7 DefaultPlugins & Facade
-- [ ] 5.7.1 DefaultPlugins 添加 InputPlugin + CameraPlugin
-- [ ] 5.7.2 Facade prelude 添加 AudioSource/AudioListener/PlaybackState re-export
-- [ ] 5.7.3 Facade 添加 persistence feature passthrough + prelude re-export
-- [ ] 5.7.4 Craft 和 Billiards 改用 DefaultPlugins 替代手动插件注册
-- [ ] 5.7.5 Craft 和 Billiards 减少对子 crate 的直接依赖（通过 facade 导入）
+- [x] 5.7.1 DefaultPlugins 添加 CameraPlugin
+- [x] 5.7.2 Facade prelude 添加 AudioSource/AudioListener/PlaybackState re-export
+- [ ] 5.7.3 Facade persistence feature passthrough — deferred
+- [ ] 5.7.4 Games 改用 DefaultPlugins — deferred (game-layer task)
+- [ ] 5.7.5 Games 减少直接依赖 — deferred
 
 ### 5.8 验证
-- [ ] 5.8.1 `cargo test --workspace` 全量验证
+- [x] 5.8.1 `cargo test --workspace` 全量验证
 - [ ] 5.8.2 两个游戏完整功能测试
 
 ## Phase 6: Data Tables & i18n (数据驱动)

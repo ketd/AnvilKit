@@ -16,6 +16,7 @@ use anvilkit_ecs::plugin::Plugin;
 use anvilkit_render::plugin::RenderPlugin;
 use anvilkit_render::prelude::WindowConfig;
 use anvilkit_audio::AudioPlugin;
+use anvilkit_camera::plugin::CameraPlugin;
 
 /// 默认插件集 — 一站式初始化引擎核心系统
 ///
@@ -23,6 +24,7 @@ use anvilkit_audio::AudioPlugin;
 /// - `AnvilKitEcsPlugin` — ECS 调度 + Transform 传播
 /// - `RenderPlugin` — GPU 设备 + 窗口 + 渲染系统
 /// - `AudioPlugin` — 音频引擎初始化
+/// - `CameraPlugin` — 摄像机控制器系统
 ///
 /// # 示例
 ///
@@ -85,13 +87,16 @@ impl Plugin for DefaultPlugins {
             RenderPlugin::new().with_window_config(self.window_config.clone())
         );
 
-        // 3. 音频引擎
+        // 3. 摄像机控制器
+        app.add_plugins(CameraPlugin);
+
+        // 4. 音频引擎
         app.add_plugins(AudioPlugin);
 
-        // 4. 自动输入帧管理
+        // 5. 自动输入帧管理
         app.add_plugins(anvilkit_ecs::auto_plugins::AutoInputPlugin);
 
-        // 5. 自动时间更新
+        // 6. 自动时间更新
         app.add_plugins(anvilkit_ecs::auto_plugins::AutoDeltaTimePlugin);
     }
 

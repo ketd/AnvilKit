@@ -16,6 +16,17 @@ pub enum CameraMode {
         /// Maximum allowed orbit distance.
         max_distance: f32,
     },
+    /// Orbit: orbit around a fixed point (no follow target).
+    Orbit {
+        /// Fixed world-space position the camera orbits around.
+        target: Vec3,
+        /// Current distance from the target.
+        distance: f32,
+        /// Minimum allowed orbit distance.
+        min_distance: f32,
+        /// Maximum allowed orbit distance.
+        max_distance: f32,
+    },
     /// Free fly: editor/debug camera.
     Free,
 }
@@ -123,7 +134,7 @@ impl CameraController {
                 self.mode = CameraMode::FirstPerson;
                 self.smoothing = 0.0;
             }
-            CameraMode::Free => {
+            CameraMode::Orbit { .. } | CameraMode::Free => {
                 self.mode = CameraMode::FirstPerson;
                 self.smoothing = 0.0;
             }

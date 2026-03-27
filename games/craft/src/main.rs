@@ -845,6 +845,7 @@ impl GameCallbacks for CraftGame {
                                     let mode_name = match &ctrl.mode {
                                         CameraMode::FirstPerson => "First Person",
                                         CameraMode::ThirdPerson { .. } => "Third Person",
+                                        CameraMode::Orbit { .. } => "Orbit",
                                         CameraMode::Free => "Free",
                                     };
                                     println!("Camera: {}", mode_name);

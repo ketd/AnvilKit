@@ -98,6 +98,38 @@ pub fn camera_controller_system(
                     new_smooth_pos,
                 }
             }
+            CameraMode::Orbit {
+                target,
+                distance,
+                min_distance,
+                max_distance,
+            } => {
+                let mut dist = *distance;
+                let scroll = input.scroll_delta();
+                if scroll.abs() > 0.01 {
+                    dist = (dist - scroll * zoom_speed).clamp(*min_distance, *max_distance);
+                }
+
+                let look_rotation = glam::Quat::from_rotation_y(eff_yaw)
+                    * glam::Quat::from_rotation_x(eff_pitch);
+                let offset = look_rotation * Vec3::new(0.0, 0.0, -dist);
+                // Orbit directly around the target — no eye-height offset
+                let look_target = *target;
+                let desired_pos = look_target + offset;
+
+                let new_smooth_pos = if smoothing > 0.0 {
+                    let factor = (1.0 - smoothing).powf(dt.0 * 60.0);
+                    smooth_pos + (desired_pos - smooth_pos) * (1.0 - factor)
+                } else {
+                    desired_pos
+                };
+
+                Action::ThirdPerson {
+                    look_target,
+                    new_distance: dist,
+                    new_smooth_pos,
+                }
+            }
             CameraMode::Free => {
                 let mut dir = Vec3::ZERO;
                 if input.is_key_pressed(KeyCode::W) { dir += forward_xz; }
@@ -121,8 +153,12 @@ pub fn camera_controller_system(
                 transform.translation = new_smooth_pos;
 
                 // Update distance in mode
-                if let CameraMode::ThirdPerson { ref mut distance, .. } = &mut ctrl.mode {
-                    *distance = new_distance;
+                match &mut ctrl.mode {
+                    CameraMode::ThirdPerson { ref mut distance, .. }
+                    | CameraMode::Orbit { ref mut distance, .. } => {
+                        *distance = new_distance;
+                    }
+                    _ => {}
                 }
 
                 // Look at target (right-handed: right = forward × up, up = right × forward)

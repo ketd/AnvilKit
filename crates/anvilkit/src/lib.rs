@@ -37,6 +37,7 @@ pub mod prelude {
     pub use anvilkit_input::prelude::*;
     pub use anvilkit_camera::prelude::*;
     pub use anvilkit_audio::AudioPlugin;
+    pub use anvilkit_ecs::audio::{AudioSource, AudioListener, PlaybackState, AudioBus};
     pub use anvilkit_app::prelude::*;
     pub use crate::DefaultPlugins;
 }
