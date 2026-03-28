@@ -13,7 +13,11 @@ AnvilKit 是一个使用 Rust 编写的模块化游戏基础设施框架，为 2
 - **音频系统** — 基于 `kira`/`rodio` 的空间音频和音效管理
 - **资产管线** — glTF 加载、骨骼动画、程序化网格生成
 - **输入系统** — 跨平台输入抽象，支持自定义 Action Map
-- **UI 系统** — 基于 `taffy` 布局的即时模式 UI
+- **UI 系统** — 基于 `taffy` flexbox 布局的保留模式 UI，包含交互式控件
+- **应用运行器** — `AnvilKitApp` 消除样板代码：管理事件循环、输入转发，并通过 `GameCallbacks` 实现帧生命周期
+- **游戏性系统** — 按 feature 门控的构建模块：Health、Inventory、Cooldown、StatusEffect、EntityPool
+- **数据与国际化** — `DataTable`（RON/JSON）数据驱动配置，`Locale` 支持带回退链的本地化
+- **相机系统** — 5 种相机模式（FirstPerson、ThirdPerson、Orbit、Free、Rail），trauma 抖动、弹簧臂、过渡
 - **开发工具** — CLI 脚手架、代码生成、性能分析
 
 ## 技术栈
@@ -25,11 +29,14 @@ AnvilKit 是一个使用 Rust 编写的模块化游戏基础设施框架，为 2
 | 数学 | `glam` |
 | 物理 | `rapier2d`, `rapier3d` |
 | 音频 | `kira`, `rodio` |
-| UI | `taffy`, `egui` |
+| UI | `taffy` |
 | 资产 | `gltf`, `image` |
+| 相机 | `noise` (Perlin 抖动) |
+| 数据 | `ron`, `serde_json` |
+| 游戏性 | (无外部依赖 — 纯 Rust) |
 
 ## 快速链接
 
 - [快速开始](/zh/docs/getting-started) — 5 分钟内创建你的第一个项目
 - [架构概览](/zh/docs/architecture) — 了解引擎的整体设计
-- [Crate 文档](/zh/docs/crates/core) — 各模块 API 参考
+- [API 参考](/zh/docs/api-reference) — 各模块 API 参考

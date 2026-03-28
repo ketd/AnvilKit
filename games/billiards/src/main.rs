@@ -14,8 +14,9 @@ use anvilkit_render::renderer::{
     text::TextRenderer,
 };
 use anvilkit_render::plugin::CameraComponent;
-use anvilkit_input::prelude::InputState;
-use anvilkit_ecs::physics::{Velocity, DeltaTime};
+use anvilkit_input::prelude::{ActionMap, InputBinding, MouseButton as MB};
+use anvilkit_ecs::physics::Velocity;
+use anvilkit_camera::controller::{CameraController, CameraMode};
 
 use billiards::components::*;
 use billiards::resources::*;
@@ -79,15 +80,13 @@ fn main() {
     let config = BilliardConfig::default();
 
     let mut app = App::new();
-    app.add_plugins(RenderPlugin::new().with_window_config(
+    app.add_plugins(DefaultPlugins::new().with_window(
         WindowConfig::new()
             .with_title("AnvilKit Billiards")
             .with_size(1280, 720),
     ));
 
     // Resources
-    app.insert_resource(InputState::new());
-    app.insert_resource(DeltaTime(1.0 / 60.0));
     app.insert_resource(GameState::default());
     app.insert_resource(ShotState::default());
     app.insert_resource(BallTracker::default());
@@ -183,14 +182,25 @@ fn main() {
         cushion_entities.push(e);
     }
 
-    // Camera: overhead angled view from -Z side (looking into +Z toward table)
-    let eye = glam::Vec3::new(0.0, 12.0, -10.0);
-    let look_dir = (glam::Vec3::ZERO - eye).normalize();
-    let cam_rot = glam::Quat::from_rotation_arc(glam::Vec3::Z, look_dir);
-    app.world.spawn((
-        CameraComponent { fov: 55.0, near: 0.1, far: 100.0, is_active: true, aspect_ratio: 1280.0 / 720.0, ..Default::default() },
-        Transform::from_xyz(eye.x, eye.y, eye.z).with_rotation(cam_rot),
-    ));
+    // Camera: orbit around table center — overhead angled view
+    // Camera: orbit around table center — overhead angled view
+    {
+        use anvilkit_camera::orbit::OrbitState;
+        let mut cc = CameraController::default();
+        cc.mode = CameraMode::Orbit;
+        cc.yaw = 0.0;
+        cc.pitch = 0.88; // ~50 degrees above horizontal
+        cc.mouse_sensitivity = 0.003;
+        cc.zoom_speed = 2.0;
+        let orbit = OrbitState::new(glam::Vec3::ZERO, 16.0)
+            .with_distance_limits(8.0, 30.0);
+        app.world.spawn((
+            CameraComponent { fov: 55.0, near: 0.1, far: 100.0, is_active: true, aspect_ratio: 1280.0 / 720.0, ..Default::default() },
+            cc,
+            orbit,
+            Transform::default(),
+        ));
+    }
 
     app.insert_resource(config);
 
@@ -418,6 +428,11 @@ impl BilliardGame {
 impl GameCallbacks for BilliardGame {
     fn init(&mut self, ctx: &mut GameContext) {
         self.init_scene(ctx);
+        // Register ActionMap for billiards (mouse-only game)
+        let mut map = ActionMap::new();
+        map.add_binding("shoot", InputBinding::Mouse(MB::Left));
+        map.add_binding("aim",   InputBinding::Mouse(MB::Right));
+        ctx.app.insert_resource(map);
     }
 
     fn on_resize(&mut self, ctx: &mut GameContext, width: u32, height: u32) {

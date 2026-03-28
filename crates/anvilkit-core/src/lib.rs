@@ -41,6 +41,7 @@ pub mod prelude {
     // 数学类型
     pub use crate::math::{Transform, GlobalTransform};
     pub use crate::math::geometry::{Rect, Circle, Bounds2D, Bounds3D};
+    pub use crate::math::{Aabb, Frustum};
     pub use crate::math::interpolation::{Lerp, Slerp, Interpolate};
     
     // 时间类型
@@ -60,6 +61,14 @@ pub mod prelude {
 
     // 数学常量
     pub use std::f32::consts as math_consts;
+
+    // 持久化类型 (requires "persistence" feature)
+    #[cfg(feature = "persistence")]
+    pub use crate::persistence::{
+        Settings, SaveManager, WorldStorage,
+        AutoSaveConfig, AutoSaveState, auto_save_tick, next_autosave_slot,
+        SaveSlotInfo, SaveMigration, MigrationRunner,
+    };
 }
 
 // 重新导出核心模块

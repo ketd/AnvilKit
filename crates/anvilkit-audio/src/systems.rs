@@ -33,7 +33,7 @@ impl Default for AudioPlaybackTracker {
 pub fn audio_playback_system(
     mut commands: Commands,
     query: Query<(Entity, &AudioSource, Option<&AudioPlaybackTracker>)>,
-    engine: Option<ResMut<AudioEngine>>,
+    engine: Option<NonSendMut<AudioEngine>>,
 ) {
     let Some(mut engine) = engine else { return };
 
@@ -95,20 +95,22 @@ pub fn audio_playback_system(
     engine.cleanup_finished();
 }
 
-/// 空间音频系统 — 基于距离的音量衰减
+/// 空间音频系统 — 基于距离的音量衰减 + 立体声平移
 pub fn spatial_audio_system(
     query: Query<(Entity, &AudioSource, &Transform)>,
     listener_query: Query<&Transform, With<AudioListener>>,
-    engine: Option<ResMut<AudioEngine>>,
+    engine: Option<NonSend<AudioEngine>>,
     bus: Option<Res<AudioBus>>,
 ) {
     let Some(engine) = engine else { return };
     let default_bus = AudioBus::default();
     let bus = bus.as_deref().unwrap_or(&default_bus);
 
-    let listener_pos = listener_query.iter().next()
-        .map(|t| t.translation)
-        .unwrap_or(glam::Vec3::ZERO);
+    let listener_transform = listener_query.iter().next().copied()
+        .unwrap_or(Transform::IDENTITY);
+    let listener_pos = listener_transform.translation;
+    // Listener's right vector for stereo panning
+    let listener_right = listener_transform.rotation * glam::Vec3::X;
 
     for (entity, source, transform) in query.iter() {
         if source.state != PlaybackState::Playing { continue; }
@@ -122,6 +124,33 @@ pub fn spatial_audio_system(
             source.volume * bus_vol
         };
 
+        // Stereo panning: project source direction onto listener's right axis.
+        // pan in [-1, 1]: -1 = full left, 0 = center, +1 = full right
+        let _panning = if source.spatial {
+            let offset = transform.translation - listener_pos;
+            let len = offset.length();
+            if len > 1e-5 {
+                let dir = offset / len;
+                // Dot with right vector gives signed horizontal displacement
+                dir.dot(listener_right).clamp(-1.0, 1.0)
+            } else {
+                0.0 // source at listener position → center
+            }
+        } else {
+            0.0
+        };
+
+        // Derive per-channel volumes from the panning value.
+        // Equal-power-ish linear pan law:
+        //   left  = (1 - pan) * 0.5 * volume
+        //   right = (1 + pan) * 0.5 * volume
+        let _left_vol  = (1.0 - _panning) * 0.5 * effective_vol;
+        let _right_vol = (1.0 + _panning) * 0.5 * effective_vol;
+
+        // NOTE: rodio 0.19 `Sink` does not expose a stereo panning API.
+        // When rodio gains `set_stereo_volume` or equivalent, replace the
+        // single `set_volume` call below with per-channel volumes.
+        // For now, apply the distance-attenuated mono volume.
         engine.set_volume(entity, effective_vol);
     }
 }

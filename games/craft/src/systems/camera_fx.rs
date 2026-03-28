@@ -1,25 +1,28 @@
 use bevy_ecs::prelude::*;
 use anvilkit_camera::controller::{CameraController, CameraMode};
 use anvilkit_camera::effects::CameraEffects;
+use anvilkit_camera::orbit::OrbitState;
 use anvilkit_render::renderer::draw::ActiveCamera;
 use crate::resources::PlayerState;
 
 /// Drives camera effects (landing shake, sprint FOV) and updates
-/// third-person camera target each frame. Runs before `camera_controller_system`.
+/// third-person camera target each frame.
 pub fn camera_effects_system(
     active_cam: Option<Res<ActiveCamera>>,
     mut player: ResMut<PlayerState>,
-    mut query: Query<(&mut CameraController, &mut CameraEffects)>,
+    mut query: Query<(&CameraController, &mut CameraEffects, Option<&mut OrbitState>)>,
 ) {
     let cam_pos = active_cam
         .as_ref()
         .map(|c| c.camera_pos)
         .unwrap_or(glam::Vec3::ZERO);
 
-    for (mut ctrl, mut fx) in query.iter_mut() {
-        // Update third-person camera target
-        if let CameraMode::ThirdPerson { ref mut target, .. } = &mut ctrl.mode {
-            *target = cam_pos;
+    for (ctrl, mut fx, orbit) in query.iter_mut() {
+        // Update third-person camera target via OrbitState
+        if ctrl.mode == CameraMode::ThirdPerson {
+            if let Some(mut orbit) = orbit {
+                orbit.target = cam_pos;
+            }
         }
 
         // Landing shake
@@ -34,6 +37,6 @@ pub fn camera_effects_system(
         fx.fov_target = if player.sprinting { 10.0 } else { 0.0 };
     }
 
-    // Update was_on_ground tracker
+    // Update was_on_ground tracker (must happen after fall_damage_system reads it)
     player.was_on_ground = player.on_ground;
 }

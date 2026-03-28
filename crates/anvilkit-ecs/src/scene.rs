@@ -119,6 +119,17 @@ pub struct SerializedScene {
 /// ```
 pub struct SceneSerializer;
 
+/// 可序列化组件的注册表条目，存储类型信息和序列化/反序列化函数指针。
+#[cfg(feature = "serde")]
+pub struct SerializableEntry {
+    /// 组件的 TypeId
+    pub type_id: std::any::TypeId,
+    /// 序列化函数：从 World 读取实体的组件并返回 RON 字符串
+    pub serialize_fn: fn(&World, Entity) -> Option<String>,
+    /// 反序列化函数：从 RON 字符串恢复组件并插入到实体
+    pub deserialize_fn: fn(&mut World, Entity, &str),
+}
+
 /// 可序列化组件注册表
 ///
 /// 允许用户注册自定义组件类型用于场景序列化。
@@ -134,7 +145,10 @@ pub struct SceneSerializer;
 /// ```
 #[derive(Resource, Default)]
 pub struct SerializableRegistry {
-    /// type_name → type_id 映射
+    /// type_name → SerializableEntry (with serde) or TypeId (without serde)
+    #[cfg(feature = "serde")]
+    entries: std::collections::HashMap<String, SerializableEntry>,
+    #[cfg(not(feature = "serde"))]
     entries: std::collections::HashMap<String, std::any::TypeId>,
 }
 
@@ -144,11 +158,36 @@ impl SerializableRegistry {
         Self::default()
     }
 
-    /// 注册组件类型
+    /// 注册组件类型（需要 `serde` feature）
+    ///
+    /// 注册组件的序列化和反序列化函数，使 `SceneSerializer` 能自动保存/加载该组件。
+    /// 组件必须实现 `Component + Serialize + DeserializeOwned`。
     ///
     /// # 参数
     ///
     /// - `name`: 序列化使用的类型名称（应稳定、跨版本一致）
+    #[cfg(feature = "serde")]
+    pub fn register<T: Component + serde::Serialize + serde::de::DeserializeOwned>(
+        &mut self,
+        name: &str,
+    ) {
+        let entry = SerializableEntry {
+            type_id: std::any::TypeId::of::<T>(),
+            serialize_fn: |world, entity| {
+                world.get::<T>(entity)
+                    .and_then(|comp| ron::to_string(comp).ok())
+            },
+            deserialize_fn: |world, entity, data| {
+                if let Ok(comp) = ron::from_str::<T>(data) {
+                    world.entity_mut(entity).insert(comp);
+                }
+            },
+        };
+        self.entries.insert(name.to_string(), entry);
+    }
+
+    /// 注册组件类型（无 serde feature 时的简化版本，仅记录 TypeId）
+    #[cfg(not(feature = "serde"))]
     pub fn register<T: 'static>(&mut self, name: &str) {
         self.entries.insert(name.to_string(), std::any::TypeId::of::<T>());
     }
@@ -171,6 +210,18 @@ impl SerializableRegistry {
     /// 获取已注册的所有类型名称
     pub fn registered_names(&self) -> Vec<&str> {
         self.entries.keys().map(|s| s.as_str()).collect()
+    }
+
+    /// 获取指定名称的注册条目
+    #[cfg(feature = "serde")]
+    pub fn get(&self, name: &str) -> Option<&SerializableEntry> {
+        self.entries.get(name)
+    }
+
+    /// 迭代所有注册条目
+    #[cfg(feature = "serde")]
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &SerializableEntry)> {
+        self.entries.iter().map(|(k, v)| (k.as_str(), v))
     }
 }
 
@@ -215,6 +266,27 @@ impl SceneSerializer {
                 parent_index,
                 custom_data: std::collections::HashMap::new(),
             });
+        }
+
+        // Populate custom_data from SerializableRegistry
+        // Collect registry entries first to avoid borrow conflicts with world
+        let registry_entries: Vec<(String, fn(&World, Entity) -> Option<String>)> = world
+            .get_resource::<SerializableRegistry>()
+            .map(|registry| {
+                registry.iter()
+                    .map(|(name, entry)| (name.to_string(), entry.serialize_fn))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if !registry_entries.is_empty() {
+            for (idx, &entity) in entity_ids.iter().enumerate() {
+                for (name, serialize_fn) in &registry_entries {
+                    if let Some(data) = serialize_fn(world, entity) {
+                        entities[idx].custom_data.insert(name.clone(), data);
+                    }
+                }
+            }
         }
 
         let scene = SerializedScene {
@@ -289,6 +361,27 @@ impl SceneSerializer {
             }
         }
 
+        // 第三遍：恢复自定义组件（通过 SerializableRegistry）
+        // Collect deserialize fns first to avoid borrow conflicts with world
+        let registry_deserialize: std::collections::HashMap<String, fn(&mut World, Entity, &str)> =
+            world.get_resource::<SerializableRegistry>()
+                .map(|registry| {
+                    registry.iter()
+                        .map(|(name, entry)| (name.to_string(), entry.deserialize_fn))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+        if !registry_deserialize.is_empty() {
+            for (entity, entity_data) in spawned_entities.iter().zip(scene.entities.iter()) {
+                for (name, data) in &entity_data.custom_data {
+                    if let Some(deserialize_fn) = registry_deserialize.get(name.as_str()) {
+                        deserialize_fn(world, *entity, data);
+                    }
+                }
+            }
+        }
+
         Ok(count)
     }
 }
@@ -296,7 +389,6 @@ impl SceneSerializer {
 #[cfg(all(test, feature = "serde"))]
 mod tests {
     use super::*;
-    use crate::prelude::*;
     use crate::component::{Name, Tag};
 
     #[test]
@@ -335,9 +427,171 @@ mod tests {
         // Cleanup
         let _ = std::fs::remove_file(path);
     }
+
+    #[derive(Component, Debug, Clone, PartialEq, Serialize, Deserialize)]
+    struct Health {
+        hp: f32,
+    }
+
+    #[derive(Component, Debug, Clone, PartialEq, Serialize, Deserialize)]
+    struct Mana {
+        mp: f32,
+        max_mp: f32,
+    }
+
+    #[test]
+    fn test_custom_component_round_trip() {
+        let mut world = World::new();
+
+        // Register custom components
+        let mut registry = SerializableRegistry::new();
+        registry.register::<Health>("Health");
+        registry.register::<Mana>("Mana");
+        world.insert_resource(registry);
+
+        // Spawn entity with Serializable + custom components
+        world.spawn((
+            Transform::from_xyz(1.0, 2.0, 3.0),
+            GlobalTransform::default(),
+            Name::new("Hero"),
+            Serializable,
+            Health { hp: 100.0 },
+            Mana { mp: 50.0, max_mp: 80.0 },
+        ));
+
+        // Spawn another entity with only Health (no Mana)
+        world.spawn((
+            Transform::from_xyz(4.0, 5.0, 6.0),
+            GlobalTransform::default(),
+            Name::new("Warrior"),
+            Serializable,
+            Health { hp: 200.0 },
+        ));
+
+        // Save
+        let path = "/tmp/anvilkit_test_custom_round_trip.ron";
+        let count = SceneSerializer::save(&mut world, path).unwrap();
+        assert_eq!(count, 2);
+
+        // Load into new world (with same registry)
+        let mut new_world = World::new();
+        let mut new_registry = SerializableRegistry::new();
+        new_registry.register::<Health>("Health");
+        new_registry.register::<Mana>("Mana");
+        new_world.insert_resource(new_registry);
+
+        let loaded = SceneSerializer::load(&mut new_world, path).unwrap();
+        assert_eq!(loaded, 2);
+
+        // Verify Health components are restored
+        let mut health_query = new_world.query::<(&Name, &Health)>();
+        let mut found_hero = false;
+        let mut found_warrior = false;
+        for (name, health) in health_query.iter(&new_world) {
+            match name.as_str() {
+                "Hero" => {
+                    assert_eq!(health.hp, 100.0);
+                    found_hero = true;
+                }
+                "Warrior" => {
+                    assert_eq!(health.hp, 200.0);
+                    found_warrior = true;
+                }
+                _ => panic!("Unexpected entity name: {}", name.as_str()),
+            }
+        }
+        assert!(found_hero, "Hero entity not found after load");
+        assert!(found_warrior, "Warrior entity not found after load");
+
+        // Verify Mana component only on Hero
+        let mut mana_query = new_world.query::<(&Name, &Mana)>();
+        let mana_results: Vec<_> = mana_query.iter(&new_world).collect();
+        assert_eq!(mana_results.len(), 1);
+        assert_eq!(mana_results[0].0.as_str(), "Hero");
+        assert_eq!(mana_results[0].1.mp, 50.0);
+        assert_eq!(mana_results[0].1.max_mp, 80.0);
+
+        // Cleanup
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_load_without_registry_ignores_custom_data() {
+        // Save with registry
+        let mut world = World::new();
+        let mut registry = SerializableRegistry::new();
+        registry.register::<Health>("Health");
+        world.insert_resource(registry);
+
+        world.spawn((
+            Transform::default(),
+            GlobalTransform::default(),
+            Serializable,
+            Health { hp: 42.0 },
+        ));
+
+        let path = "/tmp/anvilkit_test_no_registry_load.ron";
+        SceneSerializer::save(&mut world, path).unwrap();
+
+        // Load into world WITHOUT registry — should still work, just no Health
+        let mut new_world = World::new();
+        let loaded = SceneSerializer::load(&mut new_world, path).unwrap();
+        assert_eq!(loaded, 1);
+
+        // Verify entity exists but has no Health
+        let mut query = new_world.query::<(Entity, Option<&Health>)>();
+        let results: Vec<_> = query.iter(&new_world).collect();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].1.is_none(), "Health should not be restored without registry");
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_load_legacy_file_without_custom_data() {
+        // Create a RON file that has no custom_data (backward compatibility)
+        let scene = SerializedScene {
+            version: 2,
+            entities: vec![
+                SerializedEntity {
+                    transform: Some(TransformData {
+                        translation: [1.0, 2.0, 3.0],
+                        rotation: [0.0, 0.0, 0.0, 1.0],
+                        scale: [1.0, 1.0, 1.0],
+                    }),
+                    name: Some("Legacy".to_string()),
+                    tag: None,
+                    parent_index: None,
+                    custom_data: std::collections::HashMap::new(),
+                },
+            ],
+        };
+
+        let path = "/tmp/anvilkit_test_legacy_load.ron";
+        let ron_str = ron::ser::to_string_pretty(&scene, ron::ser::PrettyConfig::default()).unwrap();
+        std::fs::write(path, ron_str).unwrap();
+
+        // Load with registry — should work fine
+        let mut world = World::new();
+        let mut registry = SerializableRegistry::new();
+        registry.register::<Health>("Health");
+        world.insert_resource(registry);
+
+        let loaded = SceneSerializer::load(&mut world, path).unwrap();
+        assert_eq!(loaded, 1);
+
+        // Verify entity loaded but no Health (since file had no custom_data)
+        let mut query = world.query::<(&Name, Option<&Health>)>();
+        let results: Vec<_> = query.iter(&world).collect();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0.as_str(), "Legacy");
+        assert!(results[0].1.is_none());
+
+        let _ = std::fs::remove_file(path);
+    }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "serde")))]
 mod registry_tests {
     use super::*;
 
@@ -365,5 +619,71 @@ mod registry_tests {
         assert_eq!(names.len(), 2);
         assert!(names.contains(&"u32"));
         assert!(names.contains(&"String"));
+    }
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod registry_serde_tests {
+    use super::*;
+
+    #[derive(Component, Debug, Clone, Serialize, Deserialize, PartialEq)]
+    struct FakeComponent {
+        value: i32,
+    }
+
+    #[test]
+    fn test_serializable_registry_with_serde() {
+        let mut registry = SerializableRegistry::new();
+        assert!(registry.is_empty());
+
+        registry.register::<FakeComponent>("FakeComponent");
+        assert_eq!(registry.len(), 1);
+        assert!(registry.is_registered("FakeComponent"));
+        assert!(!registry.is_registered("Unknown"));
+    }
+
+    #[test]
+    fn test_serializable_registry_names_with_serde() {
+        let mut registry = SerializableRegistry::new();
+        registry.register::<FakeComponent>("FakeComponent");
+
+        let names = registry.registered_names();
+        assert_eq!(names.len(), 1);
+        assert!(names.contains(&"FakeComponent"));
+    }
+
+    #[test]
+    fn test_registry_get_and_iter() {
+        let mut registry = SerializableRegistry::new();
+        registry.register::<FakeComponent>("FakeComponent");
+
+        assert!(registry.get("FakeComponent").is_some());
+        assert!(registry.get("Unknown").is_none());
+
+        let entries: Vec<_> = registry.iter().collect();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].0, "FakeComponent");
+    }
+
+    #[test]
+    fn test_serialize_fn_round_trip() {
+        let mut world = World::new();
+        let entity = world.spawn(FakeComponent { value: 42 }).id();
+
+        let mut registry = SerializableRegistry::new();
+        registry.register::<FakeComponent>("FakeComponent");
+
+        let entry = registry.get("FakeComponent").unwrap();
+
+        // Serialize
+        let data = (entry.serialize_fn)(&world, entity);
+        assert!(data.is_some());
+
+        // Deserialize into a new entity
+        let new_entity = world.spawn_empty().id();
+        (entry.deserialize_fn)(&mut world, new_entity, &data.unwrap());
+
+        let restored = world.get::<FakeComponent>(new_entity).unwrap();
+        assert_eq!(restored, &FakeComponent { value: 42 });
     }
 }

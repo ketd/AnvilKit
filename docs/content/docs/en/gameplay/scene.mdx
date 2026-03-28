@@ -100,7 +100,9 @@ The serializer uses a two-pass approach: first pass creates all entities, second
 
 ## SerializableRegistry
 
-Register custom component types for scene serialization:
+`SerializableRegistry` manages custom component types for scene serialization. Each registration stores `serialize_fn` and `deserialize_fn` function pointers alongside a `TypeId`, enabling full round-trip support for custom components.
+
+When saving, `SceneSerializer::save` queries the registry to populate the `custom_data` map for each entity. When loading, `SceneSerializer::load` queries the registry to restore custom components from the `custom_data` entries.
 
 ```rust
 use anvilkit_ecs::scene::SerializableRegistry;
@@ -114,3 +116,5 @@ let mut registry = SerializableRegistry::new();
 registry.register::<Health>("Health");
 assert!(registry.is_registered("Health"));
 ```
+
+For example, `app.register_serializable::<Health>("Health")` means that entities with a `Health` component will have their data serialized into `custom_data["Health"]` in the RON file, and deserialized back into a `Health` component on load. This enables full round-trip serialization of custom gameplay components.

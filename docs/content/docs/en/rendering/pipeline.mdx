@@ -14,20 +14,41 @@ The engine runs a multi-pass HDR pipeline per frame:
 
 <Mermaid chart={`
 flowchart LR
-  P0["Pass 0\nCSM Shadow"]
-  P1["Pass 1\nHDR Scene"]
+  P0["Pass 0\nShadow ×3 (CSM)"]
+  P1["Pass 1\nHDR Scene\n(PBR + MSAA 4×)"]
   P2["Pass 2\nSSAO"]
-  P3["Pass 3\nBloom"]
-  P4["Pass 4\nTonemap"]
+  P3["Pass 3\nDOF"]
+  P4["Pass 4\nMotion Blur"]
+  P5["Pass 5\nBloom"]
+  P6["Pass 6\nColor Grading"]
+  P7["Pass 7\nTonemap"]
+  P8["Pass 8\nHUD"]
 
   P0 -->|"shadow_map"| P1
   P1 -->|"hdr_texture"| P2
   P2 -->|"ao_texture"| P3
-  P3 -->|"bloom_texture"| P4
-  P4 -->|"sRGB output"| screen["Screen"]
+  P3 -->|"dof_texture"| P4
+  P4 -->|"blur_texture"| P5
+  P5 -->|"bloom_texture"| P6
+  P6 -->|"graded_texture"| P7
+  P7 -->|"sRGB output"| P8
+  P8 -->|"final output"| screen["Screen"]
 `} />
 
 All passes share a single `CommandEncoder` per frame for minimal CPU overhead.
+
+### v0.3 Render Restructuring
+
+In v0.3, large monolithic files were split into organized directories:
+
+- **`events.rs`** (1414 lines) split into `events/` directory: `mod.rs`, `lighting.rs`, `render_app.rs`, `gpu_init.rs`, `render_loop.rs`, `input.rs`
+- **`draw.rs`** (568 lines) split into `draw/` directory: `mod.rs`, `culling.rs`, `lighting.rs`, `commands.rs`, `gpu.rs`
+
+### Shared Utilities (v0.3)
+
+- **`CachedBuffer`**: A shared GPU buffer caching utility that replaces 5 duplicate `cached_vb` patterns previously scattered across the ui/text/sprite/line/particle renderers.
+- **`ProjectionUniform`**: A shared type that replaces 5 duplicate 64-byte ortho/scene uniform structs.
+- **`DebugRenderer`** now includes `LineRenderer` functionality (the two were merged in v0.3; see [Debug Renderer](/docs/en/devtools/debug-renderer)).
 
 ## Resource Management
 

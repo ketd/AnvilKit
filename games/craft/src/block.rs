@@ -1,3 +1,7 @@
+use serde::Deserialize;
+use bevy_ecs::prelude::Resource;
+use anvilkit_data::DataTable;
+
 /// Block types matching Craft's item definitions.
 ///
 /// Tile indices reference the 16×16 texture atlas (256×256 pixels, 16px per tile).
@@ -171,6 +175,112 @@ pub fn tile_uv(tile: u8) -> (f32, f32) {
     let col = (tile % 16) as f32;
     let row = (tile / 16) as f32;
     (col * TILE_UV, row * TILE_UV)
+}
+
+impl BlockType {
+    /// Convert block type to item ID for inventory.
+    pub fn item_id(self) -> u32 {
+        self as u32
+    }
+
+    /// Convert item ID back to block type.
+    pub fn from_item_id(id: u32) -> Self {
+        Self::from_u8(id as u8)
+    }
+
+    /// Locale key for this block type (matches blocks.ron name field).
+    pub fn locale_key(self) -> &'static str {
+        match self {
+            Self::Air => "block.air",
+            Self::Grass => "block.grass",
+            Self::Sand => "block.sand",
+            Self::Stone => "block.stone",
+            Self::Brick => "block.brick",
+            Self::Wood => "block.wood",
+            Self::Cement => "block.cement",
+            Self::Dirt => "block.dirt",
+            Self::Plank => "block.plank",
+            Self::Snow => "block.snow",
+            Self::Glass => "block.glass",
+            Self::Cobble => "block.cobble",
+            Self::LightStone => "block.light_stone",
+            Self::DarkStone => "block.dark_stone",
+            Self::Chest => "block.chest",
+            Self::Leaves => "block.leaves",
+            Self::Cloud => "block.cloud",
+            Self::TallGrass => "block.tall_grass",
+            Self::YellowFlower => "block.yellow_flower",
+            Self::RedFlower => "block.red_flower",
+            Self::Purple => "block.purple",
+            Self::Sun => "block.sun",
+            Self::Water => "block.water",
+        }
+    }
+}
+
+/// Data-driven block property definition, loaded from blocks.ron.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BlockDef {
+    pub name: String,
+    pub transparent: bool,
+    pub plant: bool,
+    pub obstacle: bool,
+    pub water: bool,
+    pub face_tiles: [u8; 6],
+}
+
+/// Type alias for the block data table.
+pub type BlockTable = DataTable<u8, BlockDef>;
+
+/// Fast O(1) lookup cache for block properties, indexed by block ID (u8).
+/// Built from BlockTable at startup, used by mesh builder in tight loops.
+#[derive(Resource)]
+pub struct BlockDefCache {
+    entries: [Option<BlockDef>; 256],
+}
+
+impl BlockDefCache {
+    pub fn from_table(table: &BlockTable) -> Self {
+        let mut entries: [Option<BlockDef>; 256] = std::array::from_fn(|_| None);
+        for (&id, def) in table.iter() {
+            entries[id as usize] = Some(def.clone());
+        }
+        Self { entries }
+    }
+
+    pub fn get(&self, block_id: u8) -> Option<&BlockDef> {
+        self.entries[block_id as usize].as_ref()
+    }
+
+    pub fn is_transparent(&self, block_id: u8) -> bool {
+        self.entries[block_id as usize]
+            .as_ref()
+            .map_or(block_id == 0, |d| d.transparent)
+    }
+
+    pub fn is_plant(&self, block_id: u8) -> bool {
+        self.entries[block_id as usize]
+            .as_ref()
+            .map_or(false, |d| d.plant)
+    }
+
+    pub fn is_obstacle(&self, block_id: u8) -> bool {
+        self.entries[block_id as usize]
+            .as_ref()
+            .map_or(false, |d| d.obstacle)
+    }
+
+    pub fn is_water(&self, block_id: u8) -> bool {
+        self.entries[block_id as usize]
+            .as_ref()
+            .map_or(false, |d| d.water)
+    }
+
+    pub fn face_tile(&self, block_id: u8, face_idx: usize) -> u8 {
+        self.entries[block_id as usize]
+            .as_ref()
+            .map_or(0, |d| d.face_tiles[face_idx.min(5)])
+    }
 }
 
 #[cfg(test)]

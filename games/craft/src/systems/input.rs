@@ -1,18 +1,19 @@
 use bevy_ecs::prelude::*;
 use anvilkit_core::math::Transform;
 use anvilkit_ecs::physics::{DeltaTime, Velocity};
-use anvilkit_input::prelude::{InputState, KeyCode};
+use anvilkit_input::prelude::ActionMap;
 use anvilkit_camera::prelude::CameraController;
 
 use crate::components::FpsCamera;
 use crate::config;
-use crate::resources::PlayerState;
+use crate::resources::{PlayerState, SelectedBlock};
+use crate::render::filters::ActiveFilter;
 
-/// Player movement system: WASD + Space/Shift for vertical movement.
+/// Player movement system: reads ActionMap for WASD + Space/Shift + Sprint.
 /// Camera rotation is handled by camera_controller_system in anvilkit-camera.
 pub fn player_movement_system(
     dt: Res<DeltaTime>,
-    input: Res<InputState>,
+    actions: Res<ActionMap>,
     mut player: ResMut<PlayerState>,
     mut query: Query<(&CameraController, &mut Transform, &mut Velocity), With<FpsCamera>>,
 ) {
@@ -23,23 +24,23 @@ pub fn player_movement_system(
     let right = ctrl.right_xz();
 
     let mut dir = glam::Vec3::ZERO;
-    if input.is_key_pressed(KeyCode::W) { dir += forward; }
-    if input.is_key_pressed(KeyCode::S) { dir -= forward; }
-    if input.is_key_pressed(KeyCode::A) { dir -= right; }
-    if input.is_key_pressed(KeyCode::D) { dir += right; }
+    if actions.is_action_active("move_forward")  { dir += forward; }
+    if actions.is_action_active("move_backward") { dir -= forward; }
+    if actions.is_action_active("move_left")     { dir -= right; }
+    if actions.is_action_active("move_right")    { dir += right; }
 
     // Sprint detection
-    player.sprinting = input.is_key_pressed(KeyCode::LControl)
-        && (input.is_key_pressed(KeyCode::W)
-            || input.is_key_pressed(KeyCode::S)
-            || input.is_key_pressed(KeyCode::A)
-            || input.is_key_pressed(KeyCode::D));
+    let moving = actions.is_action_active("move_forward")
+        || actions.is_action_active("move_backward")
+        || actions.is_action_active("move_left")
+        || actions.is_action_active("move_right");
+    player.sprinting = actions.is_action_active("sprint") && moving;
 
     let speed_multiplier = if player.sprinting { config::SPRINT_MULTIPLIER } else { 1.0 };
 
     if player.flying {
-        if input.is_key_pressed(KeyCode::Space) { dir.y += 1.0; }
-        if input.is_key_pressed(KeyCode::LShift) { dir.y -= 1.0; }
+        if actions.is_action_active("jump")    { dir.y += 1.0; }
+        if actions.is_action_active("descend") { dir.y -= 1.0; }
 
         if dir.length_squared() > 0.0 {
             dir = dir.normalize();
@@ -56,8 +57,38 @@ pub fn player_movement_system(
         vel.linear.z = dir.z * player.move_speed * speed_multiplier;
 
         // Jump request (actual jump handled by physics)
-        if input.is_key_pressed(KeyCode::Space) {
+        if actions.is_action_active("jump") {
             player.jump_requested = true;
+        }
+    }
+}
+
+/// Hotbar slot selection via ActionMap (replaces digit key handling in on_window_event).
+pub fn hotbar_selection_system(
+    actions: Res<ActionMap>,
+    mut selected: ResMut<SelectedBlock>,
+) {
+    for i in 0..9 {
+        let action = format!("slot_{}", i + 1);
+        if actions.is_action_just_pressed(&action) {
+            selected.index = i;
+            selected.block_type = config::BLOCK_PALETTE[i];
+        }
+    }
+}
+
+/// Toggle actions: flying mode and post-processing filter cycle.
+pub fn toggle_actions_system(
+    actions: Res<ActionMap>,
+    mut player: ResMut<PlayerState>,
+    mut filter: Option<ResMut<ActiveFilter>>,
+) {
+    if actions.is_action_just_pressed("toggle_flying") {
+        player.flying = !player.flying;
+    }
+    if actions.is_action_just_pressed("cycle_filter") {
+        if let Some(ref mut af) = filter {
+            af.filter = af.filter.cycle();
         }
     }
 }

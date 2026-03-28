@@ -13,7 +13,11 @@ anvilkit-render = { path = "../../crates/anvilkit-render" }
 anvilkit-assets = { path = "../../crates/anvilkit-assets" }
 anvilkit-input = { path = "../../crates/anvilkit-input" }
 anvilkit-camera = { path = "../../crates/anvilkit-camera" }
+anvilkit-data = { path = "../../crates/anvilkit-data" }
+anvilkit-gameplay = { path = "../../crates/anvilkit-gameplay" }
 bevy_ecs = { workspace = true }
+serde = { workspace = true }
+ron = { workspace = true }
 glam = "0.24"
 bytemuck = { version = "1", features = ["derive"] }
 wgpu = "0.19"

@@ -155,6 +155,55 @@ pub enum KeyCode {
 }
 
 impl KeyCode {
+    /// Parse a human-readable key name string into a `KeyCode`.
+    ///
+    /// Recognises single-letter keys (`"A"` .. `"Z"`), digit keys (`"Key0"` .. `"Key9"`),
+    /// function keys (`"F1"` .. `"F12"`), arrow keys, and common modifier / special keys.
+    /// Returns `None` for unrecognised names.
+    pub fn from_name(name: &str) -> Option<KeyCode> {
+        match name {
+            // Letters
+            "A" => Some(KeyCode::A), "B" => Some(KeyCode::B),
+            "C" => Some(KeyCode::C), "D" => Some(KeyCode::D),
+            "E" => Some(KeyCode::E), "F" => Some(KeyCode::F),
+            "G" => Some(KeyCode::G), "H" => Some(KeyCode::H),
+            "I" => Some(KeyCode::I), "J" => Some(KeyCode::J),
+            "K" => Some(KeyCode::K), "L" => Some(KeyCode::L),
+            "M" => Some(KeyCode::M), "N" => Some(KeyCode::N),
+            "O" => Some(KeyCode::O), "P" => Some(KeyCode::P),
+            "Q" => Some(KeyCode::Q), "R" => Some(KeyCode::R),
+            "S" => Some(KeyCode::S), "T" => Some(KeyCode::T),
+            "U" => Some(KeyCode::U), "V" => Some(KeyCode::V),
+            "W" => Some(KeyCode::W), "X" => Some(KeyCode::X),
+            "Y" => Some(KeyCode::Y), "Z" => Some(KeyCode::Z),
+            // Digit keys
+            "Key0" => Some(KeyCode::Key0), "Key1" => Some(KeyCode::Key1),
+            "Key2" => Some(KeyCode::Key2), "Key3" => Some(KeyCode::Key3),
+            "Key4" => Some(KeyCode::Key4), "Key5" => Some(KeyCode::Key5),
+            "Key6" => Some(KeyCode::Key6), "Key7" => Some(KeyCode::Key7),
+            "Key8" => Some(KeyCode::Key8), "Key9" => Some(KeyCode::Key9),
+            // Function keys
+            "F1" => Some(KeyCode::F1), "F2" => Some(KeyCode::F2),
+            "F3" => Some(KeyCode::F3), "F4" => Some(KeyCode::F4),
+            "F5" => Some(KeyCode::F5), "F6" => Some(KeyCode::F6),
+            "F7" => Some(KeyCode::F7), "F8" => Some(KeyCode::F8),
+            "F9" => Some(KeyCode::F9), "F10" => Some(KeyCode::F10),
+            "F11" => Some(KeyCode::F11), "F12" => Some(KeyCode::F12),
+            // Special keys
+            "Space" => Some(KeyCode::Space), "Enter" => Some(KeyCode::Enter),
+            "Escape" => Some(KeyCode::Escape), "Tab" => Some(KeyCode::Tab),
+            "Backspace" => Some(KeyCode::Backspace), "Delete" => Some(KeyCode::Delete),
+            // Arrow keys
+            "Left" => Some(KeyCode::Left), "Right" => Some(KeyCode::Right),
+            "Up" => Some(KeyCode::Up), "Down" => Some(KeyCode::Down),
+            // Modifiers
+            "LShift" => Some(KeyCode::LShift), "RShift" => Some(KeyCode::RShift),
+            "LControl" => Some(KeyCode::LControl), "RControl" => Some(KeyCode::RControl),
+            "LAlt" => Some(KeyCode::LAlt), "RAlt" => Some(KeyCode::RAlt),
+            _ => None,
+        }
+    }
+
     /// 将 winit KeyCode 映射到 AnvilKit KeyCode
     pub fn from_winit(key: winit::keyboard::KeyCode) -> Option<KeyCode> {
         use winit::keyboard::KeyCode as WK;

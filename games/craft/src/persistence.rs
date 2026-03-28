@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{self, Read, Cursor};
 use std::path::PathBuf;
 
+use serde::{Serialize, Deserialize};
 use anvilkit_core::persistence::{SaveManager, WorldStorage};
 
 use crate::chunk::{ChunkData, CHUNK_SIZE, CHUNK_HEIGHT};
@@ -139,6 +140,62 @@ pub fn save_world(
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
     Ok(chunks_to_save.len())
+}
+
+// ---------------------------------------------------------------------------
+// Player state persistence
+// ---------------------------------------------------------------------------
+
+/// Serializable player state for save/load.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerSaveData {
+    pub position: [f32; 3],
+    pub health: f32,
+    pub max_health: f32,
+    pub flying: bool,
+    pub day_night_time: f32,
+    /// Inventory slots: Vec of Option<(item_id, quantity)>.
+    pub inventory: Vec<Option<(u32, u32)>>,
+    pub selected_slot: usize,
+}
+
+/// Save player state to the current save slot.
+pub fn save_player(data: &PlayerSaveData) -> io::Result<()> {
+    let mgr = save_manager()?;
+    let data_path = mgr.slot_data_path(DEFAULT_SLOT);
+    let storage = WorldStorage::open(&data_path)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+
+    let ron_str = ron::ser::to_string_pretty(data, ron::ser::PrettyConfig::default())
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+
+    storage.put("player", ron_str.as_bytes())
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+
+    Ok(())
+}
+
+/// Load player state from the current save slot.
+pub fn load_player() -> io::Result<Option<PlayerSaveData>> {
+    let mgr = save_manager()?;
+    if mgr.get_save_info(DEFAULT_SLOT).is_none() {
+        return Ok(None);
+    }
+
+    let data_path = mgr.slot_data_path(DEFAULT_SLOT);
+    let storage = WorldStorage::open(&data_path)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+
+    match storage.get("player") {
+        Some(bytes) => {
+            let ron_str = std::str::from_utf8(&bytes)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+            let data: PlayerSaveData = ron::from_str(ron_str)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+            Ok(Some(data))
+        }
+        None => Ok(None),
+    }
 }
 
 /// Load world from engine SaveManager + WorldStorage.

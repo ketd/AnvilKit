@@ -12,7 +12,8 @@ The recommended approach uses ECS components for audio management:
 ### AudioSource Component
 
 ```rust
-use anvilkit_ecs::audio::{AudioSource, AudioBusCategory};
+use anvilkit_audio::AudioSource;
+use anvilkit_audio::AudioBusCategory;
 
 // Spawn an audio source entity
 commands.spawn(AudioSource {
@@ -34,11 +35,23 @@ commands.spawn(AudioSource {
 | `pitch` | `f32` | `1.0` | Playback speed multiplier |
 | `spatial` | `bool` | `false` | Enable 3D spatial audio |
 | `bus` | `AudioBusCategory` | `SFX` | Mix bus routing |
+| `asset_id` | `Option<u64>` | `None` | Optional asset ID for loading through `AssetServer` |
+
+#### Asset Integration
+
+`AudioSource` can reference assets managed by the `AssetServer`:
+
+```rust
+// Create an AudioSource tied to an asset
+let source = AudioSource::from_asset_id(asset_id);
+```
+
+When `asset_id` is set, the audio system resolves the sound data through the asset pipeline rather than loading from a file path directly.
 
 ### AudioBus (Volume Mixing)
 
 ```rust
-use anvilkit_ecs::audio::{AudioBus, AudioBusCategory};
+use anvilkit_audio::{AudioBus, AudioBusCategory};
 
 let mut bus = AudioBus::default();
 bus.master = 0.8;
@@ -60,6 +73,40 @@ let vol = bus.effective_volume(AudioBusCategory::Music); // 0.48
 
 For 3D positional audio, add an `AudioListener` component to the camera and set `spatial: true` on audio sources. Distance attenuation is calculated automatically by `spatial_audio_system`.
 
+### Stereo Panning
+
+`spatial_audio_system` computes stereo panning from the listener's orientation:
+
+1. The direction vector from listener to source is calculated.
+2. A dot product with the listener's **right** vector produces a pan value in the range -1.0 (full left) to 1.0 (full right).
+3. Left and right channel volumes are adjusted based on the pan value, providing a natural stereo image without requiring surround-sound hardware.
+
+## NonSend Resource Pattern
+
+`AudioEngine` must be accessed on the main thread because the underlying platform audio APIs (e.g., macOS CoreAudio) are not thread-safe. The previous `unsafe impl Send/Sync` workaround was removed in v0.3.
+
+**Setup:**
+
+```rust
+// In plugin build — use insert_non_send_resource, NOT insert_resource
+app.insert_non_send_resource(AudioEngine::new().unwrap());
+```
+
+**Systems:**
+
+```rust
+fn play_hit_sound(
+    mut audio: NonSendMut<AudioEngine>,   // NOT ResMut<AudioEngine>
+    events: EventReader<HitEvent>,
+) {
+    for _event in events.read() {
+        audio.play_sfx("assets/audio/hit.wav", 1.0).ok();
+    }
+}
+```
+
+> **Migration note:** If you previously used `ResMut<AudioEngine>`, change it to `NonSendMut<AudioEngine>`. The ECS will schedule these systems on the main thread automatically.
+
 ## AudioEngine
 
 ```rust
@@ -76,11 +123,11 @@ audio.set_sfx_volume(0.7);
 
 ## ECS Integration
 
-Control audio through Systems in game logic:
+Control audio through systems in game logic. Note: use `NonSendMut` for `AudioEngine` (see [NonSend Resource Pattern](#nonsend-resource-pattern) above).
 
 ```rust
 fn play_hit_sound(
-    mut audio: ResMut<AudioEngine>,
+    mut audio: NonSendMut<AudioEngine>,
     events: EventReader<HitEvent>,
 ) {
     for _event in events.read() {

@@ -28,7 +28,7 @@ description: Cook-Torrance PBR, Cascade Shadow Maps, skeletal animation
 
 Shadow map texture: `Depth32Float`, `2048×2048`, `depth_or_array_layers = 3` (`D2Array`).
 
-**Files**: `events.rs` (`compute_cascade_matrices`), `pbr.wgsl` (`calculate_shadow`)
+**Files**: `window/events/lighting.rs` (`compute_cascade_matrices`), `pbr.wgsl` (`calculate_shadow`)
 
 ## Point Light Shadows
 
@@ -65,7 +65,7 @@ let config = SpotShadowConfig {
 
 ```rust
 use anvilkit_render::renderer::shadow::ShadowAtlas;
-use anvilkit_render::renderer::draw::MAX_SHADOW_LIGHTS;
+use anvilkit_render::renderer::draw::lighting::MAX_SHADOW_LIGHTS;
 
 let mut atlas = ShadowAtlas::new();
 assert_eq!(atlas.max_lights, MAX_SHADOW_LIGHTS); // 4

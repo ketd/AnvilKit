@@ -1,0 +1,171 @@
+---
+title: anvilkit-app
+description: 游戏应用运行器 — 事件循环、帧生命周期、GameCallbacks
+---
+
+`anvilkit-app` 消除了应用程序的样板代码。游戏只需实现 `GameCallbacks` trait 并调用 `AnvilKitApp::run()`，即可获得完整的事件循环，包含输入转发、帧更新和窗口管理。
+
+## GameConfig
+
+传递给 `AnvilKitApp::run()` 的配置结构体。提供了合理的默认值；只需覆盖你需要的部分。
+
+| 字段 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `title` | `String` | — | 窗口标题（必填） |
+| `width` | `u32` | `1280` | 初始窗口宽度（像素） |
+| `height` | `u32` | `720` | 初始窗口高度（像素） |
+| `vsync` | `bool` | `true` | 启用垂直同步 |
+| `raw_mouse_input` | `bool` | `true` | 使用原始鼠标输入（DeviceEvent），适用于 FPS 风格的摄像机 |
+
+### 构造器与建造器
+
+```rust
+use anvilkit_app::GameConfig;
+
+// Minimal — uses all defaults
+let config = GameConfig::new("My Game");
+
+// Override window size
+let config = GameConfig::new("My Game").with_size(1920, 1080);
+```
+
+## GameCallbacks
+
+游戏实现的主要 trait。所有方法都有默认的空实现，因此你只需覆盖需要的方法。
+
+```rust
+pub trait GameCallbacks {
+    /// Called once after the window is created and the renderer is ready.
+    fn init(&mut self, ctx: &mut GameContext) {}
+
+    /// Called every frame after ECS update (app.update()) completes.
+    fn post_update(&mut self, ctx: &mut GameContext) {}
+
+    /// Called on RedrawRequested — issue draw calls here.
+    fn render(&mut self, ctx: &mut GameContext) {}
+
+    /// Called when the window is resized.
+    fn on_resize(&mut self, ctx: &mut GameContext, width: u32, height: u32) {}
+
+    /// Called for every window event. Return `true` to consume the event
+    /// and prevent further processing.
+    fn on_window_event(&mut self, ctx: &mut GameContext, event: &WindowEvent) -> bool {
+        false
+    }
+}
+```
+
+## GameContext
+
+在回调中提供对 ECS `App` 和 `RenderApp` 的访问。
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `app` | `&mut App` | ECS 应用程序（世界、资源、系统） |
+| `render_app` | `&mut RenderApp` | 渲染端应用程序（窗口、GPU 状态） |
+
+| 方法 | 签名 | 描述 |
+|------|------|------|
+| `world` | `(&self) -> &World` | 对 ECS 世界的不可变访问 |
+| `world_mut` | `(&mut self) -> &mut World` | 对 ECS 世界的可变访问 |
+
+## AnvilKitApp
+
+应用运行器。一个静态方法，阻塞调用线程直到窗口关闭。
+
+```rust
+use anvilkit_app::{AnvilKitApp, GameConfig};
+
+AnvilKitApp::run(config, app, game);
+```
+
+| 方法 | 签名 | 描述 |
+|------|------|------|
+| `run` | `(config: GameConfig, app: App, game: impl GameCallbacks)` | 启动事件循环。阻塞直到窗口关闭。 |
+
+## WindowSize
+
+一个 ECS 资源（Resource），用于跟踪当前窗口尺寸。在窗口调整大小事件时自动更新。
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `width` | `f32` | 当前窗口宽度（逻辑像素） |
+| `height` | `f32` | 当前窗口高度（逻辑像素） |
+
+| 方法 | 签名 | 描述 |
+|------|------|------|
+| `new` | `(width: f32, height: f32) -> Self` | 从指定尺寸创建 |
+| `aspect_ratio` | `(&self) -> f32` | 返回 `width / height` |
+| `as_tuple` | `(&self) -> (f32, f32)` | 返回 `(width, height)` |
+
+```rust
+fn camera_system(window: Res<WindowSize>) {
+    let aspect = window.aspect_ratio();
+    let (w, h) = window.as_tuple();
+}
+```
+
+## 帧生命周期
+
+下图展示了单帧内事件的执行顺序：
+
+```
+Resumed
+  └─► init()                          (仅一次，在首次恢复时)
+
+WindowEvent
+  └─► on_window_event()
+  └─► forward_input()                 (键盘、鼠标、滚轮)
+
+AboutToWait
+  └─► tick()
+        ├─ DeltaTime 更新
+        ├─ app.update()                (ECS 系统运行)
+        ├─ post_update()
+        └─ InputState::end_frame()
+
+RedrawRequested
+  └─► render()
+
+Resized
+  └─► on_resize()
+  └─► WindowSize 资源更新
+```
+
+要点：
+- `init` 在窗口和渲染器就绪后仅触发一次。
+- `forward_input` 自动将操作系统事件转换为 `InputState`。
+- `post_update` 在所有 ECS 系统运行之后执行，适合在渲染前读取查询结果。
+- `WindowSize` 在 `on_resize` 被调用之前更新，因此回调始终能看到新的尺寸。
+
+## 最小示例
+
+```rust
+use anvilkit_app::{AnvilKitApp, GameConfig, GameCallbacks, GameContext};
+use anvilkit_ecs::App;
+use anvilkit_ecs::plugin::DefaultPlugins;
+
+struct MyGame;
+
+impl GameCallbacks for MyGame {
+    fn init(&mut self, ctx: &mut GameContext) {
+        // Load assets, spawn entities
+        let world = ctx.world_mut();
+        // ...
+    }
+
+    fn post_update(&mut self, ctx: &mut GameContext) {
+        // Read ECS state after systems have run
+    }
+
+    fn render(&mut self, ctx: &mut GameContext) {
+        // Issue draw calls
+    }
+}
+
+fn main() {
+    let config = GameConfig::new("My Game").with_size(1280, 720);
+    let app = App::new().add_plugins(DefaultPlugins);
+    AnvilKitApp::run(config, app, MyGame);
+}
+```

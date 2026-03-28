@@ -5,7 +5,7 @@ description: 变换层级、使用 RON 格式的场景保存/加载
 
 ## 变换层级
 
-`TransformPlugin` 在 **PostUpdate** 的 `AnvilKitSystemSet::Transform` 下注册 `sync_simple_transforms` 和 `propagate_transforms`。此外还在 **PreUpdate** 中注册 `parent_child_sync_system`，传播每帧运行。
+`TransformPlugin` 在 **PreUpdate** 中注册 `parent_child_sync_system`，在 **PostUpdate** 的 `AnvilKitSystemSet::Transform` 下注册 `sync_simple_transforms` 和 `propagate_transforms`。变换传播每帧为所有根实体运行，确保仅修改子级 `Transform` 的变更始终反映到 `GlobalTransform` 中。
 
 ### 核心组件
 
@@ -47,7 +47,7 @@ fn setup_hierarchy(mut commands: Commands) {
 |--------|-----------|-------------|
 | `set_parent` | `(Commands, child: Entity, parent: Entity)` | 建立父子关系（`Children` 由 `parent_child_sync_system` 自动同步） |
 | `remove_parent` | `(Commands, child: Entity)` | 将子实体从父级分离 |
-| `get_ancestors` | `(&World, Entity) -> Vec<Entity>` | 沿层级向上遍历到根节点（环检测，cycle-safe） |
+| `get_ancestors` | `(&World, Entity) -> Vec<Entity>` | 沿层级向上遍历到根节点（环安全，cycle-safe） |
 | `get_descendants` | `(&World, Entity) -> Vec<Entity>` | 递归收集所有后代（深度限制 128） |
 
 ## 场景序列化（feature `"serde"`）
@@ -88,9 +88,21 @@ fn load_game(world: &mut World) {
 
 RON 文件存储 `SerializedScene { version: u32, entities: Vec<SerializedEntity> }`，其中每个实体以 `TransformData { translation: [f32; 3], rotation: [f32; 4], scale: [f32; 3] }` 的形式捕获其 `Transform`。
 
+### 层级保留
+
+场景序列化保留父子关系：
+
+- `parent_index`：引用 `entities` 数组中父实体的位置
+- `name` / `tag`：从 `Name` 和 `Tag` 组件捕获
+- `custom_data`：`HashMap<String, String>` 供用户扩展
+
+序列化器使用两遍方法：第一遍创建所有实体，第二遍恢复 `Parent`/`Children` 组件。
+
 ## 序列化注册表
 
-注册自定义组件类型用于场景序列化：
+`SerializableRegistry` 管理用于场景序列化的自定义组件类型。每个注册条目存储 `serialize_fn` 和 `deserialize_fn` 函数指针以及 `TypeId`，实现自定义组件的完整往返序列化支持。
+
+保存时，`SceneSerializer::save` 查询注册表为每个实体填充 `custom_data` 映射。加载时，`SceneSerializer::load` 查询注册表从 `custom_data` 条目恢复自定义组件。
 
 ```rust
 use anvilkit_ecs::scene::SerializableRegistry;
@@ -105,12 +117,4 @@ registry.register::<Health>("Health");
 assert!(registry.is_registered("Health"));
 ```
 
-### 层级保留
-
-场景序列化保留父子关系：
-
-- `parent_index`：引用 `entities` 数组中父实体的位置
-- `name` / `tag`：从 `Name` 和 `Tag` 组件捕获
-- `custom_data`：`HashMap<String, String>` 供用户扩展
-
-序列化器使用两遍方法：第一遍创建所有实体，第二遍恢复 `Parent`/`Children` 组件。
+例如，`app.register_serializable::<Health>("Health")` 意味着带有 `Health` 组件的实体会将其数据序列化到 RON 文件的 `custom_data["Health"]` 中，并在加载时反序列化回 `Health` 组件。这实现了自定义 Gameplay 组件的完整往返序列化。

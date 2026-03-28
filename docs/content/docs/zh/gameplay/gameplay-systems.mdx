@@ -1,0 +1,330 @@
+---
+title: anvilkit-gameplay
+description: 可选的游戏玩法构建模块 — 属性、生命值、背包、冷却、状态效果、实体池
+---
+
+`anvilkit-gameplay` 提供可复用的游戏玩法原语，可直接接入 ECS。所有功能默认启用，也可通过功能标志（Feature Flags）独立开关。
+
+### 功能标志
+
+| 功能 | 默认 | 描述 |
+|------|------|------|
+| `stats` | 启用 | 基于优先级计算的属性修饰器 |
+| `inventory` | 启用 | 基于槽位和堆叠的背包系统 |
+| `cooldown` | 启用 | 基于计时器的技能冷却 |
+| `status-effect` | 启用 | 带堆叠策略的定时状态效果 |
+| `entity-pool` | 启用 | 预分配实体池 |
+
+```toml
+[dependencies]
+anvilkit-gameplay = { path = "../gameplay", default-features = false, features = ["stats", "cooldown"] }
+```
+
+### 属性系统（Stats）
+
+属性系统支持基础值与可堆叠的修饰器，按需重新计算。
+
+#### ModifierKind
+
+```rust
+pub enum ModifierKind {
+    Additive(f32),
+    Multiplicative(f32),
+    Override(f32),
+}
+```
+
+#### Modifier
+
+| 方法 | 签名 | 描述 |
+|------|------|------|
+| `new` | `(kind: ModifierKind) -> Self` | 创建一个修饰器 |
+| `additive` | `(value: f32) -> Self` | `Additive` 的简写 |
+| `multiplicative` | `(value: f32) -> Self` | `Multiplicative` 的简写 |
+| `override_val` | `(value: f32) -> Self` | `Override` 的简写 |
+| `with_priority` | `(self, priority: i32) -> Self` | 设置计算优先级（数值越小越先执行） |
+| `from_source` | `(self, source: Entity) -> Self` | 为修饰器标记来源实体，便于批量移除 |
+
+#### Stat
+
+`Stat` 是一个组件（Component），持有基础值和修饰器列表。
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `base_value` | `f32` | 未修改的基础值 |
+| `modifiers` | `Vec<Modifier>` | 当前生效的修饰器 |
+| `computed_value` | `f32` | `recompute()` 后的缓存结果 |
+
+| 方法 | 签名 | 描述 |
+|------|------|------|
+| `new` | `(base_value: f32) -> Self` | 创建一个无修饰器的属性 |
+| `add_modifier` | `(&mut self, Modifier)` | 添加修饰器并重新计算 |
+| `remove_modifiers_from` | `(&mut self, source: Entity)` | 移除所有标记为指定来源的修饰器并重新计算 |
+| `recompute` | `(&mut self)` | 根据基础值和修饰器重新计算 `computed_value` |
+| `value` | `(&self) -> f32` | 返回当前的 `computed_value` |
+
+#### 计算顺序
+
+1. 按 `priority` 升序排列修饰器。
+2. 累加所有 `Additive` 值，加到基础值上。
+3. 按顺序依次乘以每个 `Multiplicative` 值。
+4. 如果存在 `Override` 修饰器，优先级最高的覆盖值将替换最终结果。
+
+```rust
+use anvilkit_gameplay::stats::{Stat, Modifier};
+
+let mut attack = Stat::new(10.0);
+attack.add_modifier(Modifier::additive(5.0));           // 10 + 5 = 15
+attack.add_modifier(Modifier::multiplicative(1.5));      // 15 * 1.5 = 22.5
+assert_eq!(attack.value(), 22.5);
+```
+
+### 生命值系统（Health）
+
+#### Health
+
+`Health` 是一个用于具有生命值的实体的组件（Component）。
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `current` | `f32` | 当前生命值 |
+| `max` | `f32` | 最大生命值 |
+| `regen_rate` | `f32` | 每秒恢复的生命值（默认 `0.0`） |
+
+| 方法 | 签名 | 描述 |
+|------|------|------|
+| `new` | `(max: f32) -> Self` | 以满血、零恢复创建 |
+| `with_regen` | `(self, rate: f32) -> Self` | 设置恢复速率 |
+| `is_alive` | `(&self) -> bool` | `current > 0.0` |
+| `is_dead` | `(&self) -> bool` | `current <= 0.0` |
+| `fraction` | `(&self) -> f32` | `current / max`，限制在 `0.0..=1.0` |
+| `damage` | `(&mut self, amount: f32)` | 减少当前生命值（最低为 0） |
+| `heal` | `(&mut self, amount: f32)` | 增加当前生命值（最高为 max） |
+
+#### 事件
+
+| 事件 | 字段 | 描述 |
+|------|------|------|
+| `DamageEvent` | `target: Entity, amount: f32, source: Option<Entity>` | 请求对实体造成伤害 |
+| `HealEvent` | `target: Entity, amount: f32` | 请求对实体进行治疗 |
+| `DeathEvent` | `entity: Entity` | 当实体生命值降至 0 时触发 |
+
+#### 系统
+
+| 系统 | 描述 |
+|------|------|
+| `health_system` | 读取 `DamageEvent` 和 `HealEvent`，应用到 `Health` 组件，当生命值降至零时触发 `DeathEvent` |
+| `health_regen_system` | 每帧对所有 `Health` 组件应用 `regen_rate * delta_time` |
+
+#### 示例
+
+```rust
+use anvilkit_gameplay::health::{Health, DamageEvent};
+
+// Spawn an entity with health
+commands.spawn((
+    Transform::default(),
+    Health::new(100.0).with_regen(2.0),
+));
+
+// Deal damage via event
+events.send(DamageEvent {
+    target: enemy_entity,
+    amount: 25.0,
+    source: Some(player_entity),
+});
+```
+
+### 背包系统（Inventory）
+
+#### ItemDef
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `id` | `String` | 唯一物品标识符 |
+| `name` | `String` | 显示名称 |
+| `max_stack` | `u32` | 最大堆叠数量 |
+| `weight` | `f32` | 单位重量 |
+
+#### ItemStack
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `item_id` | `String` | 引用 `ItemDef.id` |
+| `quantity` | `u32` | 当前堆叠数量 |
+
+| 方法 | 签名 | 描述 |
+|------|------|------|
+| `new` | `(item_id: &str, quantity: u32) -> Self` | 创建一个堆叠 |
+| `can_merge` | `(&self, other: &ItemStack) -> bool` | 当物品相同且合并后数量不超过 `max_stack` 时返回 true |
+| `merge` | `(&mut self, other: &mut ItemStack)` | 尽可能多地从 `other` 转移物品到 `self` |
+
+#### Inventory Trait
+
+| 方法 | 签名 | 描述 |
+|------|------|------|
+| `capacity` | `(&self) -> usize` | 槽位总数 |
+| `get_slot` | `(&self, usize) -> Option<&ItemStack>` | 读取一个槽位 |
+| `set_slot` | `(&mut self, usize, Option<ItemStack>)` | 写入一个槽位 |
+| `add_item` | `(&mut self, ItemStack) -> Option<ItemStack>` | 添加物品，满时返回剩余部分 |
+| `remove_item` | `(&mut self, item_id: &str, u32) -> u32` | 移除至多 N 个物品，返回实际移除数量 |
+
+#### SlotInventory
+
+`SlotInventory` 是一个组件（Component），拥有固定数量的槽位。
+
+```rust
+use anvilkit_gameplay::inventory::{SlotInventory, ItemStack};
+
+let mut hotbar = SlotInventory::new(9);
+hotbar.add_item(ItemStack::new("stone", 64));
+hotbar.add_item(ItemStack::new("wood", 32));
+```
+
+#### StackInventory
+
+`StackInventory` 是一个组件（Component），支持动态增长和自动堆叠。新物品会先合并到已有堆叠中，再占用新槽位。
+
+```rust
+use anvilkit_gameplay::inventory::{StackInventory, ItemStack};
+
+let mut bag = StackInventory::new(27);
+bag.add_item(ItemStack::new("arrow", 30));
+bag.add_item(ItemStack::new("arrow", 20)); // merges into existing stack
+```
+
+### 冷却系统（Cooldown）
+
+#### Cooldown
+
+`Cooldown` 是一个组件（Component），表示基于计时器的技能冷却。
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `remaining` | `f32` | 剩余时间（秒） |
+| `duration` | `f32` | 总冷却时长 |
+
+| 方法 | 签名 | 描述 |
+|------|------|------|
+| `new` | `(duration: f32) -> Self` | 创建一个就绪状态（remaining = 0）的冷却 |
+| `is_ready` | `(&self) -> bool` | `remaining <= 0.0` |
+| `trigger` | `(&mut self)` | 将 `remaining` 设为 `duration` |
+| `tick` | `(&mut self, dt: f32)` | 将 remaining 减少 `dt` |
+| `fraction` | `(&self) -> f32` | `remaining / duration`，用于 UI 进度条 |
+
+#### cooldown_tick_system
+
+每帧使用 `DeltaTime` 自动更新所有 `Cooldown` 组件。
+
+#### 示例
+
+```rust
+use anvilkit_gameplay::cooldown::Cooldown;
+
+// Fireball with 3-second cooldown
+let mut fireball_cd = Cooldown::new(3.0);
+
+if fireball_cd.is_ready() && input.is_key_just_pressed(KeyCode::Q) {
+    cast_fireball();
+    fireball_cd.trigger();
+}
+```
+
+### 状态效果（Status Effects）
+
+#### StackPolicy
+
+```rust
+pub enum StackPolicy {
+    Replace,  // New effect replaces existing
+    Extend,   // New effect adds to remaining duration
+    Stack,    // Independent stacks (up to max_stacks)
+}
+```
+
+#### StatusEffect
+
+`StatusEffect` 是一个组件（Component），表示实体上的定时效果。
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `name` | `String` | 效果标识符 |
+| `duration` | `f32` | 每层的总持续时间 |
+| `remaining` | `f32` | 剩余时间 |
+| `stacks` | `u32` | 当前层数 |
+| `max_stacks` | `u32` | 最大允许层数 |
+| `stack_policy` | `StackPolicy` | 重复施加时的处理方式 |
+
+| 方法 | 签名 | 描述 |
+|------|------|------|
+| `with_policy` | `(self, StackPolicy) -> Self` | 设置堆叠策略 |
+| `with_max_stacks` | `(self, u32) -> Self` | 设置最大层数 |
+
+#### StatusEffectList
+
+`StatusEffectList` 是一个组件（Component），管理单个实体上的多个效果。
+
+| 方法 | 签名 | 描述 |
+|------|------|------|
+| `add` | `(&mut self, StatusEffect)` | 添加或重新施加效果（遵循堆叠策略） |
+| `tick` | `(&mut self, dt: f32)` | 更新所有效果，移除已过期的效果 |
+| `has` | `(&self, name: &str) -> bool` | 检查某个效果是否处于激活状态 |
+| `get` | `(&self, name: &str) -> Option<&StatusEffect>` | 按名称获取一个激活的效果 |
+
+#### 示例
+
+```rust
+use anvilkit_gameplay::status_effect::{StatusEffect, StatusEffectList, StackPolicy};
+
+let poison = StatusEffect {
+    name: "poison".into(),
+    duration: 5.0,
+    remaining: 5.0,
+    stacks: 1,
+    max_stacks: 3,
+    stack_policy: StackPolicy::Stack,
+};
+
+let mut effects = StatusEffectList::default();
+effects.add(poison);
+
+if effects.has("poison") {
+    let stacks = effects.get("poison").unwrap().stacks;
+    let dps = 2.0 * stacks as f32;
+    health.damage(dps * dt);
+}
+```
+
+### 实体池（Entity Pool）
+
+`EntityPool` 是一个资源（Resource），预分配实体以供复用，避免每帧创建/销毁实体的开销。
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `available` | `Vec<Entity>` | 可复用的已池化实体 |
+| `capacity` | `usize` | 最大池容量 |
+
+| 方法 | 签名 | 描述 |
+|------|------|------|
+| `new` | `(capacity: usize) -> Self` | 以给定容量创建池 |
+| `acquire` | `(&mut self) -> Option<Entity>` | 从池中取出一个实体 |
+| `release` | `(&mut self, Entity)` | 将实体归还到池中 |
+| `available_count` | `(&self) -> usize` | 当前可用的实体数量 |
+| `is_empty` | `(&self) -> bool` | 当没有可用实体时返回 true |
+
+#### 示例
+
+```rust
+use anvilkit_gameplay::entity_pool::EntityPool;
+
+// Pre-allocate 200 bullet entities
+let mut pool = EntityPool::new(200);
+
+// Fire a bullet
+if let Some(bullet) = pool.acquire() {
+    // Reset transform, velocity, etc. on the entity
+}
+
+// Return bullet when it goes off-screen
+pool.release(bullet_entity);
+```

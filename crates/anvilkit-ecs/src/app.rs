@@ -225,16 +225,35 @@ impl App {
         self
     }
 
-    /// 初始化资源（如果不存在）
-    /// 
+    /// 插入非 Send 资源到世界
+    ///
+    /// 用于不满足 `Send` 约束的类型（例如包含平台原生句柄的音频引擎）。
+    /// 系统通过 `NonSend<R>` / `NonSendMut<R>` 访问，bevy_ecs 保证只在主线程运行。
+    ///
+    /// # 参数
+    ///
+    /// - `resource`: 要插入的非 Send 资源
+    ///
     /// # 示例
-    /// 
+    ///
+    /// ```rust,ignore
+    /// app.insert_non_send_resource(my_non_send_value);
+    /// ```
+    pub fn insert_non_send_resource<R: 'static>(&mut self, resource: R) -> &mut Self {
+        self.world.insert_non_send_resource(resource);
+        self
+    }
+
+    /// 初始化资源（如果不存在）
+    ///
+    /// # 示例
+    ///
     /// ```rust
     /// use anvilkit_ecs::prelude::*;
-    /// 
+    ///
     /// #[derive(Resource, Default)]
     /// struct Score(u32);
-    /// 
+    ///
     /// let mut app = App::new();
     /// app.init_resource::<Score>();
     /// ```
@@ -269,18 +288,31 @@ impl App {
     /// 注册可序列化组件类型
     ///
     /// 将类型注册到 `SerializableRegistry`，使其可被 `SceneSerializer` 处理。
+    /// 启用 `serde` feature 时，组件须实现 `Component + Serialize + DeserializeOwned`。
     ///
     /// # 示例
     ///
     /// ```rust,ignore
     /// use anvilkit_ecs::prelude::*;
     ///
-    /// #[derive(Component)]
+    /// #[derive(Component, Serialize, Deserialize)]
     /// struct Health(f32);
     ///
     /// let mut app = App::new();
     /// app.register_serializable::<Health>("Health");
     /// ```
+    #[cfg(feature = "serde")]
+    pub fn register_serializable<T: bevy_ecs::component::Component + serde::Serialize + serde::de::DeserializeOwned>(
+        &mut self,
+        name: &str,
+    ) -> &mut Self {
+        self.init_resource::<crate::scene::SerializableRegistry>();
+        self.world.resource_mut::<crate::scene::SerializableRegistry>().register::<T>(name);
+        self
+    }
+
+    /// 注册可序列化组件类型（无 serde feature 时的简化版本）
+    #[cfg(not(feature = "serde"))]
     pub fn register_serializable<T: 'static>(&mut self, name: &str) -> &mut Self {
         self.init_resource::<crate::scene::SerializableRegistry>();
         self.world.resource_mut::<crate::scene::SerializableRegistry>().register::<T>(name);

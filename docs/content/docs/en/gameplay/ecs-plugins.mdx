@@ -5,6 +5,32 @@ description: Application lifecycle, Plugin system, Schedules, Systems, and Bundl
 
 `anvilkit-ecs` provides application lifecycle management, a Plugin system, System scheduling, and component bundles, all built on top of `bevy_ecs`.
 
+> **Note:** The recommended way to start a game is `AnvilKitApp::run()` with `GameCallbacks`. The `App::new()` approach shown below is for advanced use cases or testing.
+
+## AnvilKitApp Pattern
+
+The recommended entry point for most games uses `AnvilKitApp::run()` with a `GameCallbacks` implementation. This handles engine initialization, the main loop, and shutdown automatically:
+
+```rust
+use anvilkit::prelude::*;
+
+struct MyGame;
+
+impl GameCallbacks for MyGame {
+    fn init(&mut self, ctx: &mut GameContext) {
+        ctx.app.add_systems(AnvilKitSchedule::Update, my_system);
+    }
+}
+
+fn main() {
+    AnvilKitApp::run(
+        GameConfig::new("My Game"),
+        App::new().add_plugins(DefaultPlugins),
+        MyGame,
+    );
+}
+```
+
 ## App Lifecycle
 
 `App` is the application entry point. The typical setup flow is:
@@ -24,7 +50,9 @@ App::new()
     .run();
 ```
 
-`DefaultPlugins` bundles: `AnvilKitEcsPlugin` + `RenderPlugin` + `AudioPlugin` + `AutoInputPlugin` + `AutoDeltaTimePlugin`.
+`DefaultPlugins` bundles: `AnvilKitEcsPlugin` + `RenderPlugin` + `AudioPlugin` + `InputPlugin` (`InputState` + `ActionMap` + `action_map_update_system`) + `CameraPlugin` + `AutoDeltaTimePlugin` + `PersistencePlugin` (cfg) + `SettingsApplyPlugin` (cfg).
+
+Additionally, the `anvilkit-gameplay` crate provides higher-level gameplay plugins. See the [Gameplay Systems](/docs/en/gameplay/gameplay-systems) page for details.
 
 ```rust
 use anvilkit_ecs::prelude::*;

@@ -14,20 +14,41 @@ description: 多通道 HDR 渲染管线架构
 
 <Mermaid chart={`
 flowchart LR
-  P0["Pass 0\nCSM Shadow"]
-  P1["Pass 1\nHDR Scene"]
+  P0["Pass 0\nShadow ×3 (CSM)"]
+  P1["Pass 1\nHDR Scene\n(PBR + MSAA 4×)"]
   P2["Pass 2\nSSAO"]
-  P3["Pass 3\nBloom"]
-  P4["Pass 4\nTonemap"]
+  P3["Pass 3\nDOF"]
+  P4["Pass 4\nMotion Blur"]
+  P5["Pass 5\nBloom"]
+  P6["Pass 6\nColor Grading"]
+  P7["Pass 7\nTonemap"]
+  P8["Pass 8\nHUD"]
 
   P0 -->|"shadow_map"| P1
   P1 -->|"hdr_texture"| P2
   P2 -->|"ao_texture"| P3
-  P3 -->|"bloom_texture"| P4
-  P4 -->|"sRGB output"| screen["屏幕"]
+  P3 -->|"dof_texture"| P4
+  P4 -->|"blur_texture"| P5
+  P5 -->|"bloom_texture"| P6
+  P6 -->|"graded_texture"| P7
+  P7 -->|"sRGB output"| P8
+  P8 -->|"final output"| screen["屏幕"]
 `} />
 
 所有通道共享每帧一个 `CommandEncoder`，以实现最小的 CPU 开销。
+
+### v0.3 渲染重构
+
+在 v0.3 中，大型单体文件被拆分为有组织的目录结构：
+
+- **`events.rs`**（1414 行）拆分为 `events/` 目录：`mod.rs`、`lighting.rs`、`render_app.rs`、`gpu_init.rs`、`render_loop.rs`、`input.rs`
+- **`draw.rs`**（568 行）拆分为 `draw/` 目录：`mod.rs`、`culling.rs`、`lighting.rs`、`commands.rs`、`gpu.rs`
+
+### 共享工具（v0.3）
+
+- **`CachedBuffer`**：共享 GPU 缓冲区缓存工具，替代了之前分散在 ui/text/sprite/line/particle 渲染器中的 5 个重复 `cached_vb` 模式。
+- **`ProjectionUniform`**：共享类型，替代了 5 个重复的 64 字节正交/场景 uniform 结构体。
+- **`DebugRenderer`** 现在包含了 `LineRenderer` 功能（两者在 v0.3 中合并；参见 [调试渲染器](/docs/zh/devtools/debug-renderer)）。
 
 ## 资源管理
 
@@ -90,14 +111,14 @@ commands.spawn((
 ));
 ```
 
-`render_extract_system` 查询 `(MeshHandle, StandardMaterial, GlobalTransform)` 自动生成 `DrawCommand`。使用 `DefaultMaterialHandle` 作为默认 PBR 管线。
+`render_extract_system` 查询 `(MeshHandle, StandardMaterial, GlobalTransform)` 自动生成 `DrawCommand`。带有 `StandardMaterial` 的实体通过 `DefaultMaterialHandle` 使用默认 PBR 管线。
 
 ## 管线缓存 / BindGroup 缓存
 
 GPU 资源去重：
 
 - **PipelineCache**：按 `PipelineKey`（vertex_format, BlendMode, CullMode）缓存渲染管线。使用 `get_or_create()` 避免重复的 GPU 管线创建。
-- **BindGroupCache**：按材质 ID 缓存 bind group，带 dirty flag 支持失效重建。
+- **BindGroupCache**：按材质 ID 缓存 bind group，带 dirty flag 支持失效重建。脏条目在下次访问时自动重新创建。
 
 ```rust
 let mut cache = PipelineCache::new();

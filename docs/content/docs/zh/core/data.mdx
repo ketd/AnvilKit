@@ -1,0 +1,144 @@
+---
+title: anvilkit-data
+description: 数据驱动的配置表与国际化本地化
+---
+
+`anvilkit-data` 为数据驱动的游戏配置提供类型化数据表和本地化支持。从 RON 或 JSON 文件加载结构化数据，并在运行时查找翻译字符串。
+
+### 概述
+
+- **DataTable** — 用于游戏定义（方块、物品、配方等）的泛型键值存储
+- **Locale** — 带自动回退的翻译查找
+- **DataTablePlugin** — ECS 集成，向世界中插入默认的 `Locale`
+
+所有类型均为 ECS 资源（Resource），可通过标准的 World API 进行插入、查询和修改。
+
+### DataTable\<K, V\>
+
+类型化的键值资源（Resource），用于加载和查询游戏数据。键和值可以是任意类型；若需从文件加载，两者都必须实现 `DeserializeOwned`。
+
+| 方法 | 签名 | 描述 |
+|------|------|------|
+| `new` | `(name: &str) -> Self` | 创建一个带调试名称的空表 |
+| `get` | `(&self, key: &K) -> Option<&V>` | 按键查找值 |
+| `insert` | `(&mut self, key: K, value: V)` | 插入或覆盖一个条目 |
+| `len` | `(&self) -> usize` | 条目数量 |
+| `is_empty` | `(&self) -> bool` | 当表为空时返回 true |
+| `iter` | `(&self) -> impl Iterator<Item = (&K, &V)>` | 遍历所有条目 |
+| `name` | `(&self) -> &str` | 调试名称 |
+| `from_ron` | `(name: &str, data: &str) -> Result<Self>` | 将 RON 字符串解析为表 |
+| `from_json` | `(name: &str, data: &str) -> Result<Self>` | 将 JSON 字符串解析为表 |
+
+> `from_ron` 和 `from_json` 要求 `K: DeserializeOwned + Eq + Hash` 且 `V: DeserializeOwned`。
+
+#### 示例：方块定义
+
+```rust
+use anvilkit_data::data_table::DataTable;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct BlockDef {
+    hardness: f32,
+    tool: String,
+    drop: String,
+}
+
+let ron_str = std::fs::read_to_string("assets/data/blocks.ron")?;
+let blocks: DataTable<String, BlockDef> = DataTable::from_ron("blocks", &ron_str)?;
+
+if let Some(stone) = blocks.get(&"stone".to_string()) {
+    println!("Stone hardness: {}, tool: {}", stone.hardness, stone.tool);
+}
+```
+
+### Locale
+
+翻译资源（Resource），将字符串键映射到本地化文本。如果某个键没有对应的翻译，`translate` 会将键本身作为回退值返回。
+
+| 方法 | 签名 | 描述 |
+|------|------|------|
+| `new` | `(language: &str) -> Self` | 以给定的语言代码创建 Locale |
+| `language` | `(&self) -> &str` | 当前语言代码 |
+| `set_language` | `(&mut self, language: &str)` | 更改当前语言（清除现有翻译） |
+| `insert` | `(&mut self, key: &str, value: &str)` | 添加一条翻译条目 |
+| `load_ron` | `(&mut self, data: &str) -> Result<()>` | 从 RON 字符串加载翻译（与现有条目合并） |
+| `translate` / `t` | `(&self, key: &str) -> &str` | 查找翻译；未找到时返回键本身 |
+| `has_key` | `(&self, key: &str) -> bool` | 当该键存在翻译时返回 true |
+| `len` | `(&self) -> usize` | 翻译条目数量 |
+| `is_empty` | `(&self) -> bool` | 当没有加载任何翻译时返回 true |
+
+#### 示例：HUD 本地化
+
+```rust
+use anvilkit_data::locale::Locale;
+
+let mut locale = Locale::new("en");
+
+let ron_str = std::fs::read_to_string("assets/locale/en.ron")?;
+locale.load_ron(&ron_str)?;
+
+// In your HUD rendering
+let label = locale.t("hud.health"); // "Health"
+let missing = locale.t("hud.nonexistent"); // returns "hud.nonexistent" (fallback)
+```
+
+### DataTablePlugin
+
+将 `anvilkit-data` 与 ECS 世界集成的插件（Plugin）。
+
+| 方法 | 签名 | 描述 |
+|------|------|------|
+| `build` | `(&self, world: &mut World)` | 向世界中插入一个默认的 `Locale("en")` 资源 |
+
+#### 示例
+
+```rust
+use anvilkit_data::DataTablePlugin;
+
+fn init(ctx: &mut GameContext) {
+    DataTablePlugin.build(ctx.world_mut());
+
+    // Load locale
+    let ron_str = std::fs::read_to_string("assets/locale/en.ron").unwrap();
+    ctx.world_mut()
+        .get_resource_mut::<Locale>()
+        .unwrap()
+        .load_ron(&ron_str)
+        .unwrap();
+
+    // Load data table
+    let blocks_ron = std::fs::read_to_string("assets/data/blocks.ron").unwrap();
+    let blocks: DataTable<String, BlockDef> = DataTable::from_ron("blocks", &blocks_ron).unwrap();
+    ctx.world_mut().insert_resource(blocks);
+}
+```
+
+### RON 文件格式
+
+#### DataTable RON
+
+一个 RON 映射，其中键匹配 `K` 类型，值匹配 `V` 类型：
+
+```ron
+{
+    "grass": BlockDef(hardness: 0.5, tool: "shovel", drop: "dirt"),
+    "stone": BlockDef(hardness: 1.5, tool: "pickaxe", drop: "cobblestone"),
+    "oak_log": BlockDef(hardness: 1.0, tool: "axe", drop: "oak_log"),
+}
+```
+
+#### Locale RON
+
+一个扁平的字符串到字符串映射：
+
+```ron
+{
+    "block.grass": "Grass Block",
+    "block.stone": "Stone",
+    "block.oak_log": "Oak Log",
+    "hud.health": "Health",
+    "hud.hunger": "Hunger",
+    "hud.inventory": "Inventory",
+}
+```

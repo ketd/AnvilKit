@@ -10,6 +10,8 @@ description: Wireframe debug visualization — lines, boxes, spheres, points
 
 `DebugRenderer` provides immediate-mode wireframe debug drawing for visualizing collision bounds, rays, spawn points, and other spatial data. All primitives are rendered as colored line segments using a single `LineList` draw call per frame.
 
+> **v0.3 Change:** `LineRenderer` was merged into `DebugRenderer` in v0.3. The separate `LineRenderer` type no longer exists. Use `DebugRenderer::draw_line()` for all line drawing needs.
+
 The renderer is provided by the `anvilkit-render` crate:
 
 ```rust

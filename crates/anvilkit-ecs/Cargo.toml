@@ -46,6 +46,8 @@ default = []
 serde = ["dep:serde", "dep:ron", "anvilkit-core/serde", "bevy_ecs/serialize"]
 # rapier3d 物理集成
 rapier = ["dep:rapier3d"]
+# 持久化系统 (forwards to anvilkit-core)
+persistence = ["dep:serde", "dep:ron", "anvilkit-core/persistence", "bevy_ecs/serialize"]
 # 调试功能
 debug = []
 

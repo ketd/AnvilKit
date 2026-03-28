@@ -83,18 +83,18 @@
 - [x] 4.1.3 更新所有 import path（craft/billiards/examples）
 
 ### 4.2 Render 文件整理
-- [ ] 4.2.1 拆分 events.rs (1414 行) — deferred: 纯组织性重构，不影响功能
-- [ ] 4.2.2 移动 `Aabb` 到 `anvilkit-core::math` — deferred: 需要 bevy_ecs feature gate 协调
-- [ ] 4.2.3 移动 `raycast.rs` 函数到 `anvilkit-core::math::raycast` — deferred
+- [x] 4.2.1 拆分 events.rs (1414 行) → events/ 目录：mod.rs + lighting.rs + render_app.rs + gpu_init.rs + render_loop.rs + input.rs
+- [x] 4.2.2 移动 `Aabb` + `Frustum` 到 `anvilkit-core::math`（cfg_attr bevy_ecs Component）
+- [x] 4.2.3 移动 `raycast.rs` 函数到 `anvilkit-core::math::raycast`（render 保留 re-export）
 - [x] 4.2.4 从 `RenderPlugin::build()` 移除 `InputState` 和 `DeltaTime` 初始化
-- [ ] 4.2.5 draw.rs 拆分 — deferred: 纯组织性重构
+- [x] 4.2.5 draw.rs 拆分 → draw/ 目录：mod.rs + culling.rs + lighting.rs + commands.rs + gpu.rs
 
 ### 4.3 Persistence 独立化
 - [x] 4.3.1 添加 `AnvilKitError::Persistence` 变体 + `persistence()`/`persistence_with_path()` 构造函数
-- [ ] 4.3.2 persistence 模块所有函数改用 `Persistence` 错误变体替代 `generic()` — deferred
-- [ ] 4.3.3 persistence 类型添加 `#[derive(Resource)]`（在 bevy_ecs feature 下） — deferred
-- [ ] 4.3.4 实现 `PersistencePlugin` — deferred
-- [ ] 4.3.5 persistence 类型添加到 core crate prelude（cfg-gated） — deferred
+- [x] 4.3.2 persistence 模块所有函数改用 `Persistence` 错误变体替代 `generic()`
+- [x] 4.3.3 persistence 类型添加 `#[cfg_attr(feature = "bevy_ecs", derive(Resource))]`
+- [x] 4.3.4 实现 `PersistencePlugin`（anvilkit-ecs, feature-gated, 注册 AutoSaveConfig/State + tick system）
+- [x] 4.3.5 persistence 类型添加到 core crate prelude（cfg-gated）
 
 ### 4.4 验证
 - [x] 4.4.1 `cargo test --workspace` 全量验证
@@ -103,37 +103,46 @@
 ## Phase 5: Fix Disconnections (修复断联系统)
 
 ### 5.1 Settings → Engine
-- [ ] 5.1.1 实现 `SettingsApplyPlugin` — deferred (requires runtime Settings resource)
-- [ ] 5.1.2 Settings.audio → AudioBus 音量控制 — deferred
-- [ ] 5.1.3 Settings.input.mouse_sensitivity — deferred
+- [x] 5.1.1 实现 `SettingsApplyPlugin`（audio sync: Settings.audio → AudioBus）
+- [x] 5.1.2 Settings.audio → AudioBus 音量控制（master/music/sfx）
+- [x] 5.1.3 Settings.input.mouse_sensitivity → CameraController sync（camera crate persistence feature）
 
 ### 5.2 ActionMap → Games
 - [x] 5.2.1 InputPlugin 已由 AutoInputPlugin 覆盖（初始化 InputState + end_frame）
-- [ ] 5.2.2 Craft ActionMap 绑定 — deferred (game-layer task)
-- [ ] 5.2.3 Billiards ActionMap 绑定 — deferred
-- [ ] 5.2.4 ActionMap::apply_overrides — deferred
+- [x] 5.2.2 Craft ActionMap 绑定（WASD/Space/Shift/Ctrl + mouse + slots 1-9）
+- [x] 5.2.3 Billiards ActionMap 绑定（shoot/aim mouse buttons）
+- [x] 5.2.4 ActionMap::apply_overrides + InputBinding::from_key_name + KeyCode::from_name
 
 ### 5.3 Audio → Games
-- [ ] 5.3.1-5.3.6 Audio integration — deferred (requires audio asset pipeline)
+- [x] 5.3.1 AudioEngine Send/Sync fix — NonSend 资源 + 移除 unsafe impl
+- [x] 5.3.2 spatial_audio_system 立体声平移（listener right vector panning）
+- [x] 5.3.3 AudioSource 添加 asset_id: Option<u64> 字段 + from_asset_id() 构造函数
 
 ### 5.4 Assets Integration
-- [ ] 5.4.1-5.4.5 Assets integration — deferred (requires AssetServer refactor)
+- [x] 5.4.1 DependencyGraph u64 → AssetId 类型安全迁移
+- [x] 5.4.2 AssetServer::insert_parsed + get_parsed（ParsedAsset 桥接）
+- [x] 5.4.3 AssetCache 集成到 AssetServer（content hash 缓存 + load_async 缓存命中跳过）
+- [x] 5.4.4 DependencyGraph 集成到 AssetServer（add_dependency 接口 + 访问器）
+- [x] 5.4.5 级联卸载 wiring（unload() 调用 remove_and_cascade + 清理 cache/parsed/states）
 
 ### 5.5 Scene Serialization
-- [ ] 5.5.1-5.5.4 Scene serialization — deferred
+- [x] 5.5.1 SerializableRegistry 增强 — serialize/deserialize fn pointers
+- [x] 5.5.2 SceneSerializer::save 查询 registry 填充 custom_data
+- [x] 5.5.3 SceneSerializer::load 查询 registry 恢复自定义组件
+- [x] 5.5.4 自定义组件 round-trip 测试（Health/Mana + 向后兼容）
 
 ### 5.6 Camera
 - [x] 5.6.1 实现 `CameraPlugin`（注册 camera_controller_system）
 - [x] 5.6.2 实现 `CameraMode::Orbit`（鼠标拖拽旋转 + 滚轮缩放 + 距离限制）
 - [x] 5.6.3 CameraPlugin 添加到 DefaultPlugins
-- [ ] 5.6.4 Billiards 使用 Orbit 相机模式 — deferred (game-layer task)
+- [x] 5.6.4 Billiards 使用 Orbit 相机模式
 
 ### 5.7 DefaultPlugins & Facade
 - [x] 5.7.1 DefaultPlugins 添加 CameraPlugin
 - [x] 5.7.2 Facade prelude 添加 AudioSource/AudioListener/PlaybackState re-export
-- [ ] 5.7.3 Facade persistence feature passthrough — deferred
-- [ ] 5.7.4 Games 改用 DefaultPlugins — deferred (game-layer task)
-- [ ] 5.7.5 Games 减少直接依赖 — deferred
+- [x] 5.7.3 Facade persistence feature passthrough（anvilkit-core/persistence + anvilkit-ecs/persistence）
+- [x] 5.7.4 Games 改用 DefaultPlugins
+- [x] 5.7.5 Games 减少直接依赖（移除手动 InputState/DeltaTime/camera_controller_system）
 
 ### 5.8 验证
 - [x] 5.8.1 `cargo test --workspace` 全量验证
@@ -154,5 +163,36 @@
 - [x] 7.1 `cargo check --workspace` 零错误零警告
 - [x] 7.2 `cargo test --workspace` 全量测试通过
 - [ ] 7.3 两个游戏运行 + 视觉验证 — requires GPU runtime
-- [ ] 7.4 更新 project.md 路线图
-- [ ] 7.5 更新 README.md Quick Start（使用 AnvilKitApp::run 模式）
+- [x] 7.4 更新 project.md 路线图（添加 Phase I: v0.3 + 更新 Workspace Structure）
+- [x] 7.5 更新 README.md Quick Start（使用 AnvilKitApp::run + GameCallbacks 模式）+ Crate Map 添加 4 新 crate
+
+## Phase 8: Camera System Upgrade (全面升级)
+
+### 8.1 Foundation (Phase 1)
+- [x] 8.1.1 `noise.rs` — 1D/2D 梯度噪声 (Perlin)，camera shake 用
+- [x] 8.1.2 `orbit.rs` — OrbitState 组件 (替代枚举内嵌数据)
+- [x] 8.1.3 `input_curve.rs` — InputCurve 死区 + 幂次响应曲线
+- [x] 8.1.4 `effects.rs` 重写 — Trauma 系统 + Perlin noise (替代正弦)
+
+### 8.2 Core Refactor (Phase 2)
+- [x] 8.2.1 CameraMode 简化 — 枚举无数据，PartialEq/Eq derive
+- [x] 8.2.2 systems.rs 拆分 — camera_input_system + camera_mode_system + camera_effects_apply_system
+- [x] 8.2.3 OrbitState 集成 — ThirdPerson/Orbit 统一代码路径 (消除 ~60 行重复)
+- [x] 8.2.4 平滑公式修复 — `1 - e^(-speed * dt)` 替代 `(1-s).powf(dt*60)`
+- [x] 8.2.5 plugin.rs + lib.rs 更新 — 注册拆分后系统 + 导出新模块
+
+### 8.3 New Features (Phase 3)
+- [x] 8.3.1 `rig.rs` — CameraRig (实体跟随 + offset + 阻尼)
+- [x] 8.3.2 `spring_arm.rs` — SpringArm 碰撞避免 (Ray-AABB 扫射)
+- [x] 8.3.3 `transition.rs` — CameraTransition (5 种缓动曲线)
+- [x] 8.3.4 `look_at.rs` — LookAtTarget 软约束 (屏幕空间死区)
+
+### 8.4 Advanced + Migration (Phase 4)
+- [x] 8.4.1 `rail.rs` — CameraRail 轨道相机 (Linear + Catmull-Rom)
+- [x] 8.4.2 Craft 迁移 — OrbitState spawn, camera_fx.rs 更新
+- [x] 8.4.3 Billiards 迁移 — CameraMode::Orbit + OrbitState
+
+### 8.5 Engineering (Phase 5)
+- [x] 8.5.1 目录结构工程化 — 平铺 → orbit/ effects/ constraints/ 三层
+- [x] 8.5.2 文档更新 — README.md + project.md + tasks.md
+- [x] 8.5.3 67 测试 + 2 doc-tests, `cargo test --workspace` 全量通过

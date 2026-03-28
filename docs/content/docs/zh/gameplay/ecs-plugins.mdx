@@ -5,6 +5,32 @@ description: 应用生命周期、插件系统、调度、系统与 Bundle
 
 `anvilkit-ecs` 提供应用生命周期管理、插件系统、系统调度和组件 Bundle，全部基于 `bevy_ecs` 构建。
 
+> **注意：** 推荐使用 `AnvilKitApp::run()` 配合 `GameCallbacks` 来启动游戏。下面展示的 `App::new()` 方式适用于高级用例或测试场景。
+
+## AnvilKitApp 模式
+
+大多数游戏推荐使用 `AnvilKitApp::run()` 配合 `GameCallbacks` 实现作为入口点。它会自动处理引擎初始化、主循环和关闭流程：
+
+```rust
+use anvilkit::prelude::*;
+
+struct MyGame;
+
+impl GameCallbacks for MyGame {
+    fn init(&mut self, ctx: &mut GameContext) {
+        ctx.app.add_systems(AnvilKitSchedule::Update, my_system);
+    }
+}
+
+fn main() {
+    AnvilKitApp::run(
+        GameConfig::new("My Game"),
+        App::new().add_plugins(DefaultPlugins),
+        MyGame,
+    );
+}
+```
+
 ## 应用生命周期
 
 `App` 是应用程序的入口点。典型的初始化流程为：
@@ -24,7 +50,9 @@ App::new()
     .run();
 ```
 
-`DefaultPlugins` 包含：`AnvilKitEcsPlugin` + `RenderPlugin` + `AudioPlugin` + `AutoInputPlugin` + `AutoDeltaTimePlugin`。
+`DefaultPlugins` 包含：`AnvilKitEcsPlugin` + `RenderPlugin` + `AudioPlugin` + `InputPlugin`（`InputState` + `ActionMap` + `action_map_update_system`）+ `CameraPlugin` + `AutoDeltaTimePlugin` + `PersistencePlugin`（cfg）+ `SettingsApplyPlugin`（cfg）。
+
+此外，`anvilkit-gameplay` crate 提供了更高层的 Gameplay 插件。详见 [Gameplay 系统](/docs/zh/gameplay/gameplay-systems) 页面。
 
 ```rust
 use anvilkit_ecs::prelude::*;
@@ -91,7 +119,7 @@ impl Plugin for PhysicsPlugin {
 }
 ```
 
-唯一插件（默认）最多注册一次；重复的 `add_plugins` 调用会被静默跳过。`PluginGroup` 同样会强制唯一性。
+唯一插件（默认）最多注册一次；重复的 `add_plugins` 调用会被静默跳过。此唯一性检查同样适用于 `PluginGroup` 内的插件。
 
 ## 调度阶段
 
@@ -100,38 +128,12 @@ impl Plugin for PhysicsPlugin {
 | 调度 | 变体 | 执行 | 典型用途 |
 |----------|---------|------|-------------|
 | **Startup** | `AnvilKitSchedule::Startup` | 首次 `update()` 时执行一次 | 场景设置、资源加载 |
-| **Main** | `AnvilKitSchedule::Main` | 每帧 | 顶层调度入口，驱动后续阶段 |
+| **Main** | `AnvilKitSchedule::Main` | 每帧，最先执行 | 全局游戏逻辑 |
 | **PreUpdate** | `AnvilKitSchedule::PreUpdate` | 每帧 | DeltaTime 同步、父子层级同步 |
 | **FixedUpdate** | `AnvilKitSchedule::FixedUpdate` | 每帧 0-N 次 | 确定性物理、固定速率模拟（默认 1/60s） |
 | **Update** | `AnvilKitSchedule::Update` | 每帧 | 游戏逻辑、AI、物理 |
 | **PostUpdate** | `AnvilKitSchedule::PostUpdate` | 每帧 | 变换传播、渲染准备 |
 | **Cleanup** | `AnvilKitSchedule::Cleanup` | 每帧 | 临时数据清理、诊断 |
-
-## SystemSet
-
-在调度内，系统可以通过 `AnvilKitSystemSet` 进行分组排序：
-
-| SystemSet | 用途 |
-|-----------|---------|
-| `Input` | 键盘、鼠标、手柄处理 |
-| `Time` | 时间/计时器更新、帧率追踪 |
-| `Physics` | 速度积分、碰撞检测、物理步进 |
-| `GameLogic` | AI、状态机、游戏规则 |
-| `Transform` | 层级传播、坐标同步 |
-| `Render` | 可见性剔除、材质更新、绘制准备 |
-| `Audio` | 声音播放、音量控制 |
-| `UI` | 布局、事件处理、组件更新 |
-| `Network` | 复制、序列化、连接管理 |
-| `Debug` | Gizmos、性能叠加层、日志 |
-
-```rust
-app.add_systems(AnvilKitSchedule::Update, (
-    apply_gravity.in_set(AnvilKitSystemSet::Physics),
-    check_collisions.in_set(AnvilKitSystemSet::Physics)
-        .after(apply_gravity),
-    handle_input.in_set(AnvilKitSystemSet::Input),
-));
-```
 
 ## 事件系统
 
@@ -191,6 +193,32 @@ fn pause_system(input: Res<InputState>, mut next: ResMut<NextGameState<AppState>
         next.set(AppState::Paused);
     }
 }
+```
+
+## SystemSet
+
+在调度内，系统可以通过 `AnvilKitSystemSet` 进行分组排序：
+
+| SystemSet | 用途 |
+|-----------|---------|
+| `Input` | 键盘、鼠标、手柄处理 |
+| `Time` | 时间/计时器更新、帧率追踪 |
+| `Physics` | 速度积分、碰撞检测、物理步进 |
+| `GameLogic` | AI、状态机、游戏规则 |
+| `Transform` | 层级传播、坐标同步 |
+| `Render` | 可见性剔除、材质更新、绘制准备 |
+| `Audio` | 声音播放、音量控制 |
+| `UI` | 布局、事件处理、组件更新 |
+| `Network` | 复制、序列化、连接管理 |
+| `Debug` | Gizmos、性能叠加层、日志 |
+
+```rust
+app.add_systems(AnvilKitSchedule::Update, (
+    apply_gravity.in_set(AnvilKitSystemSet::Physics),
+    check_collisions.in_set(AnvilKitSystemSet::Physics)
+        .after(apply_gravity),
+    handle_input.in_set(AnvilKitSystemSet::Input),
+));
 ```
 
 ## 系统

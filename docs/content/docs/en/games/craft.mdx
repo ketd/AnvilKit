@@ -58,6 +58,41 @@ Bypasses the PBR pipeline with a simple 2-bind-group setup:
 - **Break block** — left click
 - **Ray picking** — cast ray from camera, traverse using DDA algorithm
 
+## v0.3 Features
+
+Craft was updated in v0.3 to showcase the new engine systems:
+
+### Health System
+
+The player has a `Health` component (20 HP with passive regen). Environmental hazards apply damage through the ECS event system:
+
+- **Fall damage** — landing velocity converted to `DamageEvent`
+- **Drowning** — submerged blocks tick damage over time
+- **Health regen** — slow passive healing when not taking damage
+- **Death & respawn** — `DeathEvent` triggers position reset and full heal
+
+A color-coded health bar (green/yellow/red) is rendered above the hotbar.
+
+### Inventory
+
+A 9-slot `SlotInventory` with stackable items replaces the old fixed block palette. Breaking a block adds it to inventory; placing consumes one. The hotbar HUD reflects actual inventory contents.
+
+### ActionMap
+
+All key bindings are registered via `ActionMap` (logical action to physical binding). This enables future support for user-configurable controls via `ActionMap::apply_overrides()`.
+
+### Data-Driven Blocks
+
+Block types are defined in `assets/data/blocks.ron` using `DataTable`. The `BlockDefCache` is built from the table at startup, decoupling block properties from code.
+
+### Locale / i18n
+
+HUD text and block names are looked up through `Locale` (`assets/data/locale_en.ron`). The system supports fallback chains, making it straightforward to add translations.
+
+### Player Persistence
+
+Player state (position, health, inventory, flying mode, selected slot, day/night time) is saved and restored via `Ctrl+S`. World modifications (placed/broken blocks) are also persisted.
+
 ## Running
 
 ```bash

@@ -77,6 +77,7 @@ pub struct InputSettings {
 
 /// 游戏设置（所有分区）
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::system::Resource))]
 pub struct Settings {
     /// Graphics configuration.
     pub graphics: GraphicsSettings,
@@ -122,12 +123,12 @@ impl Settings {
     pub fn save(&self, path: &Path) -> Result<(), AnvilKitError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|e| AnvilKitError::generic(format!("Failed to create settings dir: {}", e)))?;
+                .map_err(|e| AnvilKitError::persistence(format!("Failed to create settings dir: {}", e)))?;
         }
         let ron_str = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
-            .map_err(|e| AnvilKitError::serialization(format!("Settings serialize failed: {}", e)))?;
+            .map_err(|e| AnvilKitError::persistence(format!("Settings serialize failed: {}", e)))?;
         std::fs::write(path, ron_str)
-            .map_err(|e| AnvilKitError::generic(format!("Failed to write settings: {}", e)))?;
+            .map_err(|e| AnvilKitError::persistence_with_path(format!("Failed to write settings: {}", e), path.display().to_string()))?;
         Ok(())
     }
 

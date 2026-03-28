@@ -5,6 +5,15 @@ description: 输入系统 — 键盘、鼠标、操作映射、RenderApp 集成
 
 `anvilkit-input` 提供跨平台的输入抽象，支持键盘和鼠标输入、逻辑操作映射（Action Map）系统，以及与渲染窗口事件循环集成的辅助工具。
 
+## InputPlugin（ECS 自动插件）
+
+`InputPlugin` 包含在 `DefaultPlugins` 中，自动配置输入系统：
+
+- 将 `InputState` 和 `ActionMap` 初始化为 ECS 资源 — 游戏无需手动插入。
+- 在 `PreUpdate` 调度中注册 `action_map_update_system`，确保操作状态在游戏逻辑运行前始终是最新的。
+
+> **推荐入口：** 最简单的输入启用方式是通过 `AnvilKitApp::run()`，它处理输入转发、帧生命周期和插件设置。本页后面描述的手动 `RenderApp` 集成是针对自定义事件循环的进阶/手动方式。
+
 ## InputState
 
 `InputState` 是一个 ECS `Resource`，用于追踪每帧的键盘和鼠标状态。它区分持续按下、首帧按下和首帧释放。
@@ -119,6 +128,29 @@ pub enum InputBinding {
 | `is_action_just_released` | `(&self, action: &str) -> bool` | 仅在停用帧返回 true。 |
 | `get_bindings` | `(&self, action: &str) -> Option<&[InputBinding]>` | 查看当前绑定。 |
 | `clear_bindings` | `(&mut self, action: &str)` | 移除某个操作的所有绑定。 |
+| `apply_overrides` | `(&mut self, overrides: HashMap<String, String>)` | 应用来自 `Settings` 的按键绑定覆盖。每个条目将操作名称映射到按键名称字符串，替换该操作的现有绑定。 |
+
+### 解析辅助函数
+
+| 函数 | 签名 | 说明 |
+|----------|-----------|-------------|
+| `InputBinding::from_key_name` | `(name: &str) -> Option<InputBinding>` | 将按键名称字符串（如 `"W"`、`"Space"`、`"MouseLeft"`）解析为 `InputBinding`。 |
+| `KeyCode::from_name` | `(name: &str) -> Option<KeyCode>` | 将按键名称字符串解析为 `KeyCode`。不区分大小写。 |
+
+```rust
+use anvilkit_input::action_map::{InputBinding, ActionMap};
+use anvilkit_input::input_state::KeyCode;
+
+// Parse key names from config
+let binding = InputBinding::from_key_name("Space").unwrap();
+let key = KeyCode::from_name("W").unwrap();
+
+// Apply overrides from Settings
+let mut overrides = HashMap::new();
+overrides.insert("jump".into(), "Space".into());
+overrides.insert("shoot".into(), "MouseLeft".into());
+action_map.apply_overrides(overrides);
+```
 
 ### 用法示例
 
@@ -205,6 +237,8 @@ gamepad.end_frame(); // 清除 just_pressed/just_released
 
 > **注意:** winit 0.30 移除了内置手柄支持。需要单独的后端（如 `gilrs`）来填充 `GamepadState`。`AutoInputPlugin` 仅处理键盘/鼠标。
 
+> **手柄事件转发：** `RenderApp` 和 `AnvilKitApp` 事件循环现在会在存在 gilrs 后端时，将手柄连接、按钮和轴事件转发到 `GamepadState` 中。这消除了在游戏代码中手动更新 `GamepadState` 的需要。
+
 ## ActionId（零分配查询）
 
 在热循环中使用 `ActionId` 避免字符串哈希开销：
@@ -250,7 +284,9 @@ let x = map.axis_value("move_x", &input, gamepad.as_ref());
 
 同时按下 A 和 D 时，互相抵消为 0.0。
 
-## RenderApp 集成
+## RenderApp 集成（进阶/手动）
+
+> 大多数游戏应使用 `AnvilKitApp::run()` 而非手动配置 `RenderApp`。以下部分适用于需要完全自定义事件循环的游戏。
 
 使用 `anvilkit-render` 的 `RenderApp` 时，三个辅助方法会自动将操作系统窗口事件桥接到 ECS 的 `InputState` 资源中。使用自定义 `ApplicationHandler` 的游戏可以直接调用这些方法。
 

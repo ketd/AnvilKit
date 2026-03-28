@@ -20,12 +20,17 @@ pub mod transform;
 pub mod geometry;
 pub mod interpolation;
 pub mod constants;
+pub mod aabb;
+pub mod frustum;
+pub mod raycast;
 
 // 重新导出主要类型
 pub use transform::{Transform, GlobalTransform};
 pub use geometry::{Rect, Circle, Bounds2D, Bounds3D};
 pub use interpolation::{Lerp, Slerp, Interpolate};
 pub use constants::*;
+pub use aabb::Aabb;
+pub use frustum::Frustum;
 
 #[cfg(test)]
 mod tests {

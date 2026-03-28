@@ -40,27 +40,29 @@ anvilkit = { path = "../../crates/anvilkit" }
 
 ## 最小示例
 
+自 v0.3 起，AnvilKit 使用 `AnvilKitApp::run()` + `GameCallbacks` 模式。
+应用运行器自动处理事件循环、输入转发和帧生命周期 — 你只需实现游戏所需的回调。
+
 ```rust
 use anvilkit::prelude::*;
 
-fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins::new())
-        .add_systems(AnvilKitSchedule::Startup, setup)
-        .add_systems(AnvilKitSchedule::Update, hello_system)
-        .run();
+struct MyGame;
+
+impl GameCallbacks for MyGame {
+    fn init(&mut self, ctx: &mut GameContext) {
+        ctx.app.add_systems(AnvilKitSchedule::Update, hello_system);
+    }
 }
 
-fn setup(mut commands: Commands) {
-    // 生成相机
-    commands.spawn((
-        CameraComponent::default(),
-        Transform::from_xyz(0.0, 2.0, -5.0),
-    ));
+fn main() {
+    AnvilKitApp::run(
+        GameConfig::new("My Game").with_size(1280, 720),
+        MyGame,
+    );
 }
 
 fn hello_system() {
-    // 游戏逻辑写在这里
+    println!("Hello from AnvilKit!");
 }
 ```
 

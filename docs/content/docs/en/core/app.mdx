@@ -1,0 +1,171 @@
+---
+title: anvilkit-app
+description: Game application runner — event loop, frame lifecycle, GameCallbacks
+---
+
+`anvilkit-app` eliminates application boilerplate. Games implement the `GameCallbacks` trait and call `AnvilKitApp::run()` to get a complete event loop with input forwarding, frame ticking, and window management.
+
+## GameConfig
+
+Configuration struct passed to `AnvilKitApp::run()`. Provides sensible defaults; override only what you need.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `title` | `String` | — | Window title (required) |
+| `width` | `u32` | `1280` | Initial window width in pixels |
+| `height` | `u32` | `720` | Initial window height in pixels |
+| `vsync` | `bool` | `true` | Enable vertical sync |
+| `raw_mouse_input` | `bool` | `true` | Use raw mouse motion (DeviceEvent) for FPS-style camera |
+
+### Constructors & Builders
+
+```rust
+use anvilkit_app::GameConfig;
+
+// Minimal — uses all defaults
+let config = GameConfig::new("My Game");
+
+// Override window size
+let config = GameConfig::new("My Game").with_size(1920, 1080);
+```
+
+## GameCallbacks
+
+The main trait games implement. All methods have default (no-op) implementations, so you only override what you need.
+
+```rust
+pub trait GameCallbacks {
+    /// Called once after the window is created and the renderer is ready.
+    fn init(&mut self, ctx: &mut GameContext) {}
+
+    /// Called every frame after ECS update (app.update()) completes.
+    fn post_update(&mut self, ctx: &mut GameContext) {}
+
+    /// Called on RedrawRequested — issue draw calls here.
+    fn render(&mut self, ctx: &mut GameContext) {}
+
+    /// Called when the window is resized.
+    fn on_resize(&mut self, ctx: &mut GameContext, width: u32, height: u32) {}
+
+    /// Called for every window event. Return `true` to consume the event
+    /// and prevent further processing.
+    fn on_window_event(&mut self, ctx: &mut GameContext, event: &WindowEvent) -> bool {
+        false
+    }
+}
+```
+
+## GameContext
+
+Provides access to both the ECS `App` and the `RenderApp` within callbacks.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `app` | `&mut App` | The ECS application (world, resources, systems) |
+| `render_app` | `&mut RenderApp` | The render-side application (window, GPU state) |
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `world` | `(&self) -> &World` | Immutable access to the ECS world |
+| `world_mut` | `(&mut self) -> &mut World` | Mutable access to the ECS world |
+
+## AnvilKitApp
+
+The application runner. A single static method that blocks the calling thread until the window is closed.
+
+```rust
+use anvilkit_app::{AnvilKitApp, GameConfig};
+
+AnvilKitApp::run(config, app, game);
+```
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `run` | `(config: GameConfig, app: App, game: impl GameCallbacks)` | Starts the event loop. Blocks until the window is closed. |
+
+## WindowSize
+
+An ECS `Resource` that tracks the current window dimensions. Automatically updated on resize events.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `width` | `f32` | Current window width in logical pixels |
+| `height` | `f32` | Current window height in logical pixels |
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `new` | `(width: f32, height: f32) -> Self` | Create from explicit dimensions |
+| `aspect_ratio` | `(&self) -> f32` | Returns `width / height` |
+| `as_tuple` | `(&self) -> (f32, f32)` | Returns `(width, height)` |
+
+```rust
+fn camera_system(window: Res<WindowSize>) {
+    let aspect = window.aspect_ratio();
+    let (w, h) = window.as_tuple();
+}
+```
+
+## Frame Lifecycle
+
+The following diagram shows the order of events within a single frame:
+
+```
+Resumed
+  └─► init()                          (once, on first resume)
+
+WindowEvent
+  └─► on_window_event()
+  └─► forward_input()                 (keyboard, mouse, scroll)
+
+AboutToWait
+  └─► tick()
+        ├─ DeltaTime update
+        ├─ app.update()                (ECS systems run)
+        ├─ post_update()
+        └─ InputState::end_frame()
+
+RedrawRequested
+  └─► render()
+
+Resized
+  └─► on_resize()
+  └─► WindowSize resource updated
+```
+
+Key points:
+- `init` fires exactly once after the window and renderer are ready.
+- `forward_input` translates OS events into `InputState` automatically.
+- `post_update` runs after all ECS systems, useful for reading query results before rendering.
+- `WindowSize` is updated before `on_resize` is called, so callbacks always see the new dimensions.
+
+## Minimal Example
+
+```rust
+use anvilkit_app::{AnvilKitApp, GameConfig, GameCallbacks, GameContext};
+use anvilkit_ecs::App;
+use anvilkit_ecs::plugin::DefaultPlugins;
+
+struct MyGame;
+
+impl GameCallbacks for MyGame {
+    fn init(&mut self, ctx: &mut GameContext) {
+        // Load assets, spawn entities
+        let world = ctx.world_mut();
+        // ...
+    }
+
+    fn post_update(&mut self, ctx: &mut GameContext) {
+        // Read ECS state after systems have run
+    }
+
+    fn render(&mut self, ctx: &mut GameContext) {
+        // Issue draw calls
+    }
+}
+
+fn main() {
+    let config = GameConfig::new("My Game").with_size(1280, 720);
+    let app = App::new().add_plugins(DefaultPlugins);
+    AnvilKitApp::run(config, app, MyGame);
+}
+```

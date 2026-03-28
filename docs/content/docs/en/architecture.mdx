@@ -16,10 +16,14 @@ flowchart TB
   end
   subgraph system["📦 System Layer"]
     umbrella["anvilkit (umbrella)"]
+    app["anvilkit-app"]
     camera["anvilkit-camera"]
     audio["anvilkit-audio"]
     input["anvilkit-input"]
     assets["anvilkit-assets"]
+    ui["anvilkit-ui"]
+    gameplay["anvilkit-gameplay"]
+    data["anvilkit-data"]
   end
   subgraph core["⚙️ Core Layer"]
     ecs["anvilkit-ecs"]
@@ -44,9 +48,13 @@ flowchart BT
   ecs["anvilkit-ecs\n(App, Plugin, Schedule, Transform, Physics)"]
   render["anvilkit-render"]
   input["anvilkit-input\n(InputState, ActionMap)"]
-  camera["anvilkit-camera\n(controller, effects)"]
+  camera["anvilkit-camera\n(5 modes, trauma shake, spring arm, rail)"]
   assets["anvilkit-assets\n(glTF, animation, AssetServer)"]
   audio["anvilkit-audio\n(AudioSource, spatial)"]
+  app["anvilkit-app\n(AnvilKitApp, GameCallbacks, GameConfig)"]
+  ui["anvilkit-ui\n(Widget, flexbox layout, UiPlugin)"]
+  gameplay["anvilkit-gameplay\n(Health, Inventory, Cooldown, StatusEffect)"]
+  data["anvilkit-data\n(DataTable, Locale)"]
 
   core --> ecs
   ecs --> render
@@ -55,6 +63,13 @@ flowchart BT
   input --> camera
   core --> assets
   ecs --> audio
+  ecs --> app
+  render --> app
+  input --> app
+  core --> app
+  ecs --> gameplay
+  ecs --> data
+  ecs --> ui
 `} />
 
 ## Per-Frame Lifecycle
@@ -63,6 +78,10 @@ flowchart BT
 flowchart TD
   subgraph EL["Event Loop (winit)"]
     direction TB
+
+    subgraph E0["0. resumed (once)"]
+      gcinit["GameCallbacks::init()"]
+    end
 
     subgraph E1["1. window_event / device_event"]
       fwd_input["forward_input() → InputState"]
@@ -82,12 +101,13 @@ flowchart TD
         cleanup["Cleanup"]
         evflush --> main --> pre --> fixed --> upd --> post --> cleanup
       end
+      gcpost["GameCallbacks::post_update()"]
       endframe["InputState.end_frame()"]
       redraw["window.request_redraw()"]
-      dt --> update --> endframe --> redraw
+      dt --> update --> gcpost --> endframe --> redraw
     end
 
-    subgraph E3["3. RedrawRequested → render_frame()"]
+    subgraph E3["3. RedrawRequested → GameCallbacks::render()"]
       shadow["Shadow Pass ×3 (CSM)"]
       hdr["HDR Scene Pass (PBR + MSAA 4×)"]
       ssao["SSAO Pass"]
@@ -100,7 +120,7 @@ flowchart TD
       shadow --> hdr --> ssao --> dof --> mblur --> bloom --> cg --> tone --> hud
     end
 
-    E1 --> E2 --> E3
+    E0 -.-> E1 --> E2 --> E3
   end
 `} />
 
@@ -127,16 +147,21 @@ flowchart TD
 | `anvilkit-ecs` | `rapier` | rapier3d physics runtime integration |
 | `anvilkit-assets` | `hot-reload` | File watching via `notify` crate |
 | `anvilkit-assets` | `bevy_ecs` | Component derives for Skeleton, AnimationPlayer |
+| `anvilkit-gameplay` | `stats` | Stats, Health, DamageEvent, health_system |
+| `anvilkit-gameplay` | `inventory` | SlotInventory, StackInventory, ItemStack |
+| `anvilkit-gameplay` | `cooldown` | Cooldown, cooldown_tick_system |
+| `anvilkit-gameplay` | `status-effect` | StatusEffect, StatusEffectList, StackPolicy |
+| `anvilkit-gameplay` | `entity-pool` | EntityPool for entity recycling |
 
 ## Module Overview
 
 ### anvilkit-core
 
-Foundation type library: math utilities (Vec3, Mat4, Transform, GlobalTransform, interpolation), time system (Time, Timer), error types (AnvilKitError with category-preserving `with_context`), persistence system (SaveManager, Settings, WorldStorage — all returning `Result<_, AnvilKitError>`).
+Foundation type library: math utilities (Vec3, Mat4, Transform, GlobalTransform, interpolation), time system (Time, Timer), error types (AnvilKitError with category-preserving `with_context`), persistence system (SaveManager, Settings, WorldStorage — all returning `Result<_, AnvilKitError>`). Aabb axis-aligned bounding box, Frustum, and raycast utilities (screen_to_ray, ray_plane_intersection, ray_sphere_intersection) — moved from render crate in v0.3. Persistence error category (AnvilKitError::Persistence) with category-preserving with_context.
 
 ### anvilkit-ecs
 
-Application framework based on `bevy_ecs 0.14`: App lifecycle (new → add_plugins → add_systems → run), Plugin system with uniqueness checks, Schedule dispatching (Main/Startup/PreUpdate/Update/PostUpdate/Cleanup), AppExit resource for graceful shutdown, Transform hierarchy (Parent/Children/GlobalTransform propagation with auto-sync), Physics (scale-aware AABB collision + rapier3d integration), Scene serialization (RON), FixedUpdate schedule (accumulator-based deterministic timestep), Events system (bevy_ecs `Events<T>`/EventWriter/EventReader), `GameState<S>` state machine, SerializableRegistry for type-erased scene serialization, AutoInputPlugin and AutoDeltaTimePlugin for automatic frame management.
+Application framework based on `bevy_ecs 0.14`: App lifecycle (new → add_plugins → add_systems → run), Plugin system with uniqueness checks, Schedule dispatching (Main/Startup/PreUpdate/Update/PostUpdate/Cleanup), AppExit resource for graceful shutdown, Transform hierarchy (Parent/Children/GlobalTransform propagation with auto-sync), Physics (scale-aware AABB collision + rapier3d integration), Scene serialization (RON), FixedUpdate schedule (accumulator-based deterministic timestep), Events system (bevy_ecs `Events<T>`/EventWriter/EventReader), `GameState<S>` state machine, SerializableRegistry for type-erased scene serialization, AutoInputPlugin and AutoDeltaTimePlugin for automatic frame management. PersistencePlugin for auto-save integration, SettingsApplyPlugin for syncing Settings to engine subsystems. Physics split into module directory: components.rs, aabb.rs, rapier.rs, events.rs.
 
 ### anvilkit-render
 
@@ -153,26 +178,45 @@ Unified 2D/3D rendering pipeline:
 - Sprite, Line, Particle, Text, UI renderers
 - StandardMaterial component (PBR with builder pattern)
 - PostProcessSettings (SSAO/DOF/MotionBlur/Bloom/ColorGrading)
-- DemoApp scaffold
 - Orthographic/Perspective projection enum, multi-camera priority
 - PipelineCache/BindGroupCache
 - Point/spot shadow system (ShadowAtlas)
+- events.rs split into 6 files (events/ directory), draw.rs split into 5 files (draw/ directory)
+- CachedBuffer shared utility replacing 5 duplicate cached_vb patterns
+- ProjectionUniform shared type replacing 5 duplicate ortho structs
+- DebugRenderer merged with LineRenderer
 
 ### anvilkit-assets
 
-Asset pipeline: glTF model loading (mesh, material, skeleton, animation), AssetServer (sync + async loading, deduplication), AssetHandle (Arc refcount), procedural mesh generation, file watching hot reload.
+Asset pipeline: glTF model loading (mesh, material, skeleton, animation), AssetServer (sync + async loading, deduplication), AssetHandle (Arc refcount), procedural mesh generation, file watching hot reload. DependencyGraph for asset dependency tracking (AssetId-based). AssetCache integration (content hash deduplication). Cascade unload through dependency graph. insert_parsed/get_parsed for typed asset storage.
 
 ### anvilkit-audio
 
-Audio system based on `rodio`: AudioSource component with ECS integration, AudioBus (master/music/sfx/voice volume mixing), spatial audio (distance attenuation via AudioListener), looping and pitch control.
+Audio system based on `rodio`: AudioSource component with ECS integration, AudioBus (master/music/sfx/voice volume mixing), spatial audio (distance attenuation via AudioListener), looping and pitch control. NonSend resource pattern for thread-safe macOS CoreAudio. Stereo panning via listener right vector. Asset integration via AudioSource.asset_id.
 
 ### anvilkit-input
 
-Input abstraction: InputState (keyboard/mouse pressed/just_pressed/released, mouse_delta, scroll_delta), GamepadState (16 buttons, 6 axes), ActionMap (logical action → physical binding), ActionId (zero-allocation lookups), AxisBinding (keyboard/gamepad analog axes).
+Input abstraction: InputState (keyboard/mouse pressed/just_pressed/released, mouse_delta, scroll_delta), GamepadState (16 buttons, 6 axes), ActionMap (logical action → physical binding), ActionId (zero-allocation lookups), AxisBinding (keyboard/gamepad analog axes). InputPlugin for automatic resource initialization. ActionMap with apply_overrides for key rebinding. Gamepad event forwarding.
 
 ### anvilkit-camera
 
-Camera system: first-person / third-person / free controllers, CameraEffects (head bob, landing shake, sprint FOV), gimbal lock protection, mouse sensitivity.
+Production camera system with 5 modes (FirstPerson, ThirdPerson, Orbit, Free, Rail). Features: OrbitState component, CameraRig entity follow, SpringArm collision avoidance, trauma-based Perlin noise shake, CameraTransition blending (5 easing curves), LookAtTarget soft constraint, CameraRail dolly (Catmull-Rom), InputCurve dead zone + response curves. 8-system pipeline, frame-rate independent smoothing.
+
+### anvilkit-app
+
+Game application runner that eliminates boilerplate. `AnvilKitApp::run()` owns the winit event loop, input forwarding, DeltaTime management, and frame lifecycle. Games implement `GameCallbacks` (init, post_update, render, on_resize, on_window_event) and pass a `GameConfig` (title, size, vsync). Provides `GameContext` for access to the ECS `App` and `RenderApp`.
+
+### anvilkit-ui
+
+Retained-mode UI framework with flexbox layout (taffy-based). GPU-independent — rendering is delegated to `anvilkit-render`'s `UiRenderer`. Includes `Widget` (button, label, panel), `UiLayoutEngine`, event system (hit test, interactions), `UiTheme`, focus management, `UiPlugin` for ECS integration, and interactive controls (TextInput, Slider, Checkbox, Dropdown, ScrollView).
+
+### anvilkit-gameplay
+
+Optional, feature-gated gameplay building blocks: `stats` (generic stat system with additive/multiplicative/override modifiers), `health` (Health component with regen, DamageEvent, HealEvent, DeathEvent, health_system), `inventory` (slot-based and stackable items), `cooldown` (ability/action cooldown timers), `status-effect` (duration-based effects with stacking policies), `entity-pool` (object pool for entity recycling).
+
+### anvilkit-data
+
+Data-driven configuration and localization: `DataTable` (typed key-value table loaded from RON or JSON), `Locale` (translation lookup with fallback chain), `DataTablePlugin` for ECS integration.
 
 ## Coordinate System
 

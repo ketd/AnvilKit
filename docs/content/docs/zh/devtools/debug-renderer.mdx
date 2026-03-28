@@ -10,6 +10,8 @@ description: 线框调试可视化 — 线段、包围盒、球体、点
 
 `DebugRenderer` 提供即时模式的线框调试绘制功能，用于可视化碰撞边界、射线、生成点和其他空间数据。所有图元以着色线段的形式渲染，每帧使用单次 `LineList` 绘制调用。
 
+> **v0.3 变更：** `LineRenderer` 在 v0.3 中已合并到 `DebugRenderer`。独立的 `LineRenderer` 类型不再存在。所有线段绘制需求请使用 `DebugRenderer::draw_line()`。
+
 该渲染器由 `anvilkit-render` crate 提供：
 
 ```rust

@@ -120,6 +120,72 @@ for result in server.drain_completed() {
 }
 ```
 
+## DependencyGraph
+
+`DependencyGraph` 使用类型安全的 `AssetId` 句柄（而非裸 `u64`）追踪资产之间的父子关系。它集成在 `AssetServer` 中，驱动级联卸载。
+
+| 方法 | 签名 | 说明 |
+|--------|-----------|-------------|
+| `add_dependency` | `(&mut self, parent: AssetId, child: AssetId)` | 记录 `parent` 依赖于 `child`。 |
+| `remove_asset` | `(&mut self, id: AssetId) -> Vec<AssetId>` | 移除资产并返回孤立的子资产（没有剩余父资产的子资产）。 |
+| `dependents` | `(&self, id: AssetId) -> &[AssetId]` | 列出所有依赖于给定资产的资产。 |
+| `dependencies` | `(&self, id: AssetId) -> &[AssetId]` | 列出给定资产依赖的所有资产。 |
+
+```rust
+use anvilkit_assets::dependency::DependencyGraph;
+
+let mut graph = DependencyGraph::new();
+graph.add_dependency(scene_id, mesh_id);
+graph.add_dependency(scene_id, texture_id);
+
+// Query
+let deps = graph.dependencies(scene_id); // [mesh_id, texture_id]
+let parents = graph.dependents(mesh_id);  // [scene_id]
+```
+
+## AssetCache（内容哈希缓存）
+
+`AssetServer` 包含基于内容哈希的缓存，用于去重加载：
+
+- 当资产在 `process_completed()` 中完成加载时，计算其内容哈希并存储在缓存中。
+- 后续的 `load_async` 调用在缓存命中时完全跳过磁盘读取，立即返回缓存数据。
+- 当资产被卸载时，缓存会自动清理。
+
+这对游戏代码是透明的 — 无需修改任何 API 即可享受缓存带来的性能提升。
+
+## 级联卸载
+
+`AssetServer::unload(id)` 执行完整的依赖感知清理：
+
+1. 在 `DependencyGraph` 上调用 `remove_and_cascade` 查找孤立的子资产。
+2. 清理被卸载资产的资产缓存、解析存储和状态追踪。
+3. 递归卸载没有其他父资产的子资产。
+
+```rust
+// Unload a scene — its exclusive meshes and textures are cleaned up automatically
+server.unload(scene_id);
+```
+
+## 类型化解析存储
+
+`AssetServer` 提供类型化存储，用于存放解析后的资产值，将原始字节加载与应用层类型桥接：
+
+| 方法 | 签名 | 说明 |
+|--------|-----------|-------------|
+| `insert_parsed` | `<T: 'static>(&mut self, id: AssetId, value: T)` | 存储任意类型的解析后资产值。 |
+| `get_parsed` | `<T: 'static>(&self, id: AssetId) -> Option<&T>` | 获取之前存储的解析后值。 |
+
+```rust
+// After loading raw bytes, parse and store the result
+let mesh: Mesh = parse_mesh(&raw_bytes);
+server.insert_parsed::<Mesh>(mesh_id, mesh);
+
+// Later, retrieve the parsed mesh
+if let Some(mesh) = server.get_parsed::<Mesh>(mesh_id) {
+    // Use the mesh
+}
+```
+
 ## 热重载
 
 文件监视功能，用于开发期间自动刷新资产（需要 `hot-reload` feature）。变更事件经过 200ms 防抖处理，同时支持 Remove 事件。

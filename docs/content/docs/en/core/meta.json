@@ -1,4 +1,4 @@
 {
   "title": "Core",
-  "pages": ["math-transform", "input", "audio", "assets", "camera", "persistence"]
+  "pages": ["app", "math-transform", "input", "audio", "assets", "camera", "persistence", "data"]
 }

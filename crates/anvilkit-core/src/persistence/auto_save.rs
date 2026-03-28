@@ -20,6 +20,7 @@
 /// };
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::system::Resource))]
 pub struct AutoSaveConfig {
     /// 是否启用自动存档。
     pub enabled: bool,
@@ -56,6 +57,7 @@ impl Default for AutoSaveConfig {
 /// assert_eq!(state.current_slot_index, 0);
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::system::Resource))]
 pub struct AutoSaveState {
     /// 自上次存档以来的累计时间（秒）。
     pub elapsed: f64,

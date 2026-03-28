@@ -28,7 +28,7 @@ description: Cook-Torrance PBR、级联阴影贴图、骨骼动画
 
 阴影贴图纹理：`Depth32Float`，`2048×2048`，`depth_or_array_layers = 3` (`D2Array`)。
 
-**文件**：`events.rs` (`compute_cascade_matrices`)、`pbr.wgsl` (`calculate_shadow`)
+**文件**：`window/events/lighting.rs` (`compute_cascade_matrices`)、`pbr.wgsl` (`calculate_shadow`)
 
 ## 点光源阴影
 
@@ -61,11 +61,11 @@ let config = SpotShadowConfig {
 
 ### 阴影 Atlas
 
-`ShadowAtlas` 管理所有阴影投射光源的 GPU 资源分配：
+`ShadowAtlas` 管理所有阴影投射光源的 GPU 阴影贴图槽位：
 
 ```rust
 use anvilkit_render::renderer::shadow::ShadowAtlas;
-use anvilkit_render::renderer::draw::MAX_SHADOW_LIGHTS;
+use anvilkit_render::renderer::draw::lighting::MAX_SHADOW_LIGHTS;
 
 let mut atlas = ShadowAtlas::new();
 assert_eq!(atlas.max_lights, MAX_SHADOW_LIGHTS); // 4

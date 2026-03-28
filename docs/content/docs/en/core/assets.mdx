@@ -120,6 +120,72 @@ for result in server.drain_completed() {
 }
 ```
 
+## DependencyGraph
+
+`DependencyGraph` tracks parent-child relationships between assets using type-safe `AssetId` handles (not bare `u64`). It is integrated into the `AssetServer` and drives cascade unloading.
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `add_dependency` | `(&mut self, parent: AssetId, child: AssetId)` | Record that `parent` depends on `child`. |
+| `remove_asset` | `(&mut self, id: AssetId) -> Vec<AssetId>` | Remove an asset and return orphaned children (children with no remaining parents). |
+| `dependents` | `(&self, id: AssetId) -> &[AssetId]` | List all assets that depend on the given asset. |
+| `dependencies` | `(&self, id: AssetId) -> &[AssetId]` | List all assets that the given asset depends on. |
+
+```rust
+use anvilkit_assets::dependency::DependencyGraph;
+
+let mut graph = DependencyGraph::new();
+graph.add_dependency(scene_id, mesh_id);
+graph.add_dependency(scene_id, texture_id);
+
+// Query
+let deps = graph.dependencies(scene_id); // [mesh_id, texture_id]
+let parents = graph.dependents(mesh_id);  // [scene_id]
+```
+
+## AssetCache (Content-Hash Caching)
+
+The `AssetServer` includes a content hash-based cache that deduplicates loads:
+
+- When an asset finishes loading in `process_completed()`, its content hash is computed and stored in the cache.
+- Subsequent calls to `load_async` skip the disk read entirely on a cache hit and return the cached data immediately.
+- The cache is automatically cleaned up when assets are unloaded.
+
+This is transparent to game code — no API changes are needed to benefit from caching.
+
+## Cascade Unload
+
+`AssetServer::unload(id)` performs a full dependency-aware teardown:
+
+1. Calls `remove_and_cascade` on the `DependencyGraph` to find orphaned children.
+2. Cleans up the asset cache, parsed storage, and state tracking for the unloaded asset.
+3. Recursively unloads children that have no other parents.
+
+```rust
+// Unload a scene — its exclusive meshes and textures are cleaned up automatically
+server.unload(scene_id);
+```
+
+## Typed Parsed Storage
+
+The `AssetServer` provides typed storage for parsed asset values, bridging raw byte loading with application-level types:
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `insert_parsed` | `<T: 'static>(&mut self, id: AssetId, value: T)` | Store a parsed asset value of any type. |
+| `get_parsed` | `<T: 'static>(&self, id: AssetId) -> Option<&T>` | Retrieve a previously stored parsed value. |
+
+```rust
+// After loading raw bytes, parse and store the result
+let mesh: Mesh = parse_mesh(&raw_bytes);
+server.insert_parsed::<Mesh>(mesh_id, mesh);
+
+// Later, retrieve the parsed mesh
+if let Some(mesh) = server.get_parsed::<Mesh>(mesh_id) {
+    // Use the mesh
+}
+```
+
 ## Hot Reload
 
 File watching for automatic asset refresh during development (requires `hot-reload` feature). Changes are debounced (200ms) to coalesce rapid file-system events. File deletions (`Remove`) are also reported.

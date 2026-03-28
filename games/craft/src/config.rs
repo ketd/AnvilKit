@@ -59,6 +59,21 @@ pub const CAVE_THRESHOLD: f64 = 0.3;
 pub const CLOUD_NOISE_SCALE: f64 = 0.01;
 pub const CLOUD_THRESHOLD: f64 = 0.75;
 
+// --- Hotbar ---
+
+/// Default block palette for the 9-slot hotbar.
+pub const BLOCK_PALETTE: [crate::block::BlockType; 9] = [
+    crate::block::BlockType::Grass,
+    crate::block::BlockType::Dirt,
+    crate::block::BlockType::Stone,
+    crate::block::BlockType::Sand,
+    crate::block::BlockType::Brick,
+    crate::block::BlockType::Wood,
+    crate::block::BlockType::Glass,
+    crate::block::BlockType::Cobble,
+    crate::block::BlockType::Plank,
+];
+
 // --- Other ---
 
 pub const DAY_NIGHT_DURATION: f32 = 600.0;

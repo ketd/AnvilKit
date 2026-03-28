@@ -72,6 +72,7 @@ pub trait SaveMigration: Send + Sync {
 /// assert_eq!(applied, 1);
 /// assert_eq!(data.get("health").unwrap(), "100");
 /// ```
+#[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::system::Resource))]
 pub struct MigrationRunner {
     migrations: Vec<Box<dyn SaveMigration>>,
     current_version: u32,

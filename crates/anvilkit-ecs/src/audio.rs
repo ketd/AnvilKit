@@ -71,6 +71,12 @@ pub enum PlaybackState {
 pub struct AudioSource {
     /// 音频文件路径
     pub path: String,
+    /// Optional asset ID for AssetServer integration.
+    ///
+    /// When set, the audio playback system should resolve audio data via the
+    /// `AssetServer` using this ID instead of loading from `path` directly.
+    /// The value corresponds to `anvilkit_assets::asset_server::AssetId::0`.
+    pub asset_id: Option<u64>,
     /// 音量 [0.0, 1.0+]
     pub volume: f32,
     /// 播放速率（1.0 = 正常）
@@ -92,6 +98,27 @@ impl AudioSource {
     pub fn new(path: &str) -> Self {
         Self {
             path: path.to_string(),
+            asset_id: None,
+            volume: 1.0,
+            pitch: 1.0,
+            looping: false,
+            spatial: false,
+            spatial_range: 20.0,
+            state: PlaybackState::Stopped,
+            bus: AudioBusCategory::SFX,
+        }
+    }
+
+    /// Creates an audio source backed by an asset ID from the `AssetServer`.
+    ///
+    /// The `id` value corresponds to `anvilkit_assets::asset_server::AssetId::0`.
+    /// When this source is processed by the audio playback system, it should
+    /// resolve the audio data through the `AssetServer` rather than loading
+    /// from a file path.
+    pub fn from_asset_id(id: u64) -> Self {
+        Self {
+            path: String::new(),
+            asset_id: Some(id),
             volume: 1.0,
             pitch: 1.0,
             looping: false,
@@ -260,5 +287,21 @@ mod tests {
         let source = AudioSource::new("test.wav");
         assert_eq!(source.bus, AudioBusCategory::SFX);
         assert!((bus.effective_volume(AudioBusCategory::SFX) - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_audio_source_new_has_no_asset_id() {
+        let source = AudioSource::new("test.ogg");
+        assert!(source.asset_id.is_none());
+    }
+
+    #[test]
+    fn test_audio_source_from_asset_id() {
+        let source = AudioSource::from_asset_id(42);
+        assert!(source.path.is_empty());
+        assert_eq!(source.asset_id, Some(42));
+        assert_eq!(source.volume, 1.0);
+        assert_eq!(source.state, PlaybackState::Stopped);
+        assert_eq!(source.bus, AudioBusCategory::SFX);
     }
 }

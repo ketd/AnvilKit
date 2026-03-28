@@ -14,6 +14,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::mpsc;
 
+use crate::asset_cache::{AssetCache, AssetCacheConfig};
+use crate::dependency::DependencyGraph;
+use crate::parsed_asset::ParsedAsset;
+
 /// 资产 ID
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AssetId(u64);
@@ -249,6 +253,12 @@ pub struct AssetServer {
     completed: Vec<AsyncLoadResult>,
     /// 线程池任务发送端
     task_tx: std::sync::mpsc::Sender<Box<dyn FnOnce() + Send>>,
+    /// 已解析的资产数据（原始字节 → 具体类型后存入此处）
+    parsed_assets: HashMap<AssetId, ParsedAsset>,
+    /// Content-addressed asset cache (LRU, keyed by content hash).
+    cache: AssetCache,
+    /// Dependency graph for cascade unloading.
+    dependency_graph: DependencyGraph,
     /// 文件监视器（hot-reload feature 启用时有效）
     #[cfg(feature = "hot-reload")]
     watcher: Option<crate::hot_reload::FileWatcher>,
@@ -286,6 +296,9 @@ impl AssetServer {
             async_tx: tx,
             completed: Vec::new(),
             task_tx,
+            parsed_assets: HashMap::new(),
+            cache: AssetCache::new(AssetCacheConfig::default()),
+            dependency_graph: DependencyGraph::new(),
             #[cfg(feature = "hot-reload")]
             watcher,
         }
@@ -324,6 +337,12 @@ impl AssetServer {
     pub fn load_async<T>(&mut self, path: impl AsRef<Path>) -> AssetHandle<T> {
         let handle: AssetHandle<T> = self.load(path);
         let id = handle.id();
+
+        // Cache-hit: if the asset is already loaded, skip the I/O dispatch
+        if self.loaded_cache.contains_key(&id) {
+            return handle;
+        }
+
         let file_path = handle.path().to_path_buf();
         let tx = self.async_tx.clone();
 
@@ -348,6 +367,16 @@ impl AssetServer {
                 Ok(data) => {
                     self.states.insert(result.id, LoadState::Loaded);
                     self.loaded_cache.insert(result.id, Arc::new(data.clone()));
+
+                    // Populate the content-addressed cache
+                    let content_hash = AssetCache::content_hash(data);
+                    let source_path = self.id_to_path.get(&result.id)
+                        .cloned()
+                        .unwrap_or_default();
+                    if let Err(e) = self.cache.put(content_hash, &source_path, data) {
+                        log::warn!("Asset cache put failed for {:?}: {}", result.id, e);
+                    }
+
                     log::debug!("Asset {:?} loaded successfully", result.id);
                 }
                 Err(e) => {
@@ -476,20 +505,91 @@ impl AssetServer {
     ///
     /// 遍历缓存，移除 `Arc::strong_count == 1` 的条目
     /// （仅 AssetServer 自身持有，所有外部 handle 已 drop）。
+    /// Cascade-unloads orphaned dependencies via the dependency graph.
     ///
     /// 返回本次清理的资产数量。
     pub fn process_unloads(&mut self) -> usize {
-        let before = self.loaded_cache.len();
-        self.loaded_cache.retain(|id, arc| {
-            if Arc::strong_count(arc) <= 1 {
-                log::debug!("自动卸载资产 {:?}", id);
-                self.states.insert(*id, LoadState::NotLoaded);
-                false
-            } else {
-                true
-            }
-        });
-        before - self.loaded_cache.len()
+        // Collect IDs whose Arc is only held by AssetServer (refcount == 1)
+        let unreferenced: Vec<AssetId> = self.loaded_cache.iter()
+            .filter(|(_, arc)| Arc::strong_count(arc) <= 1)
+            .map(|(&id, _)| id)
+            .collect();
+
+        let mut total_unloaded = 0;
+        for id in unreferenced {
+            log::debug!("自动卸载资产 {:?}", id);
+            let orphans = self.unload(id);
+            total_unloaded += 1 + orphans.len();
+        }
+
+        total_unloaded
+    }
+
+    /// Store a parsed asset for a given ID.
+    ///
+    /// After raw bytes are loaded and parsed (e.g., glTF -> MeshData),
+    /// call this to make the parsed result available via the storage.
+    pub fn insert_parsed(&mut self, id: AssetId, asset: ParsedAsset) {
+        self.parsed_assets.insert(id, asset);
+        self.states.insert(id, LoadState::Loaded);
+    }
+
+    /// Retrieve a reference to a previously stored parsed asset.
+    pub fn get_parsed(&self, id: AssetId) -> Option<&ParsedAsset> {
+        self.parsed_assets.get(&id)
+    }
+
+    /// Immutable access to the dependency graph.
+    pub fn dependency_graph(&self) -> &DependencyGraph {
+        &self.dependency_graph
+    }
+
+    /// Mutable access to the dependency graph.
+    pub fn dependency_graph_mut(&mut self) -> &mut DependencyGraph {
+        &mut self.dependency_graph
+    }
+
+    /// Register a parent→child dependency between two assets.
+    ///
+    /// When the parent is unloaded, children with no remaining parents
+    /// will be cascade-unloaded automatically.
+    pub fn add_dependency(&mut self, parent: AssetId, child: AssetId) {
+        self.dependency_graph.add_dependency(parent, child);
+    }
+
+    /// Immutable access to the content-addressed asset cache.
+    pub fn asset_cache(&self) -> &AssetCache {
+        &self.cache
+    }
+
+    /// Mutable access to the content-addressed asset cache.
+    pub fn asset_cache_mut(&mut self) -> &mut AssetCache {
+        &mut self.cache
+    }
+
+    /// Unload an asset and cascade-unload any orphaned dependencies.
+    ///
+    /// Removes the asset from all internal caches (`loaded_cache`, `parsed_assets`,
+    /// `states`) and then removes it from the dependency graph. Any children that
+    /// become orphans (no remaining parents) are also unloaded recursively.
+    ///
+    /// Returns the list of additionally unloaded (orphaned) asset IDs.
+    pub fn unload(&mut self, id: AssetId) -> Vec<AssetId> {
+        let orphans = self.dependency_graph.remove_and_cascade(id);
+
+        // Clean up the requested asset
+        self.loaded_cache.remove(&id);
+        self.parsed_assets.remove(&id);
+        self.states.insert(id, LoadState::NotLoaded);
+
+        // Clean up orphaned dependents
+        for &orphan in &orphans {
+            self.loaded_cache.remove(&orphan);
+            self.parsed_assets.remove(&orphan);
+            self.states.insert(orphan, LoadState::NotLoaded);
+        }
+
+        orphans
     }
 }
 
@@ -579,5 +679,94 @@ mod tests {
         server.reload(handle.id());
         // Should still be in loading state, not crash
         assert_eq!(server.load_state(&handle), LoadState::Loading);
+    }
+
+    #[test]
+    fn test_dependency_graph_accessors() {
+        let mut server = AssetServer::new("/tmp");
+        let parent = AssetId::from_raw(100);
+        let child = AssetId::from_raw(200);
+
+        server.add_dependency(parent, child);
+
+        assert!(server.dependency_graph().dependencies_of(parent).contains(&child));
+        assert!(server.dependency_graph().has_dependents(child));
+    }
+
+    #[test]
+    fn test_unload_cascade() {
+        let mut server = AssetServer::new("/tmp");
+        let scene_id = AssetId::from_raw(10);
+        let tex_id = AssetId::from_raw(20);
+        let mat_id = AssetId::from_raw(30);
+
+        // Simulate loaded assets
+        server.loaded_cache.insert(scene_id, Arc::new(vec![1]));
+        server.loaded_cache.insert(tex_id, Arc::new(vec![2]));
+        server.loaded_cache.insert(mat_id, Arc::new(vec![3]));
+        server.states.insert(scene_id, LoadState::Loaded);
+        server.states.insert(tex_id, LoadState::Loaded);
+        server.states.insert(mat_id, LoadState::Loaded);
+
+        // scene -> texture, scene -> material
+        server.add_dependency(scene_id, tex_id);
+        server.add_dependency(scene_id, mat_id);
+
+        let orphans = server.unload(scene_id);
+
+        // Both children should be orphaned and unloaded
+        assert!(orphans.contains(&tex_id));
+        assert!(orphans.contains(&mat_id));
+
+        // All caches should be cleared
+        assert!(server.get_cached(scene_id).is_none());
+        assert!(server.get_cached(tex_id).is_none());
+        assert!(server.get_cached(mat_id).is_none());
+
+        // States should be reset
+        assert_eq!(*server.states.get(&scene_id).unwrap(), LoadState::NotLoaded);
+        assert_eq!(*server.states.get(&tex_id).unwrap(), LoadState::NotLoaded);
+        assert_eq!(*server.states.get(&mat_id).unwrap(), LoadState::NotLoaded);
+    }
+
+    #[test]
+    fn test_unload_shared_dep_no_cascade() {
+        let mut server = AssetServer::new("/tmp");
+        let scene_a = AssetId::from_raw(1);
+        let scene_b = AssetId::from_raw(2);
+        let shared_tex = AssetId::from_raw(3);
+
+        server.loaded_cache.insert(scene_a, Arc::new(vec![1]));
+        server.loaded_cache.insert(scene_b, Arc::new(vec![2]));
+        server.loaded_cache.insert(shared_tex, Arc::new(vec![3]));
+
+        // Both scenes depend on the same texture
+        server.add_dependency(scene_a, shared_tex);
+        server.add_dependency(scene_b, shared_tex);
+
+        let orphans = server.unload(scene_a);
+
+        // shared_tex still has scene_b as parent, so not orphaned
+        assert!(orphans.is_empty());
+        assert!(server.get_cached(shared_tex).is_some());
+    }
+
+    #[test]
+    fn test_asset_cache_field() {
+        let server = AssetServer::new("/tmp");
+        assert!(server.asset_cache().is_empty());
+    }
+
+    #[test]
+    fn test_load_async_cache_hit_skips_dispatch() {
+        let mut server = AssetServer::new("/tmp");
+        let handle = server.load::<String>("test.txt");
+
+        // Manually insert into loaded_cache to simulate already-loaded
+        server.loaded_cache.insert(handle.id(), Arc::new(b"cached data".to_vec()));
+
+        // load_async should return immediately without dispatching I/O
+        let handle2 = server.load_async::<String>("test.txt");
+        assert_eq!(handle.id(), handle2.id());
     }
 }

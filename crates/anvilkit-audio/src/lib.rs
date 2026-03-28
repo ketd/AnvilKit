@@ -31,7 +31,7 @@ pub struct AudioPlugin;
 impl Plugin for AudioPlugin {
     fn build(&self, app: &mut App) {
         if let Some(engine) = AudioEngine::new() {
-            app.insert_resource(engine);
+            app.insert_non_send_resource(engine);
         }
         app.add_systems(AnvilKitSchedule::PostUpdate, (
             audio_playback_system,

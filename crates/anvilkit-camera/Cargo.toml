@@ -12,6 +12,11 @@ categories.workspace = true
 description = "AnvilKit camera system - FPS, third-person, orbit, and free camera controllers with effects"
 readme = "../../README.md"
 
+[features]
+default = []
+# Enable settings sync (mouse_sensitivity from Settings → CameraController)
+persistence = ["anvilkit-core/persistence"]
+
 [dependencies]
 anvilkit-core = { version = "0.1.0", path = "../anvilkit-core", features = ["bevy_ecs"] }
 anvilkit-ecs = { version = "0.1.0", path = "../anvilkit-ecs" }

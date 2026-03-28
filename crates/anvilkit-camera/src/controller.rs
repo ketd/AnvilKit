@@ -1,34 +1,34 @@
 use bevy_ecs::prelude::*;
 use glam::Vec3;
 
+use crate::input_curve::InputCurve;
+
 /// Camera control mode.
+///
+/// Defines the behavioral mode for a camera entity. Each mode determines how
+/// the camera responds to input and computes its transform.
+///
+/// Modes that require orbit data (`ThirdPerson`, `Orbit`) need an
+/// [`OrbitState`](crate::orbit::OrbitState) component on the same entity.
+/// `ThirdPerson` additionally needs a [`CameraRig`](crate::orbit::rig::CameraRig)
+/// to automatically follow a target entity.
+///
+/// `Rail` mode requires a [`CameraRail`](crate::constraints::rail::CameraRail) component.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CameraMode {
     /// First-person: mouse directly controls yaw/pitch.
     FirstPerson,
-    /// Third-person follow: orbit camera around a target point.
-    ThirdPerson {
-        /// World-space position the camera orbits around.
-        target: Vec3,
-        /// Current distance from the target.
-        distance: f32,
-        /// Minimum allowed orbit distance.
-        min_distance: f32,
-        /// Maximum allowed orbit distance.
-        max_distance: f32,
-    },
-    /// Orbit: orbit around a fixed point (no follow target).
-    Orbit {
-        /// Fixed world-space position the camera orbits around.
-        target: Vec3,
-        /// Current distance from the target.
-        distance: f32,
-        /// Minimum allowed orbit distance.
-        min_distance: f32,
-        /// Maximum allowed orbit distance.
-        max_distance: f32,
-    },
-    /// Free fly: editor/debug camera.
+    /// Third-person follow: orbit around a followed target.
+    /// Requires `OrbitState` + `CameraRig` on the same entity.
+    ThirdPerson,
+    /// Orbit: orbit around a fixed point (inspection/editor).
+    /// Requires `OrbitState` on the same entity.
+    Orbit,
+    /// Free fly: 6DOF editor/debug camera.
     Free,
+    /// Rail: camera follows a predefined path.
+    /// Requires `CameraRail` on the same entity.
+    Rail,
 }
 
 impl Default for CameraMode {
@@ -38,9 +38,12 @@ impl Default for CameraMode {
 }
 
 /// Camera controller component, attached to camera entities.
+///
+/// Controls how the camera responds to mouse/gamepad input and moves through
+/// the world. The actual behavior depends on the [`CameraMode`].
 #[derive(Component)]
 pub struct CameraController {
-    /// Current camera control mode (first-person, third-person, or free).
+    /// Current camera control mode.
     pub mode: CameraMode,
     /// Horizontal rotation angle in radians.
     pub yaw: f32,
@@ -50,14 +53,21 @@ pub struct CameraController {
     pub pitch_limits: (f32, f32),
     /// Mouse look sensitivity multiplier.
     pub mouse_sensitivity: f32,
-    /// Movement speed in units per second.
+    /// Movement speed in units per second (Free mode).
     pub move_speed: f32,
     /// Zoom speed multiplier for scroll-based zooming.
     pub zoom_speed: f32,
-    /// Smoothing factor for camera interpolation (0.0 = no smoothing).
-    pub smoothing: f32,
-    /// Base FOV in degrees (used as the reference for effects offsets)
+    /// Base FOV in degrees (used as the reference for effects offsets).
     pub base_fov: f32,
+
+    /// Smoothing speed for interpolation.
+    /// `0.0` = instant (no smoothing), higher values = smoother but laggier.
+    /// Uses frame-rate independent formula: `1 - e^(-speed * dt)`.
+    pub smoothing_speed: f32,
+
+    /// Input response curve for mouse look.
+    pub input_curve: InputCurve,
+
     // Internal smooth state
     pub(crate) smooth_yaw: f32,
     pub(crate) smooth_pitch: f32,
@@ -74,8 +84,9 @@ impl Default for CameraController {
             mouse_sensitivity: 0.003,
             move_speed: 10.0,
             zoom_speed: 2.0,
-            smoothing: 0.0,
             base_fov: 70.0,
+            smoothing_speed: 0.0,
+            input_curve: InputCurve::linear(),
             smooth_yaw: 0.0,
             smooth_pitch: 0.0,
             smooth_position: Vec3::ZERO,
@@ -84,18 +95,18 @@ impl Default for CameraController {
 }
 
 impl CameraController {
-    /// Get the effective yaw (smoothed if smoothing > 0).
+    /// Get the effective yaw (smoothed if smoothing_speed > 0).
     pub fn effective_yaw(&self) -> f32 {
-        if self.smoothing > 0.0 {
+        if self.smoothing_speed > 0.0 {
             self.smooth_yaw
         } else {
             self.yaw
         }
     }
 
-    /// Get the effective pitch (smoothed if smoothing > 0).
+    /// Get the effective pitch (smoothed if smoothing_speed > 0).
     pub fn effective_pitch(&self) -> f32 {
-        if self.smoothing > 0.0 {
+        if self.smoothing_speed > 0.0 {
             self.smooth_pitch
         } else {
             self.pitch
@@ -119,25 +130,45 @@ impl CameraController {
     }
 
     /// Toggle between FirstPerson and ThirdPerson modes.
-    pub fn toggle_perspective(&mut self, player_pos: Vec3) {
-        match &self.mode {
+    ///
+    /// When switching to ThirdPerson, enables smoothing. When switching back,
+    /// disables smoothing. Returns the new mode for callers that need to
+    /// insert/remove `OrbitState` and `CameraRig` components.
+    pub fn toggle_perspective(&mut self) -> CameraMode {
+        match self.mode {
             CameraMode::FirstPerson => {
-                self.mode = CameraMode::ThirdPerson {
-                    target: player_pos,
-                    distance: 5.0,
-                    min_distance: 2.0,
-                    max_distance: 20.0,
-                };
-                self.smoothing = 0.15;
+                self.mode = CameraMode::ThirdPerson;
+                self.smoothing_speed = 8.0;
             }
-            CameraMode::ThirdPerson { .. } => {
+            _ => {
                 self.mode = CameraMode::FirstPerson;
-                self.smoothing = 0.0;
+                self.smoothing_speed = 0.0;
             }
-            CameraMode::Orbit { .. } | CameraMode::Free => {
-                self.mode = CameraMode::FirstPerson;
-                self.smoothing = 0.0;
-            }
+        }
+        self.mode
+    }
+
+    /// Apply frame-rate independent smoothing to yaw/pitch.
+    pub(crate) fn update_smoothing(&mut self, dt: f32) {
+        if self.smoothing_speed > 0.0 {
+            let factor = 1.0 - (-self.smoothing_speed * dt).exp();
+            self.smooth_yaw += (self.yaw - self.smooth_yaw) * factor;
+            self.smooth_pitch += (self.pitch - self.smooth_pitch) * factor;
+        } else {
+            self.smooth_yaw = self.yaw;
+            self.smooth_pitch = self.pitch;
+        }
+    }
+
+    /// Apply frame-rate independent smoothing to position.
+    pub(crate) fn smooth_toward(&mut self, target: Vec3, dt: f32) -> Vec3 {
+        if self.smoothing_speed > 0.0 {
+            let factor = 1.0 - (-self.smoothing_speed * dt).exp();
+            self.smooth_position += (target - self.smooth_position) * factor;
+            self.smooth_position
+        } else {
+            self.smooth_position = target;
+            target
         }
     }
 }
@@ -173,11 +204,12 @@ mod tests {
     #[test]
     fn test_toggle_perspective() {
         let mut ctrl = CameraController::default();
-        assert!(matches!(ctrl.mode, CameraMode::FirstPerson));
-        ctrl.toggle_perspective(Vec3::ZERO);
-        assert!(matches!(ctrl.mode, CameraMode::ThirdPerson { .. }));
-        ctrl.toggle_perspective(Vec3::ZERO);
-        assert!(matches!(ctrl.mode, CameraMode::FirstPerson));
+        assert_eq!(ctrl.mode, CameraMode::FirstPerson);
+        let new_mode = ctrl.toggle_perspective();
+        assert_eq!(new_mode, CameraMode::ThirdPerson);
+        assert_eq!(ctrl.mode, CameraMode::ThirdPerson);
+        let new_mode = ctrl.toggle_perspective();
+        assert_eq!(new_mode, CameraMode::FirstPerson);
     }
 
     #[test]
@@ -185,5 +217,52 @@ mod tests {
         let ctrl = CameraController::default();
         assert!(ctrl.pitch_limits.0 < 0.0);
         assert!(ctrl.pitch_limits.1 > 0.0);
+    }
+
+    #[test]
+    fn test_smoothing_frame_rate_independence() {
+        // Run at 30fps for 1 second
+        let mut ctrl_30 = CameraController::default();
+        ctrl_30.smoothing_speed = 5.0;
+        ctrl_30.yaw = 1.0;
+        for _ in 0..30 {
+            ctrl_30.update_smoothing(1.0 / 30.0);
+        }
+
+        // Run at 60fps for 1 second
+        let mut ctrl_60 = CameraController::default();
+        ctrl_60.smoothing_speed = 5.0;
+        ctrl_60.yaw = 1.0;
+        for _ in 0..60 {
+            ctrl_60.update_smoothing(1.0 / 60.0);
+        }
+
+        // Both should converge to roughly the same value
+        let diff = (ctrl_30.smooth_yaw - ctrl_60.smooth_yaw).abs();
+        assert!(
+            diff < 0.01,
+            "30fps={}, 60fps={}, diff={}",
+            ctrl_30.smooth_yaw,
+            ctrl_60.smooth_yaw,
+            diff
+        );
+    }
+
+    #[test]
+    fn test_smooth_toward() {
+        let mut ctrl = CameraController::default();
+        ctrl.smoothing_speed = 10.0;
+        let target = Vec3::new(10.0, 5.0, 0.0);
+        for _ in 0..120 {
+            ctrl.smooth_toward(target, 1.0 / 60.0);
+        }
+        let dist = (ctrl.smooth_position - target).length();
+        assert!(dist < 0.01, "should converge to target, dist={dist}");
+    }
+
+    #[test]
+    fn test_camera_mode_eq() {
+        assert_eq!(CameraMode::FirstPerson, CameraMode::FirstPerson);
+        assert_ne!(CameraMode::FirstPerson, CameraMode::Free);
     }
 }

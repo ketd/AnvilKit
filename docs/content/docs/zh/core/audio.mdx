@@ -5,44 +5,6 @@ description: 音频系统 — 背景音乐、音效、空间音频
 
 `anvilkit-audio` 提供游戏音频播放功能，支持背景音乐和音效。
 
-## AudioEngine
-
-```rust
-use anvilkit_audio::engine::AudioEngine;
-
-let mut audio = AudioEngine::new()?;
-
-audio.play_bgm("assets/audio/theme.ogg", 0.8)?;
-audio.play_sfx("assets/audio/explosion.wav", 1.0)?;
-
-audio.set_bgm_volume(0.5);
-audio.set_sfx_volume(0.7);
-```
-
-## ECS 集成
-
-通过游戏逻辑中的 System 控制音频：
-
-```rust
-fn play_hit_sound(
-    mut audio: ResMut<AudioEngine>,
-    events: EventReader<HitEvent>,
-) {
-    for _event in events.read() {
-        audio.play_sfx("assets/audio/hit.wav", 1.0).ok();
-    }
-}
-```
-
-## 支持的格式
-
-| 格式 | 说明 |
-|--------|-------------|
-| `.ogg` | Ogg Vorbis — 推荐用于背景音乐 |
-| `.wav` | WAV — 推荐用于短音效 |
-| `.mp3` | MP3 — 兼容格式 |
-| `.flac` | FLAC — 无损格式 |
-
 ## ECS 音频系统
 
 推荐使用 ECS 组件管理音频：
@@ -50,7 +12,8 @@ fn play_hit_sound(
 ### AudioSource 组件
 
 ```rust
-use anvilkit_ecs::audio::{AudioSource, AudioBusCategory};
+use anvilkit_audio::AudioSource;
+use anvilkit_audio::AudioBusCategory;
 
 // 生成音频源实体
 commands.spawn(AudioSource {
@@ -72,11 +35,23 @@ commands.spawn(AudioSource {
 | `pitch` | `f32` | `1.0` | 播放速度倍率 |
 | `spatial` | `bool` | `false` | 启用 3D 空间音频 |
 | `bus` | `AudioBusCategory` | `SFX` | 混音总线路由 |
+| `asset_id` | `Option<u64>` | `None` | 可选的资产 ID，用于通过 `AssetServer` 加载 |
+
+#### 资产集成
+
+`AudioSource` 可以引用由 `AssetServer` 管理的资产：
+
+```rust
+// Create an AudioSource tied to an asset
+let source = AudioSource::from_asset_id(asset_id);
+```
+
+当设置了 `asset_id` 时，音频系统通过资产管线解析音频数据，而非直接从文件路径加载。
 
 ### AudioBus（音量混合）
 
 ```rust
-use anvilkit_ecs::audio::{AudioBus, AudioBusCategory};
+use anvilkit_audio::{AudioBus, AudioBusCategory};
 
 let mut bus = AudioBus::default();
 bus.master = 0.8;
@@ -97,3 +72,75 @@ let vol = bus.effective_volume(AudioBusCategory::Music); // 0.48
 ### 空间音频
 
 要使用 3D 定位音频，在相机上添加 `AudioListener` 组件，并在音频源上设置 `spatial: true`。`spatial_audio_system` 会自动计算距离衰减。
+
+### 立体声声像
+
+`spatial_audio_system` 根据听者朝向计算立体声声像：
+
+1. 计算从听者到音源的方向向量。
+2. 与听者的**右方向**向量进行点积，得到范围为 -1.0（完全左声道）到 1.0（完全右声道）的声像值。
+3. 根据声像值调整左右声道音量，提供自然的立体声效果，无需环绕声硬件。
+
+## NonSend 资源模式
+
+`AudioEngine` 必须在主线程上访问，因为底层平台音频 API（如 macOS CoreAudio）不是线程安全的。之前的 `unsafe impl Send/Sync` 变通方案已在 v0.3 中移除。
+
+**设置：**
+
+```rust
+// In plugin build — use insert_non_send_resource, NOT insert_resource
+app.insert_non_send_resource(AudioEngine::new().unwrap());
+```
+
+**系统：**
+
+```rust
+fn play_hit_sound(
+    mut audio: NonSendMut<AudioEngine>,   // NOT ResMut<AudioEngine>
+    events: EventReader<HitEvent>,
+) {
+    for _event in events.read() {
+        audio.play_sfx("assets/audio/hit.wav", 1.0).ok();
+    }
+}
+```
+
+> **迁移说明：** 如果之前使用 `ResMut<AudioEngine>`，请改为 `NonSendMut<AudioEngine>`。ECS 会自动将这些系统调度到主线程上。
+
+## AudioEngine
+
+```rust
+use anvilkit_audio::engine::AudioEngine;
+
+let mut audio = AudioEngine::new()?;
+
+audio.play_bgm("assets/audio/theme.ogg", 0.8)?;
+audio.play_sfx("assets/audio/explosion.wav", 1.0)?;
+
+audio.set_bgm_volume(0.5);
+audio.set_sfx_volume(0.7);
+```
+
+## ECS 集成
+
+通过游戏逻辑中的 System 控制音频。注意：`AudioEngine` 使用 `NonSendMut`（参见上方 [NonSend 资源模式](#nonsend-资源模式)）。
+
+```rust
+fn play_hit_sound(
+    mut audio: NonSendMut<AudioEngine>,
+    events: EventReader<HitEvent>,
+) {
+    for _event in events.read() {
+        audio.play_sfx("assets/audio/hit.wav", 1.0).ok();
+    }
+}
+```
+
+## 支持的格式
+
+| 格式 | 说明 |
+|--------|-------------|
+| `.ogg` | Ogg Vorbis — 推荐用于背景音乐 |
+| `.wav` | WAV — 推荐用于短音效 |
+| `.mp3` | MP3 — 兼容格式 |
+| `.flac` | FLAC — 无损格式 |

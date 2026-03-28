@@ -83,7 +83,7 @@ fn hello() {
 
 ### Craft
 
-Minecraft 风格体素沙盒 — 地形生成、方块建造、水体渲染、昼夜循环、贪心网格化。
+Minecraft 风格体素沙盒 — 地形生成、方块建造、水体渲染、昼夜循环、贪心网格化、生命系统（摔落伤害与溺水）、槽位背包、数据驱动方块、玩家状态持久化。
 
 ```bash
 cargo run -p craft
@@ -94,7 +94,7 @@ cargo run -p craft
 
 ### Billiards
 
-2D 台球模拟 — AABB 物理、球与球碰撞、开球规则、得分系统。
+PBR 台球模拟 — AABB 物理、球与球碰撞、开球规则、得分系统、轨道摄像机控制。
 
 ```bash
 cargo run -p billiards

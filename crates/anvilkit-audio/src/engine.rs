@@ -18,23 +18,19 @@ struct AudioEngineInner {
     sinks: HashMap<Entity, Sink>,
 }
 
-// SAFETY: AudioEngine 仅通过 `NonSend<AudioEngine>` / `Option<NonSendMut<AudioEngine>>`
-// 在 main thread 上访问。bevy_ecs 的 NonSend 约束保证不会从 worker thread 访问。
-// 这比之前的 `impl Send + Sync for AudioEngine` 更安全：
-// - 旧方案：声称 Send+Sync，可被任何 system 并行访问 → UB
-// - 新方案：仅标记 Send 以满足 Resource trait，实际通过 NonSend 约束保护
-unsafe impl Send for AudioEngineInner {}
-unsafe impl Sync for AudioEngineInner {}
+// NOTE: No `unsafe impl Send/Sync` — OutputStream (CoreAudio on macOS) is !Send.
+// AudioEngine is inserted as a non-send resource and accessed only on the main thread
+// via `NonSend<AudioEngine>` / `NonSendMut<AudioEngine>`.
 
-/// 音频引擎资源
+/// 音频引擎 (non-send resource)
 ///
 /// 持有 rodio OutputStream 和活跃 Sink 的管理器。
 ///
 /// # 线程安全
 ///
-/// 此类型应通过 `NonSend<AudioEngine>` 访问以保证主线程安全。
-/// 底层 rodio/cpal 在某些平台上不满足 Send，通过架构约束保证安全性。
-#[derive(Resource)]
+/// 此类型通过 `NonSend<AudioEngine>` / `NonSendMut<AudioEngine>` 访问，
+/// bevy_ecs 保证只在 main thread 上运行。不实现 `Resource`，因为
+/// 底层 OutputStream 是 `!Send`（macOS CoreAudio）。
 pub struct AudioEngine {
     inner: AudioEngineInner,
 }
@@ -116,9 +112,13 @@ mod tests {
     }
 
     #[test]
-    fn test_engine_is_send_sync() {
-        fn assert_send_sync<T: Send + Sync>() {}
-        assert_send_sync::<AudioEngine>();
+    fn test_engine_is_not_send() {
+        // AudioEngine wraps OutputStream which is !Send on macOS (CoreAudio).
+        // It must be used as a non-send resource.
+        fn is_send<T: Send>() {}
+        // Compile-time proof: the following would fail to compile:
+        // is_send::<AudioEngine>();
+        let _ = is_send::<u32>; // suppress unused warning
     }
 
     #[test]

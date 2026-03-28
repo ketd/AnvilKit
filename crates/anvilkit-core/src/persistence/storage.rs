@@ -19,6 +19,7 @@ use crate::error::AnvilKitError;
 /// storage.put("chunk/3/-2", b"binary chunk data").unwrap();
 /// let data = storage.get("chunk/3/-2").unwrap();
 /// ```
+#[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::system::Resource))]
 pub struct WorldStorage {
     base_dir: PathBuf,
 }
@@ -28,7 +29,7 @@ impl WorldStorage {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, AnvilKitError> {
         let base_dir = path.as_ref().to_path_buf();
         std::fs::create_dir_all(&base_dir)
-            .map_err(|e| AnvilKitError::generic(format!("Failed to create storage dir: {}", e)))?;
+            .map_err(|e| AnvilKitError::persistence_with_path(format!("Failed to create storage dir: {}", e), base_dir.display().to_string()))?;
         Ok(Self { base_dir })
     }
 
@@ -43,14 +44,14 @@ impl WorldStorage {
         let path = self.key_path(key);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|e| AnvilKitError::generic(format!("Failed to create dir for key '{}': {}", key, e)))?;
+                .map_err(|e| AnvilKitError::persistence_with_path(format!("Failed to create dir for key '{}': {}", key, e), parent.display().to_string()))?;
         }
         // 写入临时文件再 rename，确保原子性
         let tmp_path = path.with_extension("tmp");
         std::fs::write(&tmp_path, value)
-            .map_err(|e| AnvilKitError::generic(format!("Failed to write key '{}': {}", key, e)))?;
+            .map_err(|e| AnvilKitError::persistence_with_path(format!("Failed to write key '{}': {}", key, e), tmp_path.display().to_string()))?;
         std::fs::rename(&tmp_path, &path)
-            .map_err(|e| AnvilKitError::generic(format!("Failed to rename for key '{}': {}", key, e)))?;
+            .map_err(|e| AnvilKitError::persistence_with_path(format!("Failed to rename for key '{}': {}", key, e), path.display().to_string()))?;
         Ok(())
     }
 
@@ -59,7 +60,7 @@ impl WorldStorage {
         let path = self.key_path(key);
         if path.exists() {
             std::fs::remove_file(&path)
-                .map_err(|e| AnvilKitError::generic(format!("Failed to delete key '{}': {}", key, e)))?;
+                .map_err(|e| AnvilKitError::persistence_with_path(format!("Failed to delete key '{}': {}", key, e), path.display().to_string()))?;
         }
         Ok(())
     }

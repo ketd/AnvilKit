@@ -13,7 +13,11 @@ AnvilKit is a modular game infrastructure framework written in Rust, providing c
 - **Audio System** — Spatial audio and sound effect management based on `kira`/`rodio`
 - **Asset Pipeline** — glTF loading, skeletal animation, procedural mesh generation
 - **Input System** — Cross-platform input abstraction with custom Action Map support
-- **UI System** — Immediate-mode UI based on `taffy` layout
+- **UI System** — Retained-mode UI based on `taffy` flexbox layout with interactive widgets
+- **App Runner** — `AnvilKitApp` eliminates boilerplate: owns event loop, input forwarding, and frame lifecycle via `GameCallbacks`
+- **Gameplay Systems** — Feature-gated building blocks: Health, Inventory, Cooldown, StatusEffect, EntityPool
+- **Data & i18n** — `DataTable` (RON/JSON) for data-driven configuration and `Locale` for localization with fallback chains
+- **Camera System** — 5 camera modes (FirstPerson, ThirdPerson, Orbit, Free, Rail), trauma shake, spring arm, transitions
 - **Developer Tools** — CLI scaffolding, code generation, performance analysis
 
 ## Tech Stack
@@ -25,11 +29,14 @@ AnvilKit is a modular game infrastructure framework written in Rust, providing c
 | Math | `glam` |
 | Physics | `rapier2d`, `rapier3d` |
 | Audio | `kira`, `rodio` |
-| UI | `taffy`, `egui` |
+| UI | `taffy` |
 | Assets | `gltf`, `image` |
+| Camera | `noise` (Perlin shake) |
+| Data | `ron`, `serde_json` |
+| Gameplay | (no external deps — pure Rust) |
 
 ## Quick Links
 
 - [Getting Started](/en/docs/getting-started) — Create your first project in 5 minutes
 - [Architecture Overview](/en/docs/architecture) — Understand the engine's overall design
-- [Crate Documentation](/en/docs/crates/core) — Module API reference
+- [API Reference](/en/docs/api-reference) — Module API reference

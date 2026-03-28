@@ -5,6 +5,15 @@ description: Input system — keyboard, mouse, Action Map, RenderApp integration
 
 `anvilkit-input` provides cross-platform input abstraction with keyboard and mouse support, a logical Action Map system, and helpers for integrating with the render window event loop.
 
+## InputPlugin (ECS Auto-Plugin)
+
+`InputPlugin` is included in `DefaultPlugins` and sets up the input system automatically:
+
+- Initializes `InputState` and `ActionMap` as ECS resources — games do not need to manually insert them.
+- Registers `action_map_update_system` in the `PreUpdate` schedule, so action states are always fresh before game logic runs.
+
+> **Recommended entry point:** The simplest way to get input working is through `AnvilKitApp::run()`, which handles input forwarding, frame lifecycle, and plugin setup. The manual `RenderApp` integration described later in this page is the advanced/manual approach for custom event loops.
+
 ## InputState
 
 `InputState` is an ECS `Resource` that tracks per-frame keyboard and mouse state. It distinguishes between continuous press, first-frame press, and first-frame release.
@@ -119,6 +128,29 @@ pub enum InputBinding {
 | `is_action_just_released` | `(&self, action: &str) -> bool` | True only on the deactivation frame. |
 | `get_bindings` | `(&self, action: &str) -> Option<&[InputBinding]>` | Inspect current bindings. |
 | `clear_bindings` | `(&mut self, action: &str)` | Remove all bindings for an action. |
+| `apply_overrides` | `(&mut self, overrides: HashMap<String, String>)` | Apply key binding overrides from `Settings`. Each entry maps an action name to a key name string, replacing existing bindings for that action. |
+
+### Parsing Helpers
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `InputBinding::from_key_name` | `(name: &str) -> Option<InputBinding>` | Parse a key name string (e.g. `"W"`, `"Space"`, `"MouseLeft"`) into an `InputBinding`. |
+| `KeyCode::from_name` | `(name: &str) -> Option<KeyCode>` | Parse a key name string into a `KeyCode`. Case-insensitive. |
+
+```rust
+use anvilkit_input::action_map::{InputBinding, ActionMap};
+use anvilkit_input::input_state::KeyCode;
+
+// Parse key names from config
+let binding = InputBinding::from_key_name("Space").unwrap();
+let key = KeyCode::from_name("W").unwrap();
+
+// Apply overrides from Settings
+let mut overrides = HashMap::new();
+overrides.insert("jump".into(), "Space".into());
+overrides.insert("shoot".into(), "MouseLeft".into());
+action_map.apply_overrides(overrides);
+```
 
 ### Usage Example
 
@@ -205,6 +237,8 @@ gamepad.end_frame(); // Clear just_pressed/just_released
 
 > **Note:** winit 0.30 removed built-in gamepad support. A separate backend (e.g., `gilrs`) is required to populate `GamepadState`. `AutoInputPlugin` handles keyboard/mouse only.
 
+> **Gamepad event forwarding:** The `RenderApp` and `AnvilKitApp` event loops now forward gamepad connection, button, and axis events into `GamepadState` when a gilrs backend is present. This eliminates the need for manual `GamepadState` updates in game code.
+
 ## ActionId (Zero-Allocation Lookups)
 
 For hot-loop performance, register actions to get an `ActionId` and query without string hashing:
@@ -250,7 +284,9 @@ let x = map.axis_value("move_x", &input, gamepad.as_ref());
 
 When both A and D are pressed simultaneously, they cancel out to 0.0.
 
-## RenderApp Integration
+## RenderApp Integration (Advanced / Manual)
+
+> Most games should use `AnvilKitApp::run()` instead of wiring up `RenderApp` manually. The section below is for games that need a fully custom event loop.
 
 When using `anvilkit-render`'s `RenderApp`, three helper methods bridge OS window events into the ECS `InputState` resource automatically. Games with a custom `ApplicationHandler` can call these directly.
 

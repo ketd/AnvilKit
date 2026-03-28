@@ -30,4 +30,5 @@ anvilkit-data = { version = "0.1.0", path = "../anvilkit-data" }
 default = []
 serde = ["anvilkit-core/serde", "anvilkit-ecs/serde"]
 rapier = ["anvilkit-ecs/rapier"]
+persistence = ["anvilkit-core/persistence", "anvilkit-ecs/persistence", "anvilkit-camera/persistence"]
 debug = ["anvilkit-core/debug", "anvilkit-ecs/debug", "anvilkit-render/debug"]

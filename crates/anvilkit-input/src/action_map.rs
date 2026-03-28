@@ -33,6 +33,25 @@ pub enum InputBinding {
     Mouse(MouseButton),
 }
 
+impl InputBinding {
+    /// Parse a key name string into an `InputBinding`.
+    ///
+    /// Recognises mouse buttons (`"MouseLeft"`, `"MouseRight"`, `"MouseMiddle"`) and
+    /// all keyboard key names supported by [`KeyCode::from_name`].
+    /// Returns `None` for unrecognised names.
+    pub fn from_key_name(name: &str) -> Option<Self> {
+        // Try mouse buttons first
+        match name {
+            "MouseLeft" => return Some(Self::Mouse(MouseButton::Left)),
+            "MouseRight" => return Some(Self::Mouse(MouseButton::Right)),
+            "MouseMiddle" => return Some(Self::Mouse(MouseButton::Middle)),
+            _ => {}
+        }
+        // Try keyboard
+        KeyCode::from_name(name).map(Self::Key)
+    }
+}
+
 /// 输入轴绑定
 #[derive(Debug, Clone)]
 pub enum AxisBinding {
@@ -209,6 +228,20 @@ impl ActionMap {
         self.states.remove(action);
     }
 
+    /// Apply key binding overrides from a settings map.
+    ///
+    /// Each entry maps an action name to a key name string (e.g., `"W"`, `"Space"`, `"MouseLeft"`).
+    /// Existing bindings for the action are cleared and replaced with the override.
+    /// Unknown key names are silently ignored.
+    pub fn apply_overrides(&mut self, overrides: &std::collections::HashMap<String, String>) {
+        for (action, key_name) in overrides {
+            if let Some(binding) = InputBinding::from_key_name(key_name) {
+                self.clear_bindings(action);
+                self.add_binding(action, binding);
+            }
+        }
+    }
+
     /// 注册动作并返回高性能 ActionId
     ///
     /// 使用 ActionId 进行后续查询可避免 String 堆分配。
@@ -368,6 +401,119 @@ mod tests {
 
         assert!(map.is_action_active_by_id(id));
         assert!(map.is_action_active("jump"));
+    }
+
+    #[test]
+    fn test_input_binding_from_key_name_keyboard() {
+        assert_eq!(
+            InputBinding::from_key_name("W"),
+            Some(InputBinding::Key(KeyCode::W))
+        );
+        assert_eq!(
+            InputBinding::from_key_name("Space"),
+            Some(InputBinding::Key(KeyCode::Space))
+        );
+        assert_eq!(
+            InputBinding::from_key_name("Escape"),
+            Some(InputBinding::Key(KeyCode::Escape))
+        );
+        assert_eq!(
+            InputBinding::from_key_name("F1"),
+            Some(InputBinding::Key(KeyCode::F1))
+        );
+        assert_eq!(
+            InputBinding::from_key_name("Key1"),
+            Some(InputBinding::Key(KeyCode::Key1))
+        );
+        assert_eq!(
+            InputBinding::from_key_name("LShift"),
+            Some(InputBinding::Key(KeyCode::LShift))
+        );
+        assert_eq!(
+            InputBinding::from_key_name("Up"),
+            Some(InputBinding::Key(KeyCode::Up))
+        );
+    }
+
+    #[test]
+    fn test_input_binding_from_key_name_mouse() {
+        assert_eq!(
+            InputBinding::from_key_name("MouseLeft"),
+            Some(InputBinding::Mouse(MouseButton::Left))
+        );
+        assert_eq!(
+            InputBinding::from_key_name("MouseRight"),
+            Some(InputBinding::Mouse(MouseButton::Right))
+        );
+        assert_eq!(
+            InputBinding::from_key_name("MouseMiddle"),
+            Some(InputBinding::Mouse(MouseButton::Middle))
+        );
+    }
+
+    #[test]
+    fn test_input_binding_from_key_name_unknown() {
+        assert_eq!(InputBinding::from_key_name("NonexistentKey"), None);
+        assert_eq!(InputBinding::from_key_name(""), None);
+        assert_eq!(InputBinding::from_key_name("mouse_left"), None);
+    }
+
+    #[test]
+    fn test_apply_overrides_replaces_bindings() {
+        let mut map = ActionMap::new();
+        map.add_binding("jump", InputBinding::Key(KeyCode::Space));
+        map.add_binding("jump", InputBinding::Key(KeyCode::W));
+
+        // Override jump to use Enter instead
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert("jump".to_string(), "Enter".to_string());
+        map.apply_overrides(&overrides);
+
+        let bindings = map.get_bindings("jump").unwrap();
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0], InputBinding::Key(KeyCode::Enter));
+    }
+
+    #[test]
+    fn test_apply_overrides_mouse_binding() {
+        let mut map = ActionMap::new();
+        map.add_binding("fire", InputBinding::Key(KeyCode::Space));
+
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert("fire".to_string(), "MouseLeft".to_string());
+        map.apply_overrides(&overrides);
+
+        let bindings = map.get_bindings("fire").unwrap();
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0], InputBinding::Mouse(MouseButton::Left));
+    }
+
+    #[test]
+    fn test_apply_overrides_ignores_unknown() {
+        let mut map = ActionMap::new();
+        map.add_binding("jump", InputBinding::Key(KeyCode::Space));
+
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert("jump".to_string(), "NonexistentKey".to_string());
+        map.apply_overrides(&overrides);
+
+        // Original binding should remain since the override key was unknown
+        let bindings = map.get_bindings("jump").unwrap();
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0], InputBinding::Key(KeyCode::Space));
+    }
+
+    #[test]
+    fn test_apply_overrides_new_action() {
+        let mut map = ActionMap::new();
+
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert("crouch".to_string(), "LControl".to_string());
+        map.apply_overrides(&overrides);
+
+        let bindings = map.get_bindings("crouch").unwrap();
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0], InputBinding::Key(KeyCode::LControl));
     }
 
     #[test]

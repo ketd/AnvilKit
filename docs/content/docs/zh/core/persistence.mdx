@@ -7,6 +7,42 @@ description: 设置、存档管理器和世界存储，用于游戏数据
 
 持久化模块提供三个层次：玩家**设置（Settings）**、多存档槽位**存档管理器（SaveManager）**和原始键值**世界存储（WorldStorage）**。
 
+> **Resource 派生：** 当启用 `bevy_ecs` feature 时，所有持久化类型 — `SaveManager`、`Settings`、`WorldStorage`、`AutoSaveConfig`、`AutoSaveState` 和 `MigrationRunner` — 均派生 `Resource`，可以直接插入到 ECS world 中。
+
+### PersistencePlugin
+
+`PersistencePlugin` 受 `"persistence"` feature 门控，在 ECS 调度中配置自动存档支持：
+
+- 将 `AutoSaveConfig` 和 `AutoSaveState` 注册为 ECS 资源。
+- 向调度中添加 `auto_save_tick_system`，该系统计算经过时间，并在配置的间隔到期时触发存档。
+
+```rust
+use anvilkit_ecs::plugins::PersistencePlugin;
+
+app.add_plugins(PersistencePlugin);
+
+// Optionally configure the auto-save interval (default: 300 seconds)
+app.insert_resource(AutoSaveConfig { interval_secs: 120.0 });
+```
+
+### SettingsApplyPlugin
+
+`SettingsApplyPlugin` 在每帧的 `PostUpdate` 阶段运行，将 `Settings` 资源同步到运行时游戏状态：
+
+- **音频：** 将 `Settings.audio` 字段（主音量、音乐、音效音量）复制到 `AudioBus` 资源中。
+- **输入：** 将 `Settings.input.mouse_sensitivity` 复制到 `CameraController` 资源中。
+
+这意味着游戏只需修改 `Settings` — 插件会自动传播这些值。
+
+### 错误分类
+
+持久化函数返回类型化的 `AnvilKitError::Persistence` 变体，取代旧的 `generic()` 错误。使用专用构造器：
+
+```rust
+AnvilKitError::persistence("save slot corrupted");
+AnvilKitError::persistence_with_path("failed to write", &path);
+```
+
 ### Settings
 
 以 RON 格式存储的类型化配置。当文件缺失或损坏时，回退到默认值。

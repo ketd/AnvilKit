@@ -40,6 +40,7 @@ pub struct SaveSlotInfo {
 ///     ├── meta.ron
 ///     └── data/
 /// ```
+#[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::system::Resource))]
 pub struct SaveManager {
     saves_dir: PathBuf,
     game_version: String,
@@ -50,7 +51,7 @@ impl SaveManager {
     pub fn new(saves_dir: impl AsRef<Path>, game_version: &str) -> Result<Self, AnvilKitError> {
         let saves_dir = saves_dir.as_ref().to_path_buf();
         std::fs::create_dir_all(&saves_dir)
-            .map_err(|e| AnvilKitError::generic(format!("Failed to create saves dir: {}", e)))?;
+            .map_err(|e| AnvilKitError::persistence_with_path(format!("Failed to create saves dir: {}", e), saves_dir.display().to_string()))?;
         Ok(Self {
             saves_dir,
             game_version: game_version.to_string(),
@@ -88,7 +89,7 @@ impl SaveManager {
         let slot_dir = self.saves_dir.join(slot_name);
         let data_dir = slot_dir.join("data");
         std::fs::create_dir_all(&data_dir)
-            .map_err(|e| AnvilKitError::generic(format!("Failed to create save slot dir: {}", e)))?;
+            .map_err(|e| AnvilKitError::persistence_with_path(format!("Failed to create save slot dir: {}", e), data_dir.display().to_string()))?;
 
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -104,9 +105,9 @@ impl SaveManager {
         };
 
         let ron_str = ron::ser::to_string_pretty(&info, ron::ser::PrettyConfig::default())
-            .map_err(|e| AnvilKitError::serialization(format!("Save meta serialize failed: {}", e)))?;
+            .map_err(|e| AnvilKitError::persistence(format!("Save meta serialize failed: {}", e)))?;
         std::fs::write(slot_dir.join("meta.ron"), ron_str)
-            .map_err(|e| AnvilKitError::generic(format!("Failed to write save meta: {}", e)))?;
+            .map_err(|e| AnvilKitError::persistence_with_path(format!("Failed to write save meta: {}", e), slot_dir.join("meta.ron").display().to_string()))?;
 
         Ok(data_dir)
     }
@@ -128,7 +129,7 @@ impl SaveManager {
         let slot_dir = self.saves_dir.join(slot_name);
         if slot_dir.exists() {
             std::fs::remove_dir_all(&slot_dir)
-                .map_err(|e| AnvilKitError::generic(format!("Failed to delete save '{}': {}", slot_name, e)))?;
+                .map_err(|e| AnvilKitError::persistence_with_path(format!("Failed to delete save '{}': {}", slot_name, e), slot_dir.display().to_string()))?;
         }
         Ok(())
     }

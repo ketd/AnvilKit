@@ -16,10 +16,14 @@ flowchart TB
   end
   subgraph system["📦 系统层"]
     umbrella["anvilkit (伞 crate)"]
+    app["anvilkit-app"]
     camera["anvilkit-camera"]
     audio["anvilkit-audio"]
     input["anvilkit-input"]
     assets["anvilkit-assets"]
+    ui["anvilkit-ui"]
+    gameplay["anvilkit-gameplay"]
+    data["anvilkit-data"]
   end
   subgraph core["⚙️ 核心层"]
     ecs["anvilkit-ecs"]
@@ -44,9 +48,13 @@ flowchart BT
   ecs["anvilkit-ecs\n(App, Plugin, Schedule, Transform, Physics)"]
   render["anvilkit-render"]
   input["anvilkit-input\n(InputState, ActionMap)"]
-  camera["anvilkit-camera\n(控制器, 效果)"]
+  camera["anvilkit-camera\n(5模式, Trauma抖动, 弹簧臂, 轨道)"]
   assets["anvilkit-assets\n(glTF, 动画, AssetServer)"]
   audio["anvilkit-audio\n(AudioSource, 空间音频)"]
+  app["anvilkit-app\n(AnvilKitApp, GameCallbacks, GameConfig)"]
+  ui["anvilkit-ui\n(Widget, flexbox 布局, UiPlugin)"]
+  gameplay["anvilkit-gameplay\n(Health, Inventory, Cooldown, StatusEffect)"]
+  data["anvilkit-data\n(DataTable, Locale)"]
 
   core --> ecs
   ecs --> render
@@ -55,6 +63,13 @@ flowchart BT
   input --> camera
   core --> assets
   ecs --> audio
+  ecs --> app
+  render --> app
+  input --> app
+  core --> app
+  ecs --> gameplay
+  ecs --> data
+  ecs --> ui
 `} />
 
 ## 每帧生命周期
@@ -63,6 +78,10 @@ flowchart BT
 flowchart TD
   subgraph EL["事件循环 (winit)"]
     direction TB
+
+    subgraph E0["0. resumed (首次)"]
+      gcinit["GameCallbacks::init()"]
+    end
 
     subgraph E1["1. window_event / device_event"]
       fwd_input["forward_input() → InputState"]
@@ -82,12 +101,13 @@ flowchart TD
         cleanup["Cleanup"]
         evflush --> main --> pre --> fixed --> upd --> post --> cleanup
       end
+      gcpost["GameCallbacks::post_update()"]
       endframe["InputState.end_frame()"]
       redraw["window.request_redraw()"]
-      dt --> update --> endframe --> redraw
+      dt --> update --> gcpost --> endframe --> redraw
     end
 
-    subgraph E3["3. RedrawRequested → render_frame()"]
+    subgraph E3["3. RedrawRequested → GameCallbacks::render()"]
       shadow["阴影 Pass ×3 (CSM)"]
       hdr["HDR 场景 Pass (PBR + MSAA 4×)"]
       ssao["SSAO Pass"]
@@ -100,7 +120,7 @@ flowchart TD
       shadow --> hdr --> ssao --> dof --> mblur --> bloom --> cg --> tone --> hud
     end
 
-    E1 --> E2 --> E3
+    E0 -.-> E1 --> E2 --> E3
   end
 `} />
 
@@ -127,29 +147,65 @@ flowchart TD
 | `anvilkit-ecs` | `rapier` | rapier3d 物理引擎运行时集成 |
 | `anvilkit-assets` | `hot-reload` | notify 文件监视热重载 |
 | `anvilkit-assets` | `bevy_ecs` | Skeleton, AnimationPlayer 的 Component derive |
+| `anvilkit-gameplay` | `stats` | Stats、Health、DamageEvent、health_system |
+| `anvilkit-gameplay` | `inventory` | SlotInventory、StackInventory、ItemStack |
+| `anvilkit-gameplay` | `cooldown` | Cooldown、cooldown_tick_system |
+| `anvilkit-gameplay` | `status-effect` | StatusEffect、StatusEffectList、StackPolicy |
+| `anvilkit-gameplay` | `entity-pool` | EntityPool 实体回收 |
 
 ## 模块概览
 
 ### anvilkit-core
-基础类型库: 数学工具 (Vec3, Mat4, Transform, GlobalTransform, 插值), 时间系统, 错误类型 (AnvilKitError，`with_context` 保留原始错误类别), 持久化系统 (SaveManager, Settings, WorldStorage — 均返回 `Result<_, AnvilKitError>`)。
+基础类型库：数学工具 (Vec3, Mat4, Transform, GlobalTransform, 插值)、时间系统 (Time, Timer)、错误类型 (AnvilKitError，`with_context` 保留原始错误类别)、持久化系统 (SaveManager, Settings, WorldStorage — 均返回 `Result<_, AnvilKitError>`)。Aabb 轴对齐包围盒、Frustum 和射线投射工具 (screen_to_ray, ray_plane_intersection, ray_sphere_intersection) — 在 v0.3 中从 render crate 迁移而来。持久化错误类别 (AnvilKitError::Persistence)，支持 category-preserving 的 with_context。
 
 ### anvilkit-ecs
-基于 `bevy_ecs 0.14` 的应用框架: App 生命周期, Plugin 系统（含唯一性检查）, Schedule 调度 (Main/Startup/PreUpdate/Update/PostUpdate/Cleanup), AppExit 优雅退出, Transform 层级传播（自动同步）, 物理（缩放感知 AABB + rapier3d）, 场景序列化 (RON)，FixedUpdate 调度（基于累加器的确定性时间步长）、事件系统（bevy_ecs `Events<T>`/EventWriter/EventReader）、`GameState<S>` 状态机、SerializableRegistry 类型擦除场景序列化、AutoInputPlugin 和 AutoDeltaTimePlugin 自动帧管理。
+基于 `bevy_ecs 0.14` 的应用框架：App 生命周期 (new -> add_plugins -> add_systems -> run)、Plugin 系统（含唯一性检查）、Schedule 调度 (Main/Startup/PreUpdate/Update/PostUpdate/Cleanup)、AppExit 优雅退出、Transform 层级传播（Parent/Children/GlobalTransform 自动同步）、物理（缩放感知 AABB + rapier3d 集成）、场景序列化 (RON)、FixedUpdate 调度（基于累加器的确定性时间步长）、事件系统（bevy_ecs `Events<T>`/EventWriter/EventReader）、`GameState<S>` 状态机、SerializableRegistry 类型擦除场景序列化、AutoInputPlugin 和 AutoDeltaTimePlugin 自动帧管理。PersistencePlugin 用于自动存档集成，SettingsApplyPlugin 将 Settings 同步到引擎子系统。物理模块拆分为目录结构：components.rs、aabb.rs、rapier.rs、events.rs。
 
 ### anvilkit-render
-统一 2D/3D 渲染管线: PBR + HDR + Bloom + SSAO + CSM + IBL + MSAA + 骨骼动画 + 视锥剔除 + 实例化 + Sprite/Line/Particle/Text/UI，StandardMaterial 组件（PBR builder 模式）、PostProcessSettings（SSAO/DOF/运动模糊/Bloom/色彩分级）、DemoApp 脚手架、正交/透视投影枚举、多相机优先级、PipelineCache/BindGroupCache、点光/聚光阴影系统（ShadowAtlas）。
+统一 2D/3D 渲染管线：
+- PBR 材质系统 (Cook-Torrance BRDF, 5 种纹理贴图)
+- HDR 渲染 (Rgba16Float) + ACES Filmic 色调映射
+- Bloom (13-tap 降采样 + 9-tap tent 上采样, 5 级 mip)
+- SSAO (半球采样, 半分辨率, 深度重建法线)
+- 级联阴影贴图 (3 级级联, D2Array, PCF)
+- IBL (BRDF LUT + 环境辐照度)
+- MSAA 4x 抗锯齿
+- GPU 骨骼动画 (线性混合蒙皮, 128 关节)
+- 视锥剔除 + GPU 实例化 + 批次排序
+- Sprite、Line、Particle、Text、UI 渲染器
+- StandardMaterial 组件 (PBR builder 模式)
+- PostProcessSettings (SSAO/DOF/运动模糊/Bloom/色彩分级)
+- 正交/透视投影枚举, 多相机优先级
+- PipelineCache/BindGroupCache
+- 点光/聚光阴影系统 (ShadowAtlas)
+- events.rs 拆分为 6 个文件 (events/ 目录), draw.rs 拆分为 5 个文件 (draw/ 目录)
+- CachedBuffer 共享工具替代 5 处重复的 cached_vb 模式
+- ProjectionUniform 共享类型替代 5 处重复的 ortho 结构体
+- DebugRenderer 合并至 LineRenderer
 
 ### anvilkit-assets
-资产管线: glTF 加载, AssetServer (同步+异步), 热重载, 过程化网格生成。
+资产管线：glTF 模型加载（网格、材质、骨骼、动画）、AssetServer（同步+异步加载，去重）、AssetHandle (Arc 引用计数)、程序化网格生成、文件监视热重载。DependencyGraph 用于资产依赖追踪（基于 AssetId）。AssetCache 集成（内容哈希去重）。通过依赖图实现级联卸载。insert_parsed/get_parsed 用于类型化资产存储。
 
 ### anvilkit-audio
-基于 `rodio` 的音频系统：AudioSource ECS 组件、AudioBus（master/music/sfx/voice 音量混合）、空间音频（通过 AudioListener 距离衰减）、循环播放和变调控制。
+基于 `rodio` 的音频系统：AudioSource ECS 组件、AudioBus（master/music/sfx/voice 音量混合）、空间音频（通过 AudioListener 距离衰减）、循环播放和变调控制。NonSend 资源模式确保 macOS CoreAudio 的线程安全。通过 listener right 向量实现立体声平移。通过 AudioSource.asset_id 集成资产系统。
 
 ### anvilkit-input
-输入抽象：InputState（键盘/鼠标 pressed/just_pressed/released、mouse_delta、scroll_delta）、GamepadState（16 个按钮、6 个轴）、ActionMap（逻辑动作 → 物理绑定）、ActionId（零分配查询）、AxisBinding（键盘/手柄模拟轴）。
+输入抽象：InputState（键盘/鼠标 pressed/just_pressed/released、mouse_delta、scroll_delta）、GamepadState（16 个按钮、6 个轴）、ActionMap（逻辑动作 -> 物理绑定）、ActionId（零分配查询）、AxisBinding（键盘/手柄模拟轴）。InputPlugin 用于自动资源初始化。ActionMap 支持 apply_overrides 按键重绑定。手柄事件转发。
 
 ### anvilkit-camera
-相机系统: 第一/第三人称/自由控制器, CameraEffects, 万向锁保护。
+生产级相机系统，5 种模式 (FirstPerson/ThirdPerson/Orbit/Free/Rail)。OrbitState 组件、CameraRig 实体跟随、SpringArm 碰撞避免、Trauma+Perlin 噪声抖动、CameraTransition 过渡混合 (5 种缓动)、LookAtTarget 软约束、CameraRail 推轨 (Catmull-Rom)、InputCurve 死区+响应曲线。8 系统管线，帧率无关平滑。
+
+### anvilkit-app
+游戏应用运行器，消除样板代码。`AnvilKitApp::run()` 管理 winit 事件循环、输入转发、DeltaTime 和帧生命周期。游戏实现 `GameCallbacks`（init、post_update、render、on_resize、on_window_event）并传入 `GameConfig`（标题、窗口尺寸、垂直同步）。通过 `GameContext` 提供对 ECS `App` 和 `RenderApp` 的访问。
+
+### anvilkit-ui
+保留模式 UI 框架，基于 taffy 的 flexbox 布局。GPU 无关 — 渲染委托给 `anvilkit-render` 的 `UiRenderer`。包含 `Widget`（按钮、标签、面板）、`UiLayoutEngine`、事件系统（命中测试、交互处理）、`UiTheme`、焦点管理、`UiPlugin` ECS 集成，以及交互控件（TextInput、Slider、Checkbox、Dropdown、ScrollView）。
+
+### anvilkit-gameplay
+可选的、按 feature 门控的游戏性构建模块：`stats`（通用属性系统，支持加法/乘法/覆盖修饰器）、`health`（Health 组件，含自动回血、DamageEvent、HealEvent、DeathEvent、health_system）、`inventory`（基于槽位的可堆叠物品栏）、`cooldown`（技能/动作冷却计时器）、`status-effect`（基于持续时间的状态效果，支持堆叠策略）、`entity-pool`（实体回收对象池）。
+
+### anvilkit-data
+数据驱动配置与本地化：`DataTable`（从 RON/JSON 加载的类型化键值表）、`Locale`（带回退链的翻译查找）、`DataTablePlugin` ECS 集成。
 
 ## 坐标系
 

@@ -7,6 +7,42 @@ description: Settings, SaveManager, and WorldStorage for game data
 
 The persistence module provides three layers: player **Settings**, multi-slot **SaveManager**, and raw key-value **WorldStorage**.
 
+> **Resource derives:** When the `bevy_ecs` feature is enabled, all persistence types — `SaveManager`, `Settings`, `WorldStorage`, `AutoSaveConfig`, `AutoSaveState`, and `MigrationRunner` — derive `Resource` and can be inserted directly into the ECS world.
+
+### PersistencePlugin
+
+`PersistencePlugin` is feature-gated on `"persistence"` and wires up auto-save support in the ECS schedule:
+
+- Registers `AutoSaveConfig` and `AutoSaveState` as ECS resources.
+- Adds `auto_save_tick_system` to the schedule, which counts elapsed time and triggers a save when the configured interval expires.
+
+```rust
+use anvilkit_ecs::plugins::PersistencePlugin;
+
+app.add_plugins(PersistencePlugin);
+
+// Optionally configure the auto-save interval (default: 300 seconds)
+app.insert_resource(AutoSaveConfig { interval_secs: 120.0 });
+```
+
+### SettingsApplyPlugin
+
+`SettingsApplyPlugin` runs each frame in `PostUpdate` and synchronises the `Settings` resource into the live game state:
+
+- **Audio:** Copies `Settings.audio` fields (master, music, sfx volumes) into the `AudioBus` resource.
+- **Input:** Copies `Settings.input.mouse_sensitivity` into the `CameraController` resource.
+
+This means games only need to mutate `Settings` — the plugin propagates the values automatically.
+
+### Error Categories
+
+Persistence functions return the typed `AnvilKitError::Persistence` variant instead of the old `generic()` error. Use the dedicated constructors:
+
+```rust
+AnvilKitError::persistence("save slot corrupted");
+AnvilKitError::persistence_with_path("failed to write", &path);
+```
+
 ### Settings
 
 Typed configuration stored as RON. Falls back to defaults when the file is missing or corrupt.

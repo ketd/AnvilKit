@@ -1,0 +1,330 @@
+---
+title: anvilkit-gameplay
+description: Optional gameplay building blocks — stats, health, inventory, cooldown, status effects, entity pool
+---
+
+`anvilkit-gameplay` provides reusable gameplay primitives that plug into the ECS. All features are enabled by default and can be toggled independently via feature flags.
+
+### Feature Flags
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `stats` | enabled | Stat modifiers with priority-based computation |
+| `inventory` | enabled | Slot-based and stack-based inventories |
+| `cooldown` | enabled | Timer-based ability cooldowns |
+| `status-effect` | enabled | Timed status effects with stacking policies |
+| `entity-pool` | enabled | Pre-allocated entity pooling |
+
+```toml
+[dependencies]
+anvilkit-gameplay = { path = "../gameplay", default-features = false, features = ["stats", "cooldown"] }
+```
+
+### Stats System
+
+The stats system supports base values with stackable modifiers that recompute on demand.
+
+#### ModifierKind
+
+```rust
+pub enum ModifierKind {
+    Additive(f32),
+    Multiplicative(f32),
+    Override(f32),
+}
+```
+
+#### Modifier
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `new` | `(kind: ModifierKind) -> Self` | Create a modifier |
+| `additive` | `(value: f32) -> Self` | Shorthand for `Additive` |
+| `multiplicative` | `(value: f32) -> Self` | Shorthand for `Multiplicative` |
+| `override_val` | `(value: f32) -> Self` | Shorthand for `Override` |
+| `with_priority` | `(self, priority: i32) -> Self` | Set evaluation priority (lower runs first) |
+| `from_source` | `(self, source: Entity) -> Self` | Tag modifier with a source entity for bulk removal |
+
+#### Stat
+
+`Stat` is a `Component` that holds a base value and a list of modifiers.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `base_value` | `f32` | The unmodified base value |
+| `modifiers` | `Vec<Modifier>` | Active modifiers |
+| `computed_value` | `f32` | Cached result after `recompute()` |
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `new` | `(base_value: f32) -> Self` | Create a stat with no modifiers |
+| `add_modifier` | `(&mut self, Modifier)` | Add a modifier and recompute |
+| `remove_modifiers_from` | `(&mut self, source: Entity)` | Remove all modifiers tagged with the given source and recompute |
+| `recompute` | `(&mut self)` | Recalculate `computed_value` from base + modifiers |
+| `value` | `(&self) -> f32` | Returns the current `computed_value` |
+
+#### Computation Order
+
+1. Sort modifiers by `priority` (ascending).
+2. Sum all `Additive` values, add to base.
+3. Multiply by each `Multiplicative` value in order.
+4. If any `Override` modifier exists, the highest-priority override wins and replaces the result.
+
+```rust
+use anvilkit_gameplay::stats::{Stat, Modifier};
+
+let mut attack = Stat::new(10.0);
+attack.add_modifier(Modifier::additive(5.0));           // 10 + 5 = 15
+attack.add_modifier(Modifier::multiplicative(1.5));      // 15 * 1.5 = 22.5
+assert_eq!(attack.value(), 22.5);
+```
+
+### Health System
+
+#### Health
+
+`Health` is a `Component` for entities with hit points.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `current` | `f32` | Current hit points |
+| `max` | `f32` | Maximum hit points |
+| `regen_rate` | `f32` | HP regenerated per second (default `0.0`) |
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `new` | `(max: f32) -> Self` | Create at full health, zero regen |
+| `with_regen` | `(self, rate: f32) -> Self` | Set regen rate |
+| `is_alive` | `(&self) -> bool` | `current > 0.0` |
+| `is_dead` | `(&self) -> bool` | `current <= 0.0` |
+| `fraction` | `(&self) -> f32` | `current / max`, clamped to `0.0..=1.0` |
+| `damage` | `(&mut self, amount: f32)` | Reduce current HP (floors at 0) |
+| `heal` | `(&mut self, amount: f32)` | Increase current HP (caps at max) |
+
+#### Events
+
+| Event | Fields | Description |
+|-------|--------|-------------|
+| `DamageEvent` | `target: Entity, amount: f32, source: Option<Entity>` | Request damage to an entity |
+| `HealEvent` | `target: Entity, amount: f32` | Request healing on an entity |
+| `DeathEvent` | `entity: Entity` | Emitted when an entity reaches 0 HP |
+
+#### Systems
+
+| System | Description |
+|--------|-------------|
+| `health_system` | Reads `DamageEvent` and `HealEvent`, applies to `Health` components, emits `DeathEvent` when HP reaches zero |
+| `health_regen_system` | Applies `regen_rate * delta_time` to all `Health` components each frame |
+
+#### Example
+
+```rust
+use anvilkit_gameplay::health::{Health, DamageEvent};
+
+// Spawn an entity with health
+commands.spawn((
+    Transform::default(),
+    Health::new(100.0).with_regen(2.0),
+));
+
+// Deal damage via event
+events.send(DamageEvent {
+    target: enemy_entity,
+    amount: 25.0,
+    source: Some(player_entity),
+});
+```
+
+### Inventory System
+
+#### ItemDef
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `String` | Unique item identifier |
+| `name` | `String` | Display name |
+| `max_stack` | `u32` | Maximum stack size |
+| `weight` | `f32` | Weight per unit |
+
+#### ItemStack
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `item_id` | `String` | References an `ItemDef.id` |
+| `quantity` | `u32` | Current stack count |
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `new` | `(item_id: &str, quantity: u32) -> Self` | Create a stack |
+| `can_merge` | `(&self, other: &ItemStack) -> bool` | True if same item and combined quantity fits `max_stack` |
+| `merge` | `(&mut self, other: &mut ItemStack)` | Transfer as many items as possible from `other` into `self` |
+
+#### Inventory Trait
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `capacity` | `(&self) -> usize` | Total number of slots |
+| `get_slot` | `(&self, usize) -> Option<&ItemStack>` | Read a slot |
+| `set_slot` | `(&mut self, usize, Option<ItemStack>)` | Write a slot |
+| `add_item` | `(&mut self, ItemStack) -> Option<ItemStack>` | Add item, returns leftover if full |
+| `remove_item` | `(&mut self, item_id: &str, u32) -> u32` | Remove up to N items, returns amount removed |
+
+#### SlotInventory
+
+`SlotInventory` is a `Component` with a fixed number of slots.
+
+```rust
+use anvilkit_gameplay::inventory::{SlotInventory, ItemStack};
+
+let mut hotbar = SlotInventory::new(9);
+hotbar.add_item(ItemStack::new("stone", 64));
+hotbar.add_item(ItemStack::new("wood", 32));
+```
+
+#### StackInventory
+
+`StackInventory` is a `Component` with dynamic growth and automatic stacking. New items merge into existing stacks before occupying a new slot.
+
+```rust
+use anvilkit_gameplay::inventory::{StackInventory, ItemStack};
+
+let mut bag = StackInventory::new(27);
+bag.add_item(ItemStack::new("arrow", 30));
+bag.add_item(ItemStack::new("arrow", 20)); // merges into existing stack
+```
+
+### Cooldown System
+
+#### Cooldown
+
+`Cooldown` is a `Component` that represents a timer-based ability cooldown.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `remaining` | `f32` | Time remaining in seconds |
+| `duration` | `f32` | Total cooldown duration |
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `new` | `(duration: f32) -> Self` | Create a ready (remaining = 0) cooldown |
+| `is_ready` | `(&self) -> bool` | `remaining <= 0.0` |
+| `trigger` | `(&mut self)` | Set `remaining = duration` |
+| `tick` | `(&mut self, dt: f32)` | Reduce remaining by `dt` |
+| `fraction` | `(&self) -> f32` | `remaining / duration`, for UI progress bars |
+
+#### cooldown_tick_system
+
+Automatically ticks all `Cooldown` components each frame using `DeltaTime`.
+
+#### Example
+
+```rust
+use anvilkit_gameplay::cooldown::Cooldown;
+
+// Fireball with 3-second cooldown
+let mut fireball_cd = Cooldown::new(3.0);
+
+if fireball_cd.is_ready() && input.is_key_just_pressed(KeyCode::Q) {
+    cast_fireball();
+    fireball_cd.trigger();
+}
+```
+
+### Status Effects
+
+#### StackPolicy
+
+```rust
+pub enum StackPolicy {
+    Replace,  // New effect replaces existing
+    Extend,   // New effect adds to remaining duration
+    Stack,    // Independent stacks (up to max_stacks)
+}
+```
+
+#### StatusEffect
+
+`StatusEffect` is a `Component` representing a timed effect on an entity.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `String` | Effect identifier |
+| `duration` | `f32` | Total duration per stack |
+| `remaining` | `f32` | Time remaining |
+| `stacks` | `u32` | Current stack count |
+| `max_stacks` | `u32` | Maximum allowed stacks |
+| `stack_policy` | `StackPolicy` | How reapplication is handled |
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `with_policy` | `(self, StackPolicy) -> Self` | Set the stacking policy |
+| `with_max_stacks` | `(self, u32) -> Self` | Set maximum stack count |
+
+#### StatusEffectList
+
+`StatusEffectList` is a `Component` that manages multiple effects on a single entity.
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `add` | `(&mut self, StatusEffect)` | Add or reapply an effect (respects stack policy) |
+| `tick` | `(&mut self, dt: f32)` | Tick all effects, remove expired ones |
+| `has` | `(&self, name: &str) -> bool` | Check if an effect is active |
+| `get` | `(&self, name: &str) -> Option<&StatusEffect>` | Get an active effect by name |
+
+#### Example
+
+```rust
+use anvilkit_gameplay::status_effect::{StatusEffect, StatusEffectList, StackPolicy};
+
+let poison = StatusEffect {
+    name: "poison".into(),
+    duration: 5.0,
+    remaining: 5.0,
+    stacks: 1,
+    max_stacks: 3,
+    stack_policy: StackPolicy::Stack,
+};
+
+let mut effects = StatusEffectList::default();
+effects.add(poison);
+
+if effects.has("poison") {
+    let stacks = effects.get("poison").unwrap().stacks;
+    let dps = 2.0 * stacks as f32;
+    health.damage(dps * dt);
+}
+```
+
+### Entity Pool
+
+`EntityPool` is a `Resource` that pre-allocates entities for reuse, avoiding per-frame spawn/despawn overhead.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `available` | `Vec<Entity>` | Pooled entities ready for reuse |
+| `capacity` | `usize` | Maximum pool size |
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `new` | `(capacity: usize) -> Self` | Create a pool with the given capacity |
+| `acquire` | `(&mut self) -> Option<Entity>` | Take an entity from the pool |
+| `release` | `(&mut self, Entity)` | Return an entity to the pool |
+| `available_count` | `(&self) -> usize` | Number of entities currently available |
+| `is_empty` | `(&self) -> bool` | True if no entities are available |
+
+#### Example
+
+```rust
+use anvilkit_gameplay::entity_pool::EntityPool;
+
+// Pre-allocate 200 bullet entities
+let mut pool = EntityPool::new(200);
+
+// Fire a bullet
+if let Some(bullet) = pool.acquire() {
+    // Reset transform, velocity, etc. on the entity
+}
+
+// Return bullet when it goes off-screen
+pool.release(bullet_entity);
+```

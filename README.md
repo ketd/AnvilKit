@@ -38,11 +38,19 @@ anvilkit-render = "0.1"
 ```rust
 use anvilkit::prelude::*;
 
+struct MyGame;
+
+impl GameCallbacks for MyGame {
+    fn init(&mut self, ctx: &mut GameContext) {
+        ctx.app.add_systems(AnvilKitSchedule::Update, hello);
+    }
+}
+
 fn main() {
-    let mut app = App::new();
-    app.add_plugins(RenderPlugin::default());
-    app.add_systems(AnvilKitSchedule::Update, hello);
-    RenderApp::run(app);
+    AnvilKitApp::run(
+        GameConfig::new("My Game").with_size(1280, 720),
+        MyGame,
+    );
 }
 
 fn hello() {
@@ -53,27 +61,31 @@ fn hello() {
 ## Crate Map
 
 ```
-                        ┌──────────┐
-                        │ anvilkit │  ← facade, re-exports everything
-                        └────┬─────┘
-          ┌──────┬──────┬────┼────┬───────┬────────┐
-          ▼      ▼      ▼    ▼    ▼       ▼        ▼
-      ┌──────┐┌─────┐┌──────┐┌──────┐┌───────┐┌───────┐┌────────┐
-      │ core ││ ecs ││render││assets││ input ││ audio ││ camera │
-      └──────┘└──┬──┘└──┬───┘└──────┘└───────┘└───────┘└────────┘
-                 │      │
-            bevy_ecs   wgpu + winit
+                          ┌──────────┐
+                          │ anvilkit │  ← facade, re-exports everything
+                          └────┬─────┘
+    ┌──────┬──────┬────┬───┼───┬───────┬────────┬─────┬────┬──────────┐
+    ▼      ▼      ▼    ▼   ▼   ▼       ▼        ▼     ▼    ▼          ▼
+ ┌──────┐┌───┐┌──────┐┌──────┐┌─────┐┌─────┐┌──────┐┌───┐┌──┐┌────────┐┌────┐
+ │ core ││ecs││render││assets││input││audio││camera││app││ui││gameplay││data│
+ └──────┘└─┬─┘└──┬───┘└──────┘└─────┘└─────┘└──────┘└─┬─┘└──┘└────────┘└────┘
+           │     │                                     │
+      bevy_ecs  wgpu + winit                      winit + ecs
 ```
 
 | Crate | What it does | Key deps |
 |-------|-------------|----------|
-| **anvilkit-core** | Math (glam), transforms, time, errors | `glam` |
+| **anvilkit-core** | Math (glam), transforms, time, errors, persistence | `glam` |
 | **anvilkit-ecs** | ECS world, schedules, plugins, physics | `bevy_ecs` |
-| **anvilkit-render** | Window, GPU pipelines, sprites, particles, UI, text | `wgpu`, `winit` |
+| **anvilkit-render** | GPU pipelines, sprites, particles, text | `wgpu`, `winit` |
 | **anvilkit-assets** | glTF loader, asset server, procedural meshes | `gltf` |
 | **anvilkit-input** | Keyboard/mouse/gamepad state, action mapping | `winit` |
 | **anvilkit-audio** | Spatial audio, playback, mixing | `rodio` |
-| **anvilkit-camera** | FPS/third-person controllers, effects, shake | — |
+| **anvilkit-camera** | Camera system: 5 modes, trauma shake, spring arm, rail, transitions | `bevy_ecs`, `glam` |
+| **anvilkit-app** | App runner, GameCallbacks, window lifecycle | `winit` |
+| **anvilkit-ui** | Flexbox layout, events, widgets, themes | `taffy` |
+| **anvilkit-gameplay** | Stats, health, inventory, cooldowns, effects | `bevy_ecs` |
+| **anvilkit-data** | Data tables (RON/JSON), i18n locale | `ron` |
 
 ## Games
 
@@ -83,7 +95,7 @@ fn hello() {
 
 ### Craft
 
-Minecraft-style voxel sandbox with terrain generation, block building, water, day/night cycle, and greedy meshing.
+Minecraft-style voxel sandbox with terrain generation, block building, water, day/night cycle, greedy meshing, health system with fall damage and drowning, slot-based inventory, data-driven blocks, and player state persistence.
 
 ```bash
 cargo run -p craft
@@ -94,7 +106,7 @@ cargo run -p craft
 
 ### Billiards
 
-2D pool simulation with AABB physics, ball-to-ball collision, break shots, and rule enforcement.
+PBR pool simulation with AABB physics, ball-to-ball collision, break shots, rule enforcement, and orbit camera controls.
 
 ```bash
 cargo run -p billiards

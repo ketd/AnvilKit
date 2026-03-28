@@ -4,8 +4,7 @@ use std::thread;
 use anvilkit::prelude::*;
 use anvilkit_app::{AnvilKitApp, GameCallbacks, GameConfig, GameContext};
 
-// 迁移说明: 未来可使用 DefaultPlugins 替代手动 plugin 注册:
-//   app.add_plugins(DefaultPlugins::new().with_window(config));
+// DefaultPlugins handles: ECS, Render, Camera, Audio, Input, DeltaTime
 use anvilkit_render::renderer::{
     buffer::{
         create_depth_texture, create_hdr_render_target, create_sampler,
@@ -16,11 +15,11 @@ use anvilkit_render::renderer::{
     raycast::screen_to_ray,
 };
 use anvilkit_render::plugin::CameraComponent;
-use anvilkit_input::prelude::{InputState, MouseButton};
-use anvilkit_ecs::physics::{DeltaTime, Velocity, AabbCollider};
+use anvilkit_input::prelude::{InputState, MouseButton, ActionMap, InputBinding, KeyCode as AK};
+use anvilkit_ecs::physics::{Velocity, AabbCollider};
 use anvilkit_camera::controller::{CameraController, CameraMode};
 use anvilkit_camera::effects::CameraEffects;
-use anvilkit_camera::systems::camera_controller_system;
+
 
 use craft::block::BlockType;
 use craft::chunk::CHUNK_SIZE;
@@ -37,22 +36,13 @@ use craft::systems::input as input_sys;
 use craft::systems::physics as physics_sys;
 use craft::systems::day_night::day_night_system;
 use craft::systems::camera_fx::camera_effects_system;
+use craft::systems::survival as survival_sys;
 use craft::config;
 use craft::persistence;
+use anvilkit_gameplay::health::{Health, DamageEvent, HealEvent, DeathEvent, health_system};
+use anvilkit_gameplay::inventory::{SlotInventory, Inventory, ItemStack};
 
 /// Block types selectable with number keys 1-9.
-const BLOCK_PALETTE: [BlockType; 9] = [
-    BlockType::Grass,
-    BlockType::Dirt,
-    BlockType::Stone,
-    BlockType::Sand,
-    BlockType::Brick,
-    BlockType::Wood,
-    BlockType::Glass,
-    BlockType::Cobble,
-    BlockType::Plank,
-];
-
 fn window_config() -> WindowConfig {
     WindowConfig::new().with_title("Craft").with_size(1280, 720)
 }
@@ -66,10 +56,7 @@ fn main() {
     println!("  F5 = toggle 1st/3rd person, F1 = cycle filter, Ctrl+W = sprint");
 
     let mut app = App::new();
-    app.add_plugins(RenderPlugin::new().with_window_config(window_config()));
-
-    app.insert_resource(InputState::new());
-    app.insert_resource(DeltaTime(1.0 / 60.0)); // updated each frame by RenderApp::tick()
+    app.add_plugins(DefaultPlugins::new().with_window(window_config()));
     app.insert_resource(WorldSeed::default());
     app.insert_resource(PlayerState::default());
     app.insert_resource(VoxelWorld::default());
@@ -81,13 +68,49 @@ fn main() {
     app.insert_resource(SsaoSettings { enabled: false, ..SsaoSettings::default() });
     app.insert_resource(ActiveFilter::default());
 
-    // Explicit ordering: DayNight → Input → Physics → CameraFX → CameraController
+    // Load block data table + locale
+    {
+        use anvilkit_data::{DataTable, Locale};
+        use craft::block::{BlockTable, BlockDefCache};
+
+        let blocks_ron = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/data/blocks.ron"));
+        let block_table: BlockTable = DataTable::from_ron("blocks", blocks_ron)
+            .expect("Failed to parse blocks.ron");
+        let cache = BlockDefCache::from_table(&block_table);
+        app.insert_resource(block_table);
+        app.insert_resource(cache);
+
+        let mut locale = Locale::new("en");
+        let locale_ron = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/data/locale_en.ron"));
+        locale.load_ron(locale_ron).expect("Failed to parse locale_en.ron");
+        app.insert_resource(locale);
+    }
+
+    // Register health/damage events
+    app.add_event::<DamageEvent>();
+    app.add_event::<HealEvent>();
+    app.add_event::<DeathEvent>();
+
+    // Ordering: DayNight → Input → Physics → Survival → CameraFX (Update)
+    // CameraController runs in PostUpdate via CameraPlugin (from DefaultPlugins)
     app.add_systems(AnvilKitSchedule::Update, (
         day_night_system,
         input_sys::player_movement_system,
+        input_sys::hotbar_selection_system,
+        input_sys::toggle_actions_system,
         physics_sys::player_physics_system.after(input_sys::player_movement_system),
-        camera_effects_system.after(physics_sys::player_physics_system),
-        camera_controller_system.after(camera_effects_system),
+        // Survival systems must run BEFORE camera_effects_system
+        // because camera_effects_system updates was_on_ground (consumed by fall_damage)
+        survival_sys::fall_damage_system.after(physics_sys::player_physics_system),
+        survival_sys::drowning_system.after(physics_sys::player_physics_system),
+        health_system
+            .after(survival_sys::fall_damage_system)
+            .after(survival_sys::drowning_system),
+        survival_sys::health_regen_system.after(health_system),
+        survival_sys::death_respawn_system.after(health_system),
+        camera_effects_system
+            .after(physics_sys::player_physics_system)
+            .after(survival_sys::fall_damage_system),
     ));
 
     // FPS Camera — spawn at a reasonable height above terrain
@@ -118,6 +141,9 @@ fn main() {
             fx.head_bob_enabled = true;
             fx
         },
+        anvilkit_camera::orbit::OrbitState::new(spawn_pos, 5.0)
+            .with_distance_limits(2.0, 20.0)
+            .with_target_offset(glam::Vec3::new(0.0, 1.6, 0.0)),
         Transform::from_xyz(spawn_pos.x, spawn_pos.y, spawn_pos.z),
         Velocity::zero(),
         AabbCollider::new(glam::Vec3::new(
@@ -125,6 +151,14 @@ fn main() {
             config::PLAYER_HEIGHT * 0.5,
             config::PLAYER_WIDTH * 0.5,
         )),
+        Health::new(20.0).with_regen(0.5),
+        {
+            let mut inventory = SlotInventory::new(9);
+            for (i, &block) in config::BLOCK_PALETTE.iter().enumerate() {
+                inventory.set_slot(i, Some(ItemStack::new(block.item_id(), 64)));
+            }
+            inventory
+        },
     ));
 
     let seed = app.world.resource::<WorldSeed>().0;
@@ -181,6 +215,40 @@ struct CraftGame {
 
 
 impl CraftGame {
+    /// Register all Craft key bindings into an ActionMap resource.
+    ///
+    /// The bindings mirror the hardcoded KeyCode checks in `systems/input.rs`
+    /// and `on_window_event`. Games can override these via
+    /// `ActionMap::apply_overrides()` with user settings.
+    fn setup_action_map(&self, ctx: &mut GameContext) {
+        let mut map = ActionMap::new();
+        // Movement
+        map.add_binding("move_forward",  InputBinding::Key(AK::W));
+        map.add_binding("move_backward", InputBinding::Key(AK::S));
+        map.add_binding("move_left",     InputBinding::Key(AK::A));
+        map.add_binding("move_right",    InputBinding::Key(AK::D));
+        map.add_binding("jump",          InputBinding::Key(AK::Space));
+        map.add_binding("descend",       InputBinding::Key(AK::LShift));
+        map.add_binding("sprint",        InputBinding::Key(AK::LControl));
+        // Block interaction
+        map.add_binding("place_block",   InputBinding::Mouse(MouseButton::Right));
+        map.add_binding("break_block",   InputBinding::Mouse(MouseButton::Left));
+        // Block palette (1-9)
+        map.add_binding("slot_1", InputBinding::Key(AK::Key1));
+        map.add_binding("slot_2", InputBinding::Key(AK::Key2));
+        map.add_binding("slot_3", InputBinding::Key(AK::Key3));
+        map.add_binding("slot_4", InputBinding::Key(AK::Key4));
+        map.add_binding("slot_5", InputBinding::Key(AK::Key5));
+        map.add_binding("slot_6", InputBinding::Key(AK::Key6));
+        map.add_binding("slot_7", InputBinding::Key(AK::Key7));
+        map.add_binding("slot_8", InputBinding::Key(AK::Key8));
+        map.add_binding("slot_9", InputBinding::Key(AK::Key9));
+        // Toggle actions
+        map.add_binding("toggle_flying", InputBinding::Key(AK::Tab));
+        map.add_binding("cycle_filter",  InputBinding::Key(AK::F1));
+        ctx.app.insert_resource(map);
+    }
+
     fn init_scene(&mut self, ctx: &mut GameContext) {
 
         // Try loading saved world first
@@ -194,6 +262,17 @@ impl CraftGame {
                     println!("Could not load save: {}", e);
                 }
                 _ => {}
+            }
+        }
+
+        // Load player state
+        match persistence::load_player() {
+            Ok(Some(data)) => {
+                self.apply_player_save_data(ctx, &data);
+            }
+            Ok(None) => {} // No saved player state
+            Err(e) => {
+                println!("Could not load player state: {}", e);
             }
         }
 
@@ -320,22 +399,37 @@ impl CraftGame {
             config::RAYCAST_MAX_DIST,
         );
 
-        // Check mouse buttons
+        // Check mouse buttons via ActionMap
         let (left_just, right_just) = {
-            let input = ctx.app.world.resource::<InputState>();
+            let actions = ctx.app.world.resource::<ActionMap>();
             (
-                input.is_mouse_just_pressed(MouseButton::Left),
-                input.is_mouse_just_pressed(MouseButton::Right),
+                actions.is_action_just_pressed("break_block"),
+                actions.is_action_just_pressed("place_block"),
             )
         };
 
         if let Some(ref hit) = self.current_hit {
             if left_just {
-                // Break block
+                // Break block — add broken block to inventory
                 let [bx, by, bz] = hit.block_pos;
-                let mut world = ctx.app.world.resource_mut::<VoxelWorld>();
-                world.set_block(bx, by, bz, BlockType::Air);
-                self.chunks.mark_dirty_with_neighbors(bx, bz);
+                let broken_block = {
+                    let world = ctx.app.world.resource::<VoxelWorld>();
+                    world.get_block(bx, by, bz)
+                };
+                if broken_block != BlockType::Air {
+                    let mut world = ctx.app.world.resource_mut::<VoxelWorld>();
+                    world.set_block(bx, by, bz, BlockType::Air);
+                    self.chunks.mark_dirty_with_neighbors(bx, bz);
+
+                    // Add to player inventory
+                    let mut q = ctx.app.world.query::<&mut SlotInventory>();
+                    for mut inv in q.iter_mut(&mut ctx.app.world) {
+                        let _ = inv.add_item(
+                            ItemStack::new(broken_block.item_id(), 1),
+                            64,
+                        );
+                    }
+                }
             } else if right_just {
                 // Place block adjacent to hit face
                 let [bx, by, bz] = hit.block_pos;
@@ -356,9 +450,26 @@ impl CraftGame {
 
                 if !overlaps {
                     let selected = ctx.app.world.resource::<SelectedBlock>().block_type;
-                    let mut world = ctx.app.world.resource_mut::<VoxelWorld>();
-                    world.set_block(px, py, pz, selected);
-                    self.chunks.mark_dirty_with_neighbors(px, pz);
+                    let item_id = selected.item_id();
+
+                    // Check inventory has the block and consume one
+                    let has_block = {
+                        let mut q = ctx.app.world.query::<&mut SlotInventory>();
+                        let mut found = false;
+                        for mut inv in q.iter_mut(&mut ctx.app.world) {
+                            if inv.remove_item(item_id, 1) > 0 {
+                                found = true;
+                                break;
+                            }
+                        }
+                        found
+                    };
+
+                    if has_block {
+                        let mut world = ctx.app.world.resource_mut::<VoxelWorld>();
+                        world.set_block(px, py, pz, selected);
+                        self.chunks.mark_dirty_with_neighbors(px, pz);
+                    }
                 }
             }
         }
@@ -650,17 +761,89 @@ impl CraftGame {
         let cycle = ctx.app.world.resource::<DayNightCycle>();
         let selected_index = selected.index;
 
+        // Use locale for display names
+        let locale = ctx.app.world.get_resource::<anvilkit_data::Locale>();
+        let fly_text = locale.map_or("FLY", |l| l.t("hud.fly"));
+        let walk_text = locale.map_or("WALK", |l| l.t("hud.walk"));
+        let block_name = locale.map_or_else(
+            || format!("{:?}", selected.block_type),
+            |l| l.t(selected.block_type.locale_key()).to_string(),
+        );
+
         if let Some(ref mut tr) = self.text_renderer {
             let coord_text = format!(
                 "XYZ: {:.1} {:.1} {:.1}  {}  Time: {:.0}%",
                 cam_pos.x, cam_pos.y, cam_pos.z,
-                if player.flying { "FLY" } else { "WALK" },
+                if player.flying { fly_text } else { walk_text },
                 cycle.time * 100.0,
             );
-            let block_text = format!("Block: {:?}", selected.block_type);
+            let block_text = format!("Block: {}", block_name);
 
             tr.draw_text(device, &mut enc, swapchain, &coord_text, 8.0, 8.0, 16.0, white, sw, sh);
             tr.draw_text(device, &mut enc, swapchain, &block_text, 8.0, 28.0, 16.0, white, sw, sh);
+        }
+
+        // Health bar: rendered above the hotbar
+        {
+            use anvilkit_render::renderer::ui::UiNode;
+
+            let hp_fraction = {
+                let mut q = ctx.app.world.query::<&Health>();
+                q.iter(&ctx.app.world).next().map(|h| h.fraction()).unwrap_or(1.0)
+            };
+            let hp_text = {
+                let mut q = ctx.app.world.query::<&Health>();
+                q.iter(&ctx.app.world).next().map(|h| format!("{:.0}/{:.0}", h.current, h.max)).unwrap_or_default()
+            };
+
+            let bar_w = 200.0_f32;
+            let bar_h = 12.0_f32;
+            let bar_x = (sw - bar_w) * 0.5;
+            let bar_y = sh - 36.0 - 16.0 - bar_h - 8.0; // above hotbar
+
+            // Background bar (dark)
+            let bg_node = UiNode {
+                background_color: [0.15, 0.0, 0.0, 0.7],
+                corner_radius: 3.0,
+                border_width: 1.0,
+                border_color: [0.3, 0.0, 0.0, 0.8],
+                text: None,
+                style: Default::default(),
+                visible: true,
+                computed_rect: [bar_x, bar_y, bar_w, bar_h],
+            };
+
+            // Foreground bar (red/green based on health)
+            let fill_w = bar_w * hp_fraction;
+            let fill_color = if hp_fraction > 0.5 {
+                [0.2, 0.8, 0.2, 0.9] // green
+            } else if hp_fraction > 0.25 {
+                [0.9, 0.7, 0.1, 0.9] // yellow
+            } else {
+                [0.9, 0.1, 0.1, 0.9] // red
+            };
+            let fg_node = UiNode {
+                background_color: fill_color,
+                corner_radius: 3.0,
+                border_width: 0.0,
+                border_color: [0.0; 4],
+                text: None,
+                style: Default::default(),
+                visible: true,
+                computed_rect: [bar_x, bar_y, fill_w, bar_h],
+            };
+
+            let nodes = [&bg_node, &fg_node];
+            if let Some(ref mut ui) = self.ui_renderer {
+                ui.render(device, &mut enc, swapchain, &nodes, sw, sh);
+            }
+
+            // HP text centered on bar
+            if let Some(ref mut tr) = self.text_renderer {
+                let text_x = bar_x + bar_w * 0.5 - (hp_text.len() as f32 * 3.5);
+                let text_y = bar_y - 1.0;
+                tr.draw_text(device, &mut enc, swapchain, &hp_text, text_x, text_y, 11.0, white, sw, sh);
+            }
         }
 
         // Hotbar: 9-slot block selection bar at bottom center (UiRenderer)
@@ -704,13 +887,24 @@ impl CraftGame {
 
             // Draw block name initials in each slot (TextRenderer)
             if let Some(ref mut tr) = self.text_renderer {
-                let labels = ["G", "D", "S", "Sa", "B", "W", "Gl", "C", "P"];
+                let locale = ctx.app.world.get_resource::<anvilkit_data::Locale>();
                 let highlight = glam::Vec3::new(1.0, 1.0, 0.0);
                 for i in 0..9usize {
+                    let block = config::BLOCK_PALETTE[i];
+                    let label = locale.map_or_else(
+                        || format!("{:?}", block).chars().next().unwrap_or('?').to_string(),
+                        |l| {
+                            let name = l.t(block.locale_key());
+                            // Take initials: first char of each word
+                            name.split_whitespace()
+                                .filter_map(|w| w.chars().next())
+                                .collect::<String>()
+                        },
+                    );
                     let sx = bar_x + i as f32 * (slot_size + slot_gap) + slot_size * 0.25;
                     let sy = bar_y + slot_size * 0.2;
                     let color = if i == selected_index { highlight } else { white };
-                    tr.draw_text(device, &mut enc, swapchain, labels[i], sx, sy, 14.0, color, sw, sh);
+                    tr.draw_text(device, &mut enc, swapchain, &label, sx, sy, 14.0, color, sw, sh);
                 }
             }
         }
@@ -753,6 +947,7 @@ fn block_wireframe(pos: [i32; 3], color: glam::Vec3) -> Vec<(glam::Vec3, glam::V
 impl GameCallbacks for CraftGame {
     fn init(&mut self, ctx: &mut GameContext) {
         self.init_scene(ctx);
+        self.setup_action_map(ctx);
     }
 
     fn on_resize(&mut self, ctx: &mut GameContext, width: u32, height: u32) {
@@ -819,47 +1014,33 @@ impl GameCallbacks for CraftGame {
                                     Ok(n) => println!("Saved {} modified chunks to {:?}", n, persistence::save_path()),
                                     Err(e) => println!("Save failed: {}", e),
                                 }
+
+                                // Save player state
+                                let player_data = self.gather_player_save_data(ctx);
+                                match persistence::save_player(&player_data) {
+                                    Ok(()) => println!("Player state saved"),
+                                    Err(e) => println!("Player save failed: {}", e),
+                                }
                             }
                         }
                         match code {
                             WK::Escape => { ctx.app.exit(); return true; }
-                            WK::Tab => {
-                                if let Some(mut ps) = ctx.app.world.get_resource_mut::<PlayerState>() {
-                                    ps.flying = !ps.flying;
-                                    println!("Flying: {}", if ps.flying { "ON" } else { "OFF" });
-                                }
-                            }
-                            WK::F1 => {
-                                if let Some(mut af) = ctx.app.world.get_resource_mut::<ActiveFilter>() {
-                                    af.filter = af.filter.cycle();
-                                    println!("Filter: {}", af.filter.name());
-                                }
-                            }
                             WK::F5 => {
-                                let pos = ctx.app.world.get_resource::<ActiveCamera>()
-                                    .map(|c| c.camera_pos)
-                                    .unwrap_or(glam::Vec3::ZERO);
                                 let mut q = ctx.app.world.query::<&mut CameraController>();
                                 for mut ctrl in q.iter_mut(&mut ctx.app.world) {
-                                    ctrl.toggle_perspective(pos);
+                                    ctrl.toggle_perspective();
                                     let mode_name = match &ctrl.mode {
                                         CameraMode::FirstPerson => "First Person",
-                                        CameraMode::ThirdPerson { .. } => "Third Person",
-                                        CameraMode::Orbit { .. } => "Orbit",
+                                        CameraMode::ThirdPerson => "Third Person",
+                                        CameraMode::Orbit => "Orbit",
                                         CameraMode::Free => "Free",
+                                        CameraMode::Rail => "Rail",
                                     };
                                     println!("Camera: {}", mode_name);
                                 }
                             }
-                            WK::Digit1 => self.select_block(0, ctx),
-                            WK::Digit2 => self.select_block(1, ctx),
-                            WK::Digit3 => self.select_block(2, ctx),
-                            WK::Digit4 => self.select_block(3, ctx),
-                            WK::Digit5 => self.select_block(4, ctx),
-                            WK::Digit6 => self.select_block(5, ctx),
-                            WK::Digit7 => self.select_block(6, ctx),
-                            WK::Digit8 => self.select_block(7, ctx),
-                            WK::Digit9 => self.select_block(8, ctx),
+                            // Tab, F1, Digit1-9 handled by ECS systems
+                            // (toggle_actions_system + hotbar_selection_system)
                             _ => {}
                         }
                     }
@@ -917,14 +1098,111 @@ impl CraftGame {
         self.update_chunks(ctx);
     }
 
-    fn select_block(&mut self, index: usize, ctx: &mut GameContext) {
-        if index < BLOCK_PALETTE.len() {
-            if let Some(mut sb) = ctx.app.world.get_resource_mut::<SelectedBlock>() {
-                sb.block_type = BLOCK_PALETTE[index];
-                sb.index = index;
-                println!("Selected: {:?}", sb.block_type);
+    /// Gather all player state into a serializable struct for saving.
+    fn gather_player_save_data(&self, ctx: &mut GameContext) -> persistence::PlayerSaveData {
+        let cam_pos = ctx.app.world.get_resource::<ActiveCamera>()
+            .map(|c| c.camera_pos)
+            .unwrap_or(glam::Vec3::ZERO);
+
+        // Copy resource values to avoid borrow conflicts with queries below
+        let flying = ctx.app.world.resource::<PlayerState>().flying;
+        let day_night_time = ctx.app.world.resource::<DayNightCycle>().time;
+        let selected_slot = ctx.app.world.resource::<SelectedBlock>().index;
+
+        let (health, max_health) = {
+            let mut q = ctx.app.world.query::<&Health>();
+            q.iter(&ctx.app.world).next()
+                .map(|h| (h.current, h.max))
+                .unwrap_or((20.0, 20.0))
+        };
+
+        let inventory = {
+            let mut q = ctx.app.world.query::<&SlotInventory>();
+            q.iter(&ctx.app.world).next()
+                .map(|inv| {
+                    (0..9).map(|i| {
+                        inv.get_slot(i).map(|s| (s.item_id, s.quantity))
+                    }).collect()
+                })
+                .unwrap_or_else(Vec::new)
+        };
+
+        persistence::PlayerSaveData {
+            position: [cam_pos.x, cam_pos.y, cam_pos.z],
+            health,
+            max_health,
+            flying,
+            day_night_time,
+            inventory,
+            selected_slot,
+        }
+    }
+
+    /// Apply loaded player state to the ECS world.
+    fn apply_player_save_data(&self, ctx: &mut GameContext, data: &persistence::PlayerSaveData) {
+        // Position
+        {
+            let mut q = ctx.app.world.query::<&mut Transform>();
+            for mut transform in q.iter_mut(&mut ctx.app.world) {
+                transform.translation = glam::Vec3::new(
+                    data.position[0],
+                    data.position[1],
+                    data.position[2],
+                );
             }
         }
+
+        // Health
+        {
+            let mut q = ctx.app.world.query::<&mut Health>();
+            for mut hp in q.iter_mut(&mut ctx.app.world) {
+                hp.max = data.max_health;
+                hp.current = data.health.min(data.max_health);
+            }
+        }
+
+        // Inventory
+        {
+            let mut q = ctx.app.world.query::<&mut SlotInventory>();
+            for mut inv in q.iter_mut(&mut ctx.app.world) {
+                for (i, slot_data) in data.inventory.iter().enumerate() {
+                    if i >= 9 { break; }
+                    match slot_data {
+                        Some((item_id, qty)) if *qty > 0 => {
+                            inv.set_slot(i, Some(ItemStack::new(*item_id, *qty)));
+                        }
+                        _ => {
+                            inv.set_slot(i, None);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Player state
+        {
+            let mut player = ctx.app.world.resource_mut::<PlayerState>();
+            player.flying = data.flying;
+        }
+
+        // Day/night cycle
+        {
+            let mut cycle = ctx.app.world.resource_mut::<DayNightCycle>();
+            cycle.time = data.day_night_time;
+        }
+
+        // Selected block
+        {
+            let mut selected = ctx.app.world.resource_mut::<SelectedBlock>();
+            selected.index = data.selected_slot;
+            if data.selected_slot < config::BLOCK_PALETTE.len() {
+                selected.block_type = config::BLOCK_PALETTE[data.selected_slot];
+            }
+        }
+
+        println!("Player state restored: pos=({:.1},{:.1},{:.1}) hp={:.0}/{:.0} fly={}",
+            data.position[0], data.position[1], data.position[2],
+            data.health, data.max_health, data.flying);
     }
 }
 

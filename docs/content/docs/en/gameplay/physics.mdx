@@ -8,6 +8,25 @@ description: Built-in AABB physics and Rapier 3D integration
 
 AnvilKit provides two physics options: a lightweight built-in AABB system (default) and full rigid-body simulation via `rapier3d` (feature-gated).
 
+### v0.3 Module Restructuring
+
+In v0.3, the physics module was split from a single `physics.rs` file into a `physics/` directory for better organization:
+
+- `physics/mod.rs` -- re-exports (import paths remain the same)
+- `physics/components.rs` -- `Velocity`, `AabbCollider`, `RigidBody`, `Collider`
+- `physics/aabb.rs` -- AABB collision detection logic
+- `physics/rapier.rs` -- Rapier integration systems
+- `physics/events.rs` -- `CollisionEvent` and event extraction
+
+Import paths remain the same via re-exports in `mod.rs`, so existing code is unaffected.
+
+### Math Utilities
+
+`Aabb` and raycast utilities are now also available from `anvilkit_core::math` (moved from the render crate), with no GPU dependency:
+
+- `anvilkit_core::math::Aabb` -- pure math AABB, no GPU dependency
+- `anvilkit_core::math::raycast` -- `screen_to_ray`, `ray_plane_intersection`, `ray_sphere_intersection`
+
 ## Built-in AABB Physics (default)
 
 `PhysicsPlugin` registers velocity integration and N-squared AABB collision detection in `Update`.
@@ -17,7 +36,7 @@ AnvilKit provides two physics options: a lightweight built-in AABB system (defau
 | `DeltaTime` | Resource | Frame delta in seconds — auto-synced from `Time` by `update_delta_time_system` |
 | `Velocity` | Component | `linear: Vec3`, `angular: Vec3` |
 | `AabbCollider` | Component | `half_extents: Vec3` |
-| `CollisionEvents` | Resource | `Vec<CollisionEvent>` populated each frame |
+| `CollisionEvents` | Resource | **Deprecated** -- use `EventWriter<CollisionEvent>` / `EventReader<CollisionEvent>` instead |
 | `CollisionEvent` | Struct | `a: Entity`, `b: Entity` |
 
 | System | Description |

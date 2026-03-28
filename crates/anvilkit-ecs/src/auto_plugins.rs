@@ -1,7 +1,7 @@
 //! # 自动插件
 //!
-//! 提供 `AutoInputPlugin` 和 `AutoDeltaTimePlugin`，
-//! 自动管理输入帧生命周期和时间更新。
+//! 提供 `AutoInputPlugin`、`AutoDeltaTimePlugin` 和 `PersistencePlugin`，
+//! 自动管理输入帧生命周期、时间更新和自动存档。
 
 use bevy_ecs::prelude::*;
 use crate::plugin::Plugin;
@@ -33,11 +33,33 @@ impl Plugin for AutoInputPlugin {
     fn build(&self, app: &mut App) {
         use anvilkit_input::prelude::InputState;
         app.init_resource::<InputState>();
+        app.add_systems(AnvilKitSchedule::PreUpdate, action_map_update_system);
         app.add_systems(AnvilKitSchedule::Cleanup, input_end_frame_system);
     }
 
     fn name(&self) -> &str {
         "AutoInputPlugin"
+    }
+}
+
+/// Sync `ActionMap` states from `InputState` each frame.
+///
+/// Uses `Option` so the system is a no-op when `ActionMap` is not inserted.
+/// Games that register an `ActionMap` resource get automatic per-frame updates.
+///
+/// This system is registered by [`AutoInputPlugin`] in `PreUpdate`. Games that
+/// do not use `AutoInputPlugin` can add this system manually:
+///
+/// ```rust,ignore
+/// use anvilkit_ecs::auto_plugins::action_map_update_system;
+/// app.add_systems(AnvilKitSchedule::PreUpdate, action_map_update_system);
+/// ```
+pub fn action_map_update_system(
+    input: Res<anvilkit_input::prelude::InputState>,
+    action_map: Option<ResMut<anvilkit_input::prelude::ActionMap>>,
+) {
+    if let Some(mut map) = action_map {
+        map.update(&input);
     }
 }
 
@@ -80,6 +102,97 @@ fn time_update_system(mut time: ResMut<anvilkit_core::time::Time>) {
     time.update();
     // Note: delta clamping is handled by the FixedUpdate accumulator in App::update()
     // which caps at max 10 ticks. Time itself tracks real elapsed time.
+}
+
+// --- Persistence Plugin (feature-gated) ---
+
+/// 持久化插件
+///
+/// 注册 `AutoSaveConfig` 和 `AutoSaveState` 资源，
+/// 并在 Update 阶段运行自动存档计时系统。
+///
+/// 当计时器触发时记录日志；实际存档操作由游戏层处理。
+///
+/// # 示例
+///
+/// ```rust,no_run
+/// use anvilkit_ecs::prelude::*;
+/// use anvilkit_ecs::auto_plugins::PersistencePlugin;
+///
+/// App::new()
+///     .add_plugins(AnvilKitEcsPlugin)
+///     .add_plugins(PersistencePlugin);
+/// ```
+#[cfg(feature = "persistence")]
+pub struct PersistencePlugin;
+
+#[cfg(feature = "persistence")]
+impl Plugin for PersistencePlugin {
+    fn build(&self, app: &mut App) {
+        use anvilkit_core::persistence::{AutoSaveConfig, AutoSaveState};
+        app.init_resource::<AutoSaveConfig>();
+        app.init_resource::<AutoSaveState>();
+        app.add_systems(AnvilKitSchedule::Update, auto_save_tick_system);
+    }
+
+    fn name(&self) -> &str {
+        "PersistencePlugin"
+    }
+}
+
+/// 自动存档计时系统 — 每帧累加时间，到达间隔时触发存档事件
+#[cfg(feature = "persistence")]
+fn auto_save_tick_system(
+    config: Res<anvilkit_core::persistence::AutoSaveConfig>,
+    mut state: ResMut<anvilkit_core::persistence::AutoSaveState>,
+    dt: Res<crate::app::DeltaTime>,
+) {
+    if let Some(slot_name) = anvilkit_core::persistence::auto_save_tick(&config, &mut state, dt.0 as f64) {
+        log::info!("Auto-save triggered: slot '{}'", slot_name);
+    }
+}
+
+// --- Settings Apply Plugin (feature-gated) ---
+
+/// 设置应用插件
+///
+/// 在 PreUpdate 阶段将 `Settings::audio` 的音量值同步到 `AudioBus` 资源，
+/// 确保用户设置变更自动反映到音频混音器。
+///
+/// # 示例
+///
+/// ```rust,no_run
+/// use anvilkit_ecs::prelude::*;
+/// use anvilkit_ecs::auto_plugins::SettingsApplyPlugin;
+///
+/// App::new()
+///     .add_plugins(AnvilKitEcsPlugin)
+///     .add_plugins(SettingsApplyPlugin);
+/// ```
+#[cfg(feature = "persistence")]
+pub struct SettingsApplyPlugin;
+
+#[cfg(feature = "persistence")]
+impl Plugin for SettingsApplyPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(AnvilKitSchedule::PreUpdate, settings_apply_audio_system);
+    }
+
+    fn name(&self) -> &str {
+        "SettingsApplyPlugin"
+    }
+}
+
+/// 将 Settings 中的音频配置同步到 AudioBus
+#[cfg(feature = "persistence")]
+fn settings_apply_audio_system(
+    settings: Option<Res<anvilkit_core::persistence::Settings>>,
+    mut bus: Option<ResMut<crate::audio::AudioBus>>,
+) {
+    let (Some(settings), Some(bus)) = (settings, bus.as_deref_mut()) else { return };
+    bus.master = settings.audio.master_volume;
+    bus.music = settings.audio.music_volume;
+    bus.sfx = settings.audio.sfx_volume;
 }
 
 #[cfg(test)]
@@ -140,5 +253,51 @@ mod tests {
     fn test_auto_input_plugin_name() {
         let plugin = AutoInputPlugin;
         assert_eq!(plugin.name(), "AutoInputPlugin");
+    }
+
+    #[cfg(feature = "persistence")]
+    #[test]
+    fn test_persistence_plugin_registers_resources() {
+        let mut app = App::new();
+        app.add_plugins(AnvilKitEcsPlugin);
+        app.add_plugins(PersistencePlugin);
+        assert!(app.world.get_resource::<anvilkit_core::persistence::AutoSaveConfig>().is_some());
+        assert!(app.world.get_resource::<anvilkit_core::persistence::AutoSaveState>().is_some());
+    }
+
+    #[cfg(feature = "persistence")]
+    #[test]
+    fn test_persistence_plugin_name() {
+        let plugin = PersistencePlugin;
+        assert_eq!(plugin.name(), "PersistencePlugin");
+    }
+
+    #[cfg(feature = "persistence")]
+    #[test]
+    fn test_settings_apply_audio() {
+        use crate::audio::AudioBus;
+
+        let mut app = App::new();
+        app.add_plugins(AnvilKitEcsPlugin);
+        app.add_plugins(SettingsApplyPlugin);
+
+        let mut settings = anvilkit_core::persistence::Settings::default();
+        settings.audio.master_volume = 0.5;
+        settings.audio.music_volume = 0.3;
+        app.insert_resource(settings);
+        app.init_resource::<AudioBus>();
+
+        app.update();
+
+        let bus = app.world.resource::<AudioBus>();
+        assert!((bus.master - 0.5).abs() < f32::EPSILON);
+        assert!((bus.music - 0.3).abs() < f32::EPSILON);
+    }
+
+    #[cfg(feature = "persistence")]
+    #[test]
+    fn test_settings_apply_plugin_name() {
+        let plugin = SettingsApplyPlugin;
+        assert_eq!(plugin.name(), "SettingsApplyPlugin");
     }
 }

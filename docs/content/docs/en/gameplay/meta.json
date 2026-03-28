@@ -1,4 +1,4 @@
 {
   "title": "Gameplay",
-  "pages": ["ecs-plugins", "physics", "navigation", "networking", "ui", "scene"]
+  "pages": ["ecs-plugins", "gameplay-systems", "physics", "navigation", "networking", "ui", "scene"]
 }

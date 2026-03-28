@@ -40,27 +40,30 @@ anvilkit = { path = "../../crates/anvilkit" }
 
 ## Minimal Example
 
+Since v0.3, AnvilKit uses the `AnvilKitApp::run()` + `GameCallbacks` pattern.
+The app runner handles the event loop, input forwarding, and frame lifecycle
+automatically — you only implement the callbacks your game needs.
+
 ```rust
 use anvilkit::prelude::*;
 
-fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins::new())
-        .add_systems(AnvilKitSchedule::Startup, setup)
-        .add_systems(AnvilKitSchedule::Update, hello_system)
-        .run();
+struct MyGame;
+
+impl GameCallbacks for MyGame {
+    fn init(&mut self, ctx: &mut GameContext) {
+        ctx.app.add_systems(AnvilKitSchedule::Update, hello_system);
+    }
 }
 
-fn setup(mut commands: Commands) {
-    // Spawn a camera
-    commands.spawn((
-        CameraComponent::default(),
-        Transform::from_xyz(0.0, 2.0, -5.0),
-    ));
+fn main() {
+    AnvilKitApp::run(
+        GameConfig::new("My Game").with_size(1280, 720),
+        MyGame,
+    );
 }
 
 fn hello_system() {
-    // Your game logic here
+    println!("Hello from AnvilKit!");
 }
 ```
 

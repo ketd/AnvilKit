@@ -1,26 +1,56 @@
 ---
 title: UI 框架
-description: 基于 Flexbox 的 UI，带事件系统和组件构造器
+description: 基于 Flexbox 的 UI，带事件系统、组件构造器和交互控件
 ---
 
 ## UI 系统
 
-基于 Flexbox 的 UI，配备 GPU 加速的矩形渲染、事件系统和组件构造器。
+保留模式 UI 框架，配备 Flexbox 布局、事件系统、组件构造器和交互控件。`anvilkit-ui` crate 负责数据模型、布局和事件逻辑。GPU 渲染委托给 `anvilkit-render` 的 `UiRenderer` + `UiVertex`。
 
 **布局**：由 `taffy` 驱动（完整的 CSS Flexbox 子集）。`UiLayoutEngine::compute_layout()` 接收 `UiNode` 实体和容器尺寸，输出 `[x, y, w, h]` 计算后的矩形。
 
-**渲染**：`UiRenderer` 通过单次绘制调用，以 alpha 混合方式在 3D 场景上绘制带背景色、边框和文本的圆角矩形。
+**渲染**：`UiRenderer`（位于 `anvilkit-render`）通过单次绘制调用，以 alpha 混合方式在 3D 场景上绘制带背景色、边框和文本的圆角矩形。
 
-**事件系统**：
+## UiPlugin
+
+`UiPlugin` 将布局和事件系统注册到 ECS 调度中：
+
+```rust
+use anvilkit_ui::prelude::*;
+
+app.add_plugins(UiPlugin);
+// This registers:
+//   - layout_system in PostUpdate (computes flexbox layout each frame)
+//   - event_system in Update (hit testing, hover/click/focus dispatch)
+```
+
+## UiTheme
+
+`UiTheme` 是一个资源，为所有组件提供默认样式值：
+
+```rust
+use anvilkit_ui::prelude::*;
+
+let theme = UiTheme::default();
+// theme.colors — background, foreground, accent, border, hover, pressed
+// theme.fonts — family, size, line_height
+// theme.spacing — padding, margin, gap defaults
+// theme.borders — width, radius
+```
+
+插入自定义主题作为资源，可全局覆盖默认值。
+
+## 事件系统
 
 | 事件 | 触发条件 |
 |-------|---------|
 | `HoverEnter` | 鼠标进入节点边界 |
 | `HoverLeave` | 鼠标离开节点边界 |
 | `Click` | 在节点内按下鼠标按钮 |
+| `UiChangeEvent` | 组件值变更（复选框、滑块、文本输入框） |
 
 ```rust
-use anvilkit_render::renderer::ui::{UiEvents, Widget, UiNode};
+use anvilkit_ui::prelude::*;
 
 // 创建组件
 let button = Widget::button("Start Game");
@@ -39,7 +69,93 @@ if events.is_hovered(button_entity) {
 }
 ```
 
+## 焦点管理
+
+Tab 导航在可聚焦组件之间循环切换焦点。每个交互组件都携带一个 `UiInteraction` 组件：
+
+| 状态 | 含义 |
+|-------|---------|
+| `UiInteraction::None` | 默认，无交互 |
+| `UiInteraction::Hovered` | 鼠标悬停在组件上 |
+| `UiInteraction::Pressed` | 鼠标按钮在组件上按住 |
+| `UiInteraction::Focused` | 组件获得键盘焦点（Tab 或点击） |
+
+```rust
+use anvilkit_ui::prelude::*;
+
+// Query focused widget
+fn my_system(query: Query<(Entity, &UiInteraction)>) {
+    for (entity, interaction) in &query {
+        if *interaction == UiInteraction::Focused {
+            // This widget has keyboard focus
+        }
+    }
+}
+```
+
 **UiStyle 字段**：`flex_direction`、`justify_content`、`align_items`、`width`、`height`、`min_width`、`min_height`、`max_width`、`max_height`、`padding[4]`、`margin[4]`、`gap`、`flex_grow`、`flex_shrink`。
+
+## 交互组件
+
+### TextInput
+
+可编辑文本框，支持光标和键盘输入。
+
+```rust
+use anvilkit_ui::prelude::*;
+
+let input = Widget::text_input("Placeholder...");
+// Supports: cursor movement (left/right/home/end), character input,
+// backspace/delete, text selection, and UiChangeEvent on edit.
+```
+
+### Slider
+
+可拖拽的滑块，用于在范围内选择数值。
+
+```rust
+use anvilkit_ui::prelude::*;
+
+let slider = Widget::slider(0.0, 100.0, 50.0); // min, max, initial
+// Drag the handle or click the track to update the value.
+// Emits UiChangeEvent with the new value.
+```
+
+### Checkbox
+
+切换控件，点击时触发 `UiChangeEvent`。
+
+```rust
+use anvilkit_ui::prelude::*;
+
+let checkbox = Widget::checkbox(false); // initial checked state
+// Click toggles between checked/unchecked.
+// Emits UiChangeEvent with the new bool value.
+```
+
+### Dropdown
+
+点击展开的下拉选择列表。
+
+```rust
+use anvilkit_ui::prelude::*;
+
+let dropdown = Widget::dropdown(&["Option A", "Option B", "Option C"], 0);
+// Click opens the selection list; selecting an item closes it.
+// Emits UiChangeEvent with the selected index.
+```
+
+### ScrollView
+
+可滚动容器，用于超出可见区域的内容。
+
+```rust
+use anvilkit_ui::prelude::*;
+
+let scroll = Widget::scroll_view();
+// Supports mousewheel scrolling and drag-to-scroll.
+// Child widgets are clipped to the scroll view bounds.
+```
 
 ## 自定义渲染管线
 

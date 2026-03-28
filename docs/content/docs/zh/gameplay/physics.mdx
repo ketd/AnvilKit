@@ -8,23 +8,55 @@ description: 内置 AABB 物理和 Rapier 3D 集成
 
 AnvilKit 提供两种物理方案：轻量级的内置 AABB 系统（默认）和通过 `rapier3d` 实现的完整刚体模拟（需启用 feature）。
 
+### v0.3 模块重构
+
+在 v0.3 中，物理模块从单个 `physics.rs` 文件拆分为 `physics/` 目录，以更好地组织代码：
+
+- `physics/mod.rs` -- 重导出（导入路径保持不变）
+- `physics/components.rs` -- `Velocity`、`AabbCollider`、`RigidBody`、`Collider`
+- `physics/aabb.rs` -- AABB 碰撞检测逻辑
+- `physics/rapier.rs` -- Rapier 集成系统
+- `physics/events.rs` -- `CollisionEvent` 和事件提取
+
+通过 `mod.rs` 中的重导出，导入路径保持不变，现有代码不受影响。
+
+### 数学工具
+
+`Aabb` 和射线投射工具现在也可以从 `anvilkit_core::math` 获取（从渲染 crate 移出），无 GPU 依赖：
+
+- `anvilkit_core::math::Aabb` -- 纯数学 AABB，无 GPU 依赖
+- `anvilkit_core::math::raycast` -- `screen_to_ray`、`ray_plane_intersection`、`ray_sphere_intersection`
+
 ## 内置 AABB 物理（默认）
 
 `PhysicsPlugin` 在 `Update` 中注册速度积分和 N-平方 AABB 碰撞检测。
 
 | 类型 | 类别 | 说明 |
 |------|------|-------------|
-| `DeltaTime` | Resource | 帧间隔时间（秒），自动从 Time 资源同步 |
+| `DeltaTime` | Resource | 帧间隔时间（秒）— 由 `update_delta_time_system` 自动从 `Time` 同步 |
 | `Velocity` | Component | `linear: Vec3`, `angular: Vec3` |
 | `AabbCollider` | Component | `half_extents: Vec3` |
-| `CollisionEvents` | Resource | 每帧填充的 `Vec<CollisionEvent>` |
+| `CollisionEvents` | Resource | **已弃用** -- 请改用 `EventWriter<CollisionEvent>` / `EventReader<CollisionEvent>` |
 | `CollisionEvent` | Struct | `a: Entity`, `b: Entity` |
 
 | 系统 | 说明 |
 |--------|-------------|
-| `update_delta_time_system` | 每帧从 `Time` 资源同步 `DeltaTime` |
+| `update_delta_time_system` | 从核心 `Time` 资源同步 `DeltaTime`（在 PreUpdate 中注册） |
 | `velocity_integration_system` | `transform.translation += velocity.linear * dt` |
-| `collision_detection_system` | N-平方 AABB 重叠检测，写入 `CollisionEvents`（缩放感知） |
+| `collision_detection_system` | N-平方 AABB 重叠检测（缩放感知），写入 `CollisionEvents` |
+
+### 推荐调度
+
+物理系统应在 `FixedUpdate` 中运行以实现确定性模拟：
+
+```rust
+app.add_systems(AnvilKitSchedule::FixedUpdate, (
+    velocity_integration_system,
+    collision_detection_system.after(velocity_integration_system),
+));
+```
+
+`FixedUpdate` 以固定 1/60s 时间步长运行（可通过 `app.set_fixed_timestep()` 配置），独立于帧率。确保不同硬件上的物理行为一致。
 
 ```rust
 use anvilkit_ecs::prelude::*;
@@ -51,19 +83,6 @@ fn read_collisions(mut events: EventReader<CollisionEvent>) {
     }
 }
 ```
-
-### 推荐调度
-
-物理系统应在 `FixedUpdate` 中运行以实现确定性模拟：
-
-```rust
-app.add_systems(AnvilKitSchedule::FixedUpdate, (
-    velocity_integration_system,
-    collision_detection_system.after(velocity_integration_system),
-));
-```
-
-`FixedUpdate` 以固定 1/60s 时间步长运行（可通过 `app.set_fixed_timestep()` 配置），独立于帧率。确保不同硬件上的物理行为一致。
 
 ## Rapier 集成（feature `"rapier"`）
 

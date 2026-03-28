@@ -1,0 +1,144 @@
+---
+title: anvilkit-data
+description: Data-driven configuration tables and i18n localization
+---
+
+`anvilkit-data` provides typed data tables and localization for data-driven game configuration. Load structured data from RON or JSON files and look up translated strings at runtime.
+
+### Overview
+
+- **DataTable** — generic key-value store for game definitions (blocks, items, recipes, etc.)
+- **Locale** — translation lookup with automatic fallback
+- **DataTablePlugin** — ECS integration that inserts a default `Locale` into the world
+
+All types are ECS `Resource`s and can be inserted, queried, and mutated through the standard world API.
+
+### DataTable\<K, V\>
+
+A typed key-value `Resource` for loading and querying game data. Keys and values can be any types; for file loading, both must implement `DeserializeOwned`.
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `new` | `(name: &str) -> Self` | Create an empty table with a debug name |
+| `get` | `(&self, key: &K) -> Option<&V>` | Look up a value by key |
+| `insert` | `(&mut self, key: K, value: V)` | Insert or overwrite an entry |
+| `len` | `(&self) -> usize` | Number of entries |
+| `is_empty` | `(&self) -> bool` | True if the table has no entries |
+| `iter` | `(&self) -> impl Iterator<Item = (&K, &V)>` | Iterate over all entries |
+| `name` | `(&self) -> &str` | The debug name |
+| `from_ron` | `(name: &str, data: &str) -> Result<Self>` | Parse a RON string into a table |
+| `from_json` | `(name: &str, data: &str) -> Result<Self>` | Parse a JSON string into a table |
+
+> `from_ron` and `from_json` require `K: DeserializeOwned + Eq + Hash` and `V: DeserializeOwned`.
+
+#### Example: Block Definitions
+
+```rust
+use anvilkit_data::data_table::DataTable;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct BlockDef {
+    hardness: f32,
+    tool: String,
+    drop: String,
+}
+
+let ron_str = std::fs::read_to_string("assets/data/blocks.ron")?;
+let blocks: DataTable<String, BlockDef> = DataTable::from_ron("blocks", &ron_str)?;
+
+if let Some(stone) = blocks.get(&"stone".to_string()) {
+    println!("Stone hardness: {}, tool: {}", stone.hardness, stone.tool);
+}
+```
+
+### Locale
+
+A translation `Resource` that maps string keys to localized text. If a key has no translation, `translate` returns the key itself as a fallback.
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `new` | `(language: &str) -> Self` | Create a locale with the given language code |
+| `language` | `(&self) -> &str` | Current language code |
+| `set_language` | `(&mut self, language: &str)` | Change the active language (clears existing translations) |
+| `insert` | `(&mut self, key: &str, value: &str)` | Add a single translation entry |
+| `load_ron` | `(&mut self, data: &str) -> Result<()>` | Load translations from a RON string (merges with existing) |
+| `translate` / `t` | `(&self, key: &str) -> &str` | Look up a translation; returns the key itself if not found |
+| `has_key` | `(&self, key: &str) -> bool` | True if a translation exists for the key |
+| `len` | `(&self) -> usize` | Number of translation entries |
+| `is_empty` | `(&self) -> bool` | True if no translations are loaded |
+
+#### Example: HUD Localization
+
+```rust
+use anvilkit_data::locale::Locale;
+
+let mut locale = Locale::new("en");
+
+let ron_str = std::fs::read_to_string("assets/locale/en.ron")?;
+locale.load_ron(&ron_str)?;
+
+// In your HUD rendering
+let label = locale.t("hud.health"); // "Health"
+let missing = locale.t("hud.nonexistent"); // returns "hud.nonexistent" (fallback)
+```
+
+### DataTablePlugin
+
+A plugin that integrates `anvilkit-data` with the ECS world.
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `build` | `(&self, world: &mut World)` | Inserts a default `Locale("en")` resource into the world |
+
+#### Example
+
+```rust
+use anvilkit_data::DataTablePlugin;
+
+fn init(ctx: &mut GameContext) {
+    DataTablePlugin.build(ctx.world_mut());
+
+    // Load locale
+    let ron_str = std::fs::read_to_string("assets/locale/en.ron").unwrap();
+    ctx.world_mut()
+        .get_resource_mut::<Locale>()
+        .unwrap()
+        .load_ron(&ron_str)
+        .unwrap();
+
+    // Load data table
+    let blocks_ron = std::fs::read_to_string("assets/data/blocks.ron").unwrap();
+    let blocks: DataTable<String, BlockDef> = DataTable::from_ron("blocks", &blocks_ron).unwrap();
+    ctx.world_mut().insert_resource(blocks);
+}
+```
+
+### RON File Format
+
+#### DataTable RON
+
+A RON map where keys match the `K` type and values match the `V` type:
+
+```ron
+{
+    "grass": BlockDef(hardness: 0.5, tool: "shovel", drop: "dirt"),
+    "stone": BlockDef(hardness: 1.5, tool: "pickaxe", drop: "cobblestone"),
+    "oak_log": BlockDef(hardness: 1.0, tool: "axe", drop: "oak_log"),
+}
+```
+
+#### Locale RON
+
+A flat string-to-string map:
+
+```ron
+{
+    "block.grass": "Grass Block",
+    "block.stone": "Stone",
+    "block.oak_log": "Oak Log",
+    "hud.health": "Health",
+    "hud.hunger": "Hunger",
+    "hud.inventory": "Inventory",
+}
+```
