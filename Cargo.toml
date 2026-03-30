@@ -58,6 +58,11 @@ gltf = "1.4"
 # UI layout
 taffy = "0.4"
 
+# egui immediate-mode GUI (winit 0.30 compatible, custom wgpu 0.19 renderer)
+egui = "0.29"
+egui-winit = "0.29"
+epaint = "0.29"
+
 # Utility
 anyhow = "1.0"
 futures-lite = "2.0"

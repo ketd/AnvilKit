@@ -13,5 +13,10 @@ anvilkit-input = { path = "../anvilkit-input" }
 anvilkit-render = { path = "../anvilkit-render" }
 bevy_ecs = { workspace = true }
 winit = { workspace = true }
+wgpu = { workspace = true }
 glam = { workspace = true }
 log = "0.4"
+egui = { workspace = true }
+egui-winit = { workspace = true }
+epaint = { workspace = true }
+bytemuck = { workspace = true }

@@ -11,3 +11,4 @@ pub mod raycast;
 pub mod systems;
 pub mod render;
 pub mod persistence;
+pub mod ui;

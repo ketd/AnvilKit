@@ -34,7 +34,12 @@ use anvilkit_render::window::events::RenderApp;
 use anvilkit_render::window::window::WindowConfig;
 
 mod window_size;
+pub mod screen;
+pub mod egui_integration;
+
 pub use window_size::WindowSize;
+pub use screen::{CursorMode, ScreenPlugin};
+pub use egui_integration::{EguiIntegration, EguiTextures};
 
 /// Game configuration for [`AnvilKitApp::run()`].
 #[derive(Debug, Clone)]
@@ -94,6 +99,8 @@ pub struct GameContext<'a> {
     pub app: &'a mut App,
     /// The render application (device, surface, window).
     pub render_app: &'a mut RenderApp,
+    /// egui integration (available after init).
+    pub egui: Option<&'a mut EguiIntegration>,
 }
 
 impl<'a> GameContext<'a> {
@@ -124,6 +131,10 @@ pub trait GameCallbacks: 'static {
     /// Called each frame to render. The swapchain texture is available via `ctx.render_app`.
     fn render(&mut self, _ctx: &mut GameContext) {}
 
+    /// Called each frame after render() with the egui context for drawing UI.
+    /// The egui context is already in an active frame (between begin_frame and end_frame).
+    fn ui(&mut self, _ctx: &mut GameContext, _egui_ctx: &egui::Context) {}
+
     /// Called when the window is resized.
     /// `width` and `height` are the new physical pixel dimensions.
     fn on_resize(&mut self, _ctx: &mut GameContext, _width: u32, _height: u32) {}
@@ -145,6 +156,7 @@ pub struct AnvilKitApp<G: GameCallbacks> {
     game: G,
     config: GameConfig,
     initialized: bool,
+    egui: Option<EguiIntegration>,
 }
 
 impl<G: GameCallbacks> AnvilKitApp<G> {
@@ -160,6 +172,7 @@ impl<G: GameCallbacks> AnvilKitApp<G> {
             game,
             config,
             initialized: false,
+            egui: None,
         };
 
         event_loop.run_app(&mut runner).expect("Event loop error");
@@ -186,9 +199,26 @@ impl<G: GameCallbacks> ApplicationHandler for AnvilKitApp<G> {
                 ));
             }
 
+            // Initialize egui
+            if self.egui.is_none() {
+                if let (Some(device), Some(window), Some(format)) = (
+                    self.render_app.render_device(),
+                    self.render_app.window(),
+                    self.render_app.surface_format(),
+                ) {
+                    self.egui = Some(EguiIntegration::new(
+                        device.device(),
+                        format,
+                        window,
+                    ));
+                    self.app.world.insert_resource(EguiTextures::default());
+                }
+            }
+
             let mut ctx = GameContext {
                 app: &mut self.app,
                 render_app: &mut self.render_app,
+                egui: None,
             };
             self.game.init(&mut ctx);
             self.initialized = true;
@@ -201,11 +231,23 @@ impl<G: GameCallbacks> ApplicationHandler for AnvilKitApp<G> {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        // Let game handle event first
-        {
+        // Forward to egui first
+        let egui_consumed = if let Some(ref mut egui) = self.egui {
+            if let Some(window) = self.render_app.window() {
+                egui.handle_event(window, &event)
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        // Let game handle event (skip if egui consumed it)
+        if !egui_consumed {
             let mut ctx = GameContext {
                 app: &mut self.app,
                 render_app: &mut self.render_app,
+                egui: None,
             };
             if self.game.on_window_event(&mut ctx, &event) {
                 return; // consumed by game
@@ -224,22 +266,38 @@ impl<G: GameCallbacks> ApplicationHandler for AnvilKitApp<G> {
                     let mut ctx = GameContext {
                         app: &mut self.app,
                         render_app: &mut self.render_app,
+                        egui: None,
                     };
                     self.game.on_resize(&mut ctx, w, h);
                 }
             }
             WindowEvent::RedrawRequested => {
+                // Begin egui frame BEFORE game render, so ui() can be called during render
+                if let Some(ref mut egui) = self.egui {
+                    if let Some(window) = self.render_app.window().cloned() {
+                        egui.begin_frame(&window);
+                    }
+                }
+
+                // Game render — gets egui integration so it can call ui() + render egui
+                // on its own swapchain frame
                 let mut ctx = GameContext {
                     app: &mut self.app,
                     render_app: &mut self.render_app,
+                    egui: self.egui.as_mut(),
                 };
                 self.game.render(&mut ctx);
             }
             _ => {}
         }
 
-        // Forward input to InputState
-        RenderApp::forward_input(&mut self.app, &event);
+        // Forward input to InputState (skip if egui is consuming input)
+        let egui_wants = self.egui.as_ref().map_or(false, |e| {
+            e.wants_pointer_input() || e.wants_keyboard_input()
+        });
+        if !egui_wants {
+            RenderApp::forward_input(&mut self.app, &event);
+        }
 
         // Let RenderApp handle window management (resize surface, etc.)
         self.render_app.window_event(event_loop, window_id, event);
@@ -261,10 +319,31 @@ impl<G: GameCallbacks> ApplicationHandler for AnvilKitApp<G> {
         // Frame tick: DeltaTime → ECS update → end_frame → request_redraw
         self.render_app.tick(&mut self.app);
 
+        // Apply cursor mode from ECS resource (set by ScreenPlugin's cursor_sync_system)
+        if let Some(cursor_mode) = self.app.world.get_resource::<screen::CursorMode>() {
+            if let Some(window) = self.render_app.window() {
+                match cursor_mode {
+                    screen::CursorMode::Free => {
+                        let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
+                        window.set_cursor_visible(true);
+                    }
+                    screen::CursorMode::Locked => {
+                        let _ = window
+                            .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+                            .or_else(|_| {
+                                window.set_cursor_grab(winit::window::CursorGrabMode::Locked)
+                            });
+                        window.set_cursor_visible(false);
+                    }
+                }
+            }
+        }
+
         // Game post-update hook
         let mut ctx = GameContext {
             app: &mut self.app,
             render_app: &mut self.render_app,
+            egui: None,
         };
         self.game.post_update(&mut ctx);
 
@@ -278,6 +357,9 @@ impl<G: GameCallbacks> ApplicationHandler for AnvilKitApp<G> {
 /// Prelude for convenient imports.
 pub mod prelude {
     pub use crate::{AnvilKitApp, GameCallbacks, GameConfig, GameContext, WindowSize};
+    pub use crate::screen::{CursorMode, ScreenPlugin};
+    pub use crate::egui_integration::EguiTextures;
+    pub use egui;
 }
 
 #[cfg(test)]

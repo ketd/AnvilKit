@@ -2,7 +2,8 @@ use std::thread;
 
 #[allow(unused_imports)]
 use anvilkit::prelude::*;
-use anvilkit_app::{AnvilKitApp, GameCallbacks, GameConfig, GameContext};
+use anvilkit_app::{AnvilKitApp, GameCallbacks, GameConfig, GameContext, ScreenPlugin};
+use anvilkit_ecs::state::{GameState, NextGameState, in_state};
 
 // DefaultPlugins handles: ECS, Render, Camera, Audio, Input, DeltaTime
 use anvilkit_render::renderer::{
@@ -39,6 +40,7 @@ use craft::systems::camera_fx::camera_effects_system;
 use craft::systems::survival as survival_sys;
 use craft::config;
 use craft::persistence;
+use craft::ui::{CraftScreen, SettingsReturnTo};
 use anvilkit_gameplay::health::{Health, DamageEvent, HealEvent, DeathEvent, health_system};
 use anvilkit_gameplay::inventory::{SlotInventory, Inventory, ItemStack};
 
@@ -68,6 +70,12 @@ fn main() {
     app.insert_resource(SsaoSettings { enabled: false, ..SsaoSettings::default() });
     app.insert_resource(ActiveFilter::default());
 
+    // Screen state machine + auto cursor management
+    ScreenPlugin::new(CraftScreen::MainMenu)
+        .lock_cursor_in(CraftScreen::Playing)
+        .build(&mut app);
+    app.insert_resource(SettingsReturnTo::default());
+
     // Load block data table + locale
     {
         use anvilkit_data::{DataTable, Locale};
@@ -93,24 +101,35 @@ fn main() {
 
     // Ordering: DayNight → Input → Physics → Survival → CameraFX (Update)
     // CameraController runs in PostUpdate via CameraPlugin (from DefaultPlugins)
+    let playing = in_state(CraftScreen::Playing);
     app.add_systems(AnvilKitSchedule::Update, (
-        day_night_system,
-        input_sys::player_movement_system,
-        input_sys::hotbar_selection_system,
-        input_sys::toggle_actions_system,
-        physics_sys::player_physics_system.after(input_sys::player_movement_system),
-        // Survival systems must run BEFORE camera_effects_system
-        // because camera_effects_system updates was_on_ground (consumed by fall_damage)
-        survival_sys::fall_damage_system.after(physics_sys::player_physics_system),
-        survival_sys::drowning_system.after(physics_sys::player_physics_system),
+        day_night_system.run_if(playing.clone()),
+        input_sys::player_movement_system.run_if(playing.clone()),
+        input_sys::hotbar_selection_system.run_if(playing.clone()),
+        input_sys::toggle_actions_system.run_if(playing.clone()),
+        physics_sys::player_physics_system
+            .after(input_sys::player_movement_system)
+            .run_if(playing.clone()),
+        survival_sys::fall_damage_system
+            .after(physics_sys::player_physics_system)
+            .run_if(playing.clone()),
+        survival_sys::drowning_system
+            .after(physics_sys::player_physics_system)
+            .run_if(playing.clone()),
         health_system
             .after(survival_sys::fall_damage_system)
-            .after(survival_sys::drowning_system),
-        survival_sys::health_regen_system.after(health_system),
-        survival_sys::death_respawn_system.after(health_system),
+            .after(survival_sys::drowning_system)
+            .run_if(playing.clone()),
+        survival_sys::health_regen_system
+            .after(health_system)
+            .run_if(playing.clone()),
+        survival_sys::death_respawn_system
+            .after(health_system)
+            .run_if(playing.clone()),
         camera_effects_system
             .after(physics_sys::player_physics_system)
-            .after(survival_sys::fall_damage_system),
+            .after(survival_sys::fall_damage_system)
+            .run_if(playing),
     ));
 
     // FPS Camera — spawn at a reasonable height above terrain
@@ -197,6 +216,8 @@ fn main() {
         ui_renderer: None,
         current_hit: None,
         frame_count: 0,
+        settings_state: craft::ui::settings_menu::SettingsState::default(),
+        theme_applied: false,
     });
 }
 
@@ -211,6 +232,9 @@ struct CraftGame {
     current_hit: Option<VoxelHit>,
     // Debug frame counter
     frame_count: u64,
+    // UI state
+    settings_state: craft::ui::settings_menu::SettingsState,
+    theme_applied: bool,
 }
 
 
@@ -347,12 +371,7 @@ impl CraftGame {
         self.voxel_gpu = Some(gpu);
         // initialization complete
 
-        // Hide cursor for FPS mode
-        if let Some(window) = ctx.render_app.window() {
-            let _ = window.set_cursor_grab(winit::window::CursorGrabMode::Confined)
-                .or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Locked));
-            window.set_cursor_visible(false);
-        }
+        // Cursor is managed automatically by ScreenPlugin
 
         println!(
             "Craft initialized: {} chunks loaded",
@@ -475,7 +494,7 @@ impl CraftGame {
         }
     }
 
-    fn render_frame(&mut self, ctx: &mut GameContext) {
+    fn render_3d_scene(&mut self, ctx: &mut GameContext, swapchain: &wgpu::TextureView) {
         let Some(device) = ctx.render_app.render_device() else {
             return;
         };
@@ -490,11 +509,6 @@ impl CraftGame {
             };
             (cam.view_proj, cam.camera_pos)
         };
-
-        let Some(frame) = ctx.render_app.get_current_frame() else {
-            return;
-        };
-        let swapchain = frame.texture.create_view(&Default::default());
 
         // Day/night cycle data
         let cycle = ctx.app.world.resource::<DayNightCycle>();
@@ -706,9 +720,7 @@ impl CraftGame {
         // --- Pass 5: HUD (crosshair, coordinates, block highlight) ---
         // Re-acquire device ref to avoid borrow conflict with &mut self
         let _ = gpu; // end immutable borrow on self.voxel_gpu
-        self.render_hud(ctx, &swapchain, &cam_vp, cam_pos);
-
-        frame.present();
+        self.render_hud(ctx, swapchain, &cam_vp, cam_pos);
     }
 
     fn render_hud(
@@ -846,38 +858,36 @@ impl CraftGame {
             }
         }
 
-        // Hotbar: 9-slot block selection bar at bottom center (UiRenderer)
+        // Hotbar: 9-slot block selection bar at bottom center
         {
             use anvilkit_render::renderer::ui::UiNode;
 
-            let slot_size = 36.0_f32;
+            let slot_size = 48.0_f32;
             let slot_gap = 4.0_f32;
             let total_w = 9.0 * slot_size + 8.0 * slot_gap;
             let bar_x = (sw - total_w) * 0.5;
-            let bar_y = sh - slot_size - 16.0;
+            let bar_y = sh - slot_size - 12.0;
 
+            // Slot backgrounds
             let mut hotbar_nodes: Vec<UiNode> = Vec::with_capacity(9);
             for i in 0..9usize {
                 let is_selected = i == selected_index;
                 let (bg, border_color) = if is_selected {
-                    ([0.15, 0.15, 0.1, 0.7], [1.0, 1.0, 0.0, 1.0])
+                    ([0.15, 0.15, 0.1, 0.75], [1.0, 1.0, 0.0, 1.0])
                 } else {
-                    ([0.1, 0.1, 0.1, 0.5], [0.5, 0.5, 0.5, 0.8])
+                    ([0.08, 0.08, 0.08, 0.6], [0.4, 0.4, 0.4, 0.7])
                 };
                 let sx = bar_x + i as f32 * (slot_size + slot_gap);
-                let mut node = UiNode {
+                hotbar_nodes.push(UiNode {
                     background_color: bg,
-                    corner_radius: 4.0,
+                    corner_radius: 6.0,
                     border_width: if is_selected { 2.0 } else { 1.0 },
                     border_color,
                     text: None,
                     style: Default::default(),
                     visible: true,
                     computed_rect: [sx, bar_y, slot_size, slot_size],
-                };
-                node.style.width = anvilkit_render::renderer::ui::Val::Px(slot_size);
-                node.style.height = anvilkit_render::renderer::ui::Val::Px(slot_size);
-                hotbar_nodes.push(node);
+                });
             }
 
             let node_refs: Vec<&UiNode> = hotbar_nodes.iter().collect();
@@ -885,31 +895,138 @@ impl CraftGame {
                 ui.render(device, &mut enc, swapchain, &node_refs, sw, sh);
             }
 
-            // Draw block name initials in each slot (TextRenderer)
+            // Draw block names inside slots + slot number
             if let Some(ref mut tr) = self.text_renderer {
                 let locale = ctx.app.world.get_resource::<anvilkit_data::Locale>();
                 let highlight = glam::Vec3::new(1.0, 1.0, 0.0);
+                let dim = glam::Vec3::new(0.6, 0.6, 0.6);
+
                 for i in 0..9usize {
                     let block = config::BLOCK_PALETTE[i];
-                    let label = locale.map_or_else(
-                        || format!("{:?}", block).chars().next().unwrap_or('?').to_string(),
-                        |l| {
-                            let name = l.t(block.locale_key());
-                            // Take initials: first char of each word
-                            name.split_whitespace()
-                                .filter_map(|w| w.chars().next())
-                                .collect::<String>()
-                        },
+                    let is_selected = i == selected_index;
+                    let sx = bar_x + i as f32 * (slot_size + slot_gap);
+
+                    // Slot number (top-left corner, small)
+                    let num = format!("{}", i + 1);
+                    tr.draw_text(device, &mut enc, swapchain, &num,
+                        sx + 3.0, bar_y + 2.0, 10.0, dim, sw, sh);
+
+                    // Block name (centered, larger)
+                    let name = locale.map_or_else(
+                        || format!("{:?}", block),
+                        |l| l.t(block.locale_key()).to_string(),
                     );
-                    let sx = bar_x + i as f32 * (slot_size + slot_gap) + slot_size * 0.25;
-                    let sy = bar_y + slot_size * 0.2;
-                    let color = if i == selected_index { highlight } else { white };
-                    tr.draw_text(device, &mut enc, swapchain, &label, sx, sy, 14.0, color, sw, sh);
+                    // Show up to 5 chars to fit in slot
+                    let short: String = name.chars().take(5).collect();
+                    let text_w = short.len() as f32 * 11.0 * 0.5;
+                    let tx = sx + (slot_size - text_w) * 0.5;
+                    let ty = bar_y + slot_size * 0.3;
+                    let color = if is_selected { highlight } else { white };
+                    tr.draw_text(device, &mut enc, swapchain, &short,
+                        tx, ty, 11.0, color, sw, sh);
+
+                    // Quantity "x64" (bottom-right)
+                    tr.draw_text(device, &mut enc, swapchain, "x64",
+                        sx + slot_size - 20.0, bar_y + slot_size - 13.0, 9.0, dim, sw, sh);
                 }
+            }
+
+            // Selected block full name below hotbar
+            if let Some(ref mut tr) = self.text_renderer {
+                let locale = ctx.app.world.get_resource::<anvilkit_data::Locale>();
+                let full_name = locale.map_or_else(
+                    || format!("{:?}", config::BLOCK_PALETTE[selected_index]),
+                    |l| l.t(config::BLOCK_PALETTE[selected_index].locale_key()).to_string(),
+                );
+                let text_w = full_name.len() as f32 * 12.0 * 0.5;
+                let tx = (sw - text_w) * 0.5;
+                let ty = bar_y + slot_size + 2.0;
+                tr.draw_text(device, &mut enc, swapchain, &full_name,
+                    tx, ty, 12.0, glam::Vec3::new(0.9, 0.9, 0.9), sw, sh);
             }
         }
 
         device.queue().submit(std::iter::once(enc.finish()));
+    }
+
+    /// Render egui UI overlay on the given swapchain view.
+    fn render_egui_ui(&mut self, ctx: &mut GameContext, swapchain: &wgpu::TextureView) {
+        let Some(ref mut egui) = ctx.egui else { return; };
+        let Some(device) = ctx.render_app.render_device() else { return; };
+        let ws = ctx.render_app.window_state();
+        let (w, h) = ws.size();
+
+        // Draw UI using egui
+        let egui_ctx = egui.ctx.clone();
+        let screen = ctx.app.world.resource::<GameState<CraftScreen>>().0;
+        let return_to = *ctx.app.world.resource::<SettingsReturnTo>();
+
+        let next_screen = match screen {
+            CraftScreen::MainMenu => {
+                // For main menu, also draw a dark background
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::none().fill(egui::Color32::from_rgb(10, 10, 15)))
+                    .show(&egui_ctx, |_ui| {});
+                craft::ui::main_menu::draw(&egui_ctx)
+            }
+            CraftScreen::Paused => craft::ui::pause_menu::draw(&egui_ctx),
+            CraftScreen::Settings => {
+                craft::ui::settings_menu::draw(&egui_ctx, &mut self.settings_state, return_to)
+            }
+            CraftScreen::Inventory => {
+                let mut sel = ctx.app.world.resource::<SelectedBlock>().index;
+                let slots: Vec<(String, u32)> = {
+                    let locale = ctx.app.world.resource::<anvilkit_data::Locale>();
+                    config::BLOCK_PALETTE.iter().map(|bt| {
+                        (locale.t(bt.locale_key()).to_string(), 64)
+                    }).collect()
+                };
+                let result = craft::ui::inventory::draw(&egui_ctx, &slots, &mut sel);
+                ctx.app.world.resource_mut::<SelectedBlock>().index = sel;
+                result
+            }
+            CraftScreen::Playing => None,
+            _ => None,
+        };
+
+        // Handle state transitions from UI
+        if let Some(target) = next_screen {
+            match target {
+                CraftScreen::Quit => { ctx.app.exit(); }
+                CraftScreen::SaveAndQuit => {
+                    let save_seed = ctx.app.world.resource::<WorldSeed>().0;
+                    let world = ctx.app.world.resource::<VoxelWorld>();
+                    let _ = persistence::save_world(&world, &world.modified_chunks, save_seed);
+                    ctx.app.world.resource_mut::<NextGameState<CraftScreen>>()
+                        .set(CraftScreen::MainMenu);
+                }
+                CraftScreen::Settings => {
+                    let from = ctx.app.world.resource::<GameState<CraftScreen>>().0;
+                    *ctx.app.world.resource_mut::<SettingsReturnTo>() = match from {
+                        CraftScreen::MainMenu => SettingsReturnTo::MainMenu,
+                        _ => SettingsReturnTo::Paused,
+                    };
+                    ctx.app.world.resource_mut::<NextGameState<CraftScreen>>()
+                        .set(CraftScreen::Settings);
+                }
+                other => {
+                    ctx.app.world.resource_mut::<NextGameState<CraftScreen>>()
+                        .set(other);
+                }
+            }
+        }
+
+        // End egui frame and render to swapchain
+        if let Some(window) = ctx.render_app.window().cloned() {
+            let mut enc = device.device().create_command_encoder(
+                &wgpu::CommandEncoderDescriptor { label: Some("egui enc") },
+            );
+            egui.end_frame_and_render(
+                device.device(), device.queue(),
+                &mut enc, &swapchain, &window, w, h,
+            );
+            device.queue().submit(std::iter::once(enc.finish()));
+        }
     }
 }
 
@@ -1024,7 +1141,36 @@ impl GameCallbacks for CraftGame {
                             }
                         }
                         match code {
-                            WK::Escape => { ctx.app.exit(); return true; }
+                            WK::Escape => {
+                                let current = ctx.app.world.resource::<GameState<CraftScreen>>().0;
+                                let settings_ret = *ctx.app.world.resource::<SettingsReturnTo>();
+                                let target = match current {
+                                    CraftScreen::Playing => Some(CraftScreen::Paused),
+                                    CraftScreen::Paused => Some(CraftScreen::Playing),
+                                    CraftScreen::Inventory => Some(CraftScreen::Playing),
+                                    CraftScreen::Settings => Some(match settings_ret {
+                                        SettingsReturnTo::MainMenu => CraftScreen::MainMenu,
+                                        SettingsReturnTo::Paused => CraftScreen::Paused,
+                                    }),
+                                    CraftScreen::MainMenu | CraftScreen::Quit | CraftScreen::SaveAndQuit => None,
+                                };
+                                if let Some(t) = target {
+                                    ctx.app.world.resource_mut::<NextGameState<CraftScreen>>().set(t);
+                                } else {
+                                    ctx.app.exit();
+                                }
+                                return true;
+                            }
+                            WK::KeyE if !event.repeat => {
+                                let current = ctx.app.world.resource::<GameState<CraftScreen>>().0;
+                                let mut next = ctx.app.world.resource_mut::<NextGameState<CraftScreen>>();
+                                match current {
+                                    CraftScreen::Playing => next.set(CraftScreen::Inventory),
+                                    CraftScreen::Inventory => next.set(CraftScreen::Playing),
+                                    _ => {}
+                                }
+                                return true;
+                            }
                             WK::F5 => {
                                 let mut q = ctx.app.world.query::<&mut CameraController>();
                                 for mut ctrl in q.iter_mut(&mut ctx.app.world) {
@@ -1052,7 +1198,31 @@ impl GameCallbacks for CraftGame {
     }
 
     fn render(&mut self, ctx: &mut GameContext) {
-        self.render_frame(ctx);
+        // Apply theme once
+        if !self.theme_applied {
+            if let Some(ref egui) = ctx.egui {
+                craft::ui::theme::apply_craft_theme(&egui.ctx);
+                self.theme_applied = true;
+            }
+        }
+
+        // Acquire ONE frame for both 3D and egui
+        if ctx.render_app.render_device().is_none() { return; }
+        let Some(frame) = ctx.render_app.get_current_frame() else { return; };
+        let swapchain = frame.texture.create_view(&Default::default());
+
+        let screen = ctx.app.world.resource::<GameState<CraftScreen>>().0;
+
+        // Render 3D scene + HUD (skipped for MainMenu)
+        if screen != CraftScreen::MainMenu {
+            self.render_3d_scene(ctx, &swapchain);
+        }
+
+        // Render egui UI on top (menus, settings, inventory)
+        self.render_egui_ui(ctx, &swapchain);
+
+        // Present the single frame with both 3D + egui content
+        frame.present();
     }
 
     fn post_update(&mut self, ctx: &mut GameContext) {
@@ -1088,8 +1258,11 @@ impl CraftGame {
             }
         }
 
-        // Block interaction (raycast + place/break)
-        self.handle_block_interaction(ctx);
+        // Block interaction — only when playing
+        let screen = ctx.app.world.resource::<GameState<CraftScreen>>().0;
+        if screen == CraftScreen::Playing {
+            self.handle_block_interaction(ctx);
+        }
 
         // Remesh any dirty chunks
         self.remesh_dirty_chunks(ctx);
