@@ -266,7 +266,12 @@ fn load_engine_save(
             let blocks = rle_decompress(&rle_data, block_count)?;
             let mut chunk = ChunkData::new();
             chunk.blocks[..].copy_from_slice(&blocks);
+            // Compute lighting for loaded chunk
+            let mut light = crate::lighting::LightMap::new();
+            crate::lighting::compute_initial_sky_light(&chunk, &mut light);
+            crate::lighting::compute_block_light(&chunk, &mut light);
             world.chunks.insert((cx, cz), chunk);
+            world.light_maps.insert((cx, cz), light);
             loaded_keys.insert((cx, cz));
         }
     }
@@ -343,7 +348,11 @@ fn load_legacy(world: &mut VoxelWorld) -> io::Result<(u32, HashSet<(i32, i32)>)>
         let blocks = rle_decompress(rle_data, block_count)?;
         let mut chunk = ChunkData::new();
         chunk.blocks[..].copy_from_slice(&blocks);
+        let mut light = crate::lighting::LightMap::new();
+        crate::lighting::compute_initial_sky_light(&chunk, &mut light);
+        crate::lighting::compute_block_light(&chunk, &mut light);
         world.chunks.insert((cx, cz), chunk);
+        world.light_maps.insert((cx, cz), light);
         loaded_keys.insert((cx, cz));
     }
 

@@ -1,20 +1,23 @@
 [workspace]
 members = [
     "crates/anvilkit-core",
-    "crates/anvilkit-ecs",
     "crates/anvilkit-render",
     "crates/anvilkit-assets",
     "crates/anvilkit-input",
     "crates/anvilkit-audio",
     "crates/anvilkit-camera",
     "crates/anvilkit-app",
-    "crates/anvilkit-ui",
     "crates/anvilkit-gameplay",
     "crates/anvilkit-data",
+    "crates/anvilkit-describe-derive",
+    "crates/anvilkit-describe",
+    "crates/anvilkit-mcp",
     "crates/anvilkit",
     "games/billiards",
     "games/craft",
-    "tools/anvilkit-cli",
+    "games/flappy",
+    "games/breakout",
+    "games/scene3d",
 ]
 
 resolver = "2"
@@ -33,7 +36,8 @@ rust-version = "1.70"
 
 [workspace.dependencies]
 # Core dependencies
-bevy_ecs = "0.14"
+bevy_ecs = "0.15"
+bevy_app = "0.15"
 glam = { version = "0.24", features = ["serde"] }
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }

@@ -4,6 +4,7 @@
 //! 半分辨率渲染 + box blur 上采样。
 
 use bevy_ecs::prelude::*;
+use anvilkit_describe::Describe;
 use crate::renderer::RenderDevice;
 
 const SSAO_SHADER: &str = include_str!("../shaders/ssao.wgsl");
@@ -13,17 +14,23 @@ const SSAO_BLUR_SHADER: &str = include_str!("../shaders/ssao_blur.wgsl");
 const SSAO_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
 
 /// SSAO 配置参数
-#[derive(Debug, Clone, Resource)]
+#[derive(Debug, Clone, Resource, Describe)]
+/// Screen-space ambient occlusion configuration.
 pub struct SsaoSettings {
     /// Whether SSAO is enabled.
+    #[describe(hint = "Toggle SSAO on/off", default = "true")]
     pub enabled: bool,
     /// Sampling quality (number of kernel samples).
+    #[describe(hint = "SsaoQuality: Low (16), Medium (32), High (64)", default = "Medium")]
     pub quality: SsaoQuality,
     /// Sampling hemisphere radius in view space.
+    #[describe(hint = "AO sampling radius in view-space units", range = "0.01..2.0", default = "0.5")]
     pub radius: f32,
     /// Depth bias to prevent self-occlusion.
+    #[describe(hint = "Bias to avoid self-occlusion artifacts", range = "0.0..0.1", default = "0.025")]
     pub bias: f32,
     /// AO intensity multiplier.
+    #[describe(hint = "Strength of the occlusion darkening", range = "0.0..3.0", default = "1.0")]
     pub intensity: f32,
 }
 

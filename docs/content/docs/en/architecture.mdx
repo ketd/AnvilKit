@@ -3,6 +3,33 @@ title: Architecture Overview
 description: AnvilKit engine architecture design
 ---
 
+## Three Pillars
+
+The engine is built around three pillars:
+
+- **Rendering** — Canvas2D (2D), Canvas3D (3D), frame capture, and the full PBR pipeline
+- **AI Interface** — MCP server with 17 tools (visual / control / state / scene) enabling agents to see and act
+- **Runtime** — `GameCallbacks` lifecycle + `bevy_app` schedules for ECS systems
+
+## Crate Structure
+
+```
+Engine (umbrella): anvilkit
+Runtime:           anvilkit-app (GameCallbacks, schedules, state, plugins)
+Rendering:         anvilkit-render (Canvas2D, Canvas3D, PBR pipeline, capture, transform)
+Core:              anvilkit-core (math, time, error, persistence)
+Assets:            anvilkit-assets
+Input:             anvilkit-input
+Audio:             anvilkit-audio
+AI Describe:       anvilkit-describe + anvilkit-describe-derive
+AI MCP:            anvilkit-mcp (17 tools: spawn_object, press_key, capture, save_scene, etc.)
+
+Game-level (not in umbrella):
+  anvilkit-camera, anvilkit-gameplay, anvilkit-data
+```
+
+> **Note:** `anvilkit-ecs` no longer exists. Its schedules, plugin system, and state machine have moved into `anvilkit-app`.
+
 ## Layered Architecture
 
 AnvilKit uses a layered modular design where each layer depends only on layers below it:
@@ -14,30 +41,34 @@ flowchart TB
     craft["craft"]
     your_game["your_game"]
   end
-  subgraph system["📦 System Layer"]
-    umbrella["anvilkit (umbrella)"]
+  subgraph system["📦 Engine Crates (umbrella)"]
+    umbrella["anvilkit (facade, prelude, DefaultPlugins)"]
     app["anvilkit-app"]
-    camera["anvilkit-camera"]
-    audio["anvilkit-audio"]
-    input["anvilkit-input"]
+    render["anvilkit-render"]
+    corelib["anvilkit-core"]
     assets["anvilkit-assets"]
-    ui["anvilkit-ui"]
+    input["anvilkit-input"]
+    audio["anvilkit-audio"]
+  end
+  subgraph ai["🤖 AI-first Crates"]
+    describe["anvilkit-describe"]
+    describe_derive["anvilkit-describe-derive"]
+    mcp["anvilkit-mcp"]
+  end
+  subgraph gamelevel["🎲 Game-level Crates"]
+    camera["anvilkit-camera"]
     gameplay["anvilkit-gameplay"]
     data["anvilkit-data"]
   end
-  subgraph core["⚙️ Core Layer"]
-    ecs["anvilkit-ecs"]
-    render["anvilkit-render"]
-    corelib["anvilkit-core"]
-  end
   subgraph deps["🔧 Third-party"]
-    bevy["bevy_ecs"]
+    bevy["bevy_app / bevy_ecs"]
     wgpu["wgpu"]
-    rapier["rapier3d"]
     glam["glam"]
-    taffy["taffy"]
+    rodio["rodio"]
   end
-  game --> system --> core --> deps
+  game --> system --> deps
+  game --> gamelevel --> system
+  game --> ai
 `} />
 
 ## Crate Dependency Graph
@@ -45,31 +76,29 @@ flowchart TB
 <Mermaid chart={`
 flowchart BT
   core["anvilkit-core\n(math, time, error, persistence)"]
-  ecs["anvilkit-ecs\n(App, Plugin, Schedule, Transform, Physics)"]
-  render["anvilkit-render"]
+  render["anvilkit-render\n(wgpu, Canvas2D, transform hierarchy)"]
   input["anvilkit-input\n(InputState, ActionMap)"]
   camera["anvilkit-camera\n(5 modes, trauma shake, spring arm, rail)"]
   assets["anvilkit-assets\n(glTF, animation, AssetServer)"]
   audio["anvilkit-audio\n(AudioSource, spatial)"]
-  app["anvilkit-app\n(AnvilKitApp, GameCallbacks, GameConfig)"]
-  ui["anvilkit-ui\n(Widget, flexbox layout, UiPlugin)"]
-  gameplay["anvilkit-gameplay\n(Health, Inventory, Cooldown, StatusEffect)"]
+  app["anvilkit-app\n(GameCallbacks, schedules, state machine)"]
+  gameplay["anvilkit-gameplay\n(Health, Inventory)"]
   data["anvilkit-data\n(DataTable, Locale)"]
+  describe["anvilkit-describe\n(Describe trait + derive)"]
+  mcp["anvilkit-mcp\n(MCP server)"]
 
-  core --> ecs
-  ecs --> render
-  ecs --> input
+  core --> render
+  core --> input
   render --> camera
   input --> camera
   core --> assets
-  ecs --> audio
-  ecs --> app
+  core --> audio
+  core --> app
   render --> app
   input --> app
-  core --> app
-  ecs --> gameplay
-  ecs --> data
-  ecs --> ui
+  core --> gameplay
+  core --> data
+  describe --> mcp
 `} />
 
 ## Per-Frame Lifecycle
@@ -143,8 +172,7 @@ flowchart TD
 | `anvilkit-core` | `serde` | Serialize/Deserialize for Transform, GlobalTransform |
 | `anvilkit-core` | `persistence` | SaveManager, Settings, WorldStorage (RON + file KV) |
 | `anvilkit-core` | `bevy_ecs` | Component derives for math types |
-| `anvilkit-ecs` | `serde` | Serialize for Parent, Children, scene serialization |
-| `anvilkit-ecs` | `rapier` | rapier3d physics runtime integration |
+| `anvilkit-app` | `serde` | Serialize for ECS components |
 | `anvilkit-assets` | `hot-reload` | File watching via `notify` crate |
 | `anvilkit-assets` | `bevy_ecs` | Component derives for Skeleton, AnimationPlayer |
 | `anvilkit-gameplay` | `stats` | Stats, Health, DamageEvent, health_system |
@@ -159,13 +187,12 @@ flowchart TD
 
 Foundation type library: math utilities (Vec3, Mat4, Transform, GlobalTransform, interpolation), time system (Time, Timer), error types (AnvilKitError with category-preserving `with_context`), persistence system (SaveManager, Settings, WorldStorage — all returning `Result<_, AnvilKitError>`). Aabb axis-aligned bounding box, Frustum, and raycast utilities (screen_to_ray, ray_plane_intersection, ray_sphere_intersection) — moved from render crate in v0.3. Persistence error category (AnvilKitError::Persistence) with category-preserving with_context.
 
-### anvilkit-ecs
-
-Application framework based on `bevy_ecs 0.14`: App lifecycle (new → add_plugins → add_systems → run), Plugin system with uniqueness checks, Schedule dispatching (Main/Startup/PreUpdate/Update/PostUpdate/Cleanup), AppExit resource for graceful shutdown, Transform hierarchy (Parent/Children/GlobalTransform propagation with auto-sync), Physics (scale-aware AABB collision + rapier3d integration), Scene serialization (RON), FixedUpdate schedule (accumulator-based deterministic timestep), Events system (bevy_ecs `Events<T>`/EventWriter/EventReader), `GameState<S>` state machine, SerializableRegistry for type-erased scene serialization, AutoInputPlugin and AutoDeltaTimePlugin for automatic frame management. PersistencePlugin for auto-save integration, SettingsApplyPlugin for syncing Settings to engine subsystems. Physics split into module directory: components.rs, aabb.rs, rapier.rs, events.rs.
-
 ### anvilkit-render
 
-Unified 2D/3D rendering pipeline:
+Unified 2D/3D rendering with agent-friendly entry points:
+- **Canvas2D**: Immediate-mode 2D drawing (rects, text, sprites)
+- **Canvas3D**: Scene-graph 3D API with PBR materials and camera control
+- **Frame Capture**: `capture_frame()` returns rendered pixels — lets AI agents see the game
 - PBR material system (Cook-Torrance BRDF, 5 texture maps)
 - HDR rendering (Rgba16Float) + ACES Filmic tone mapping
 - Bloom (13-tap downsample + 9-tap tent upsample, 5 mip levels)
@@ -204,11 +231,15 @@ Production camera system with 5 modes (FirstPerson, ThirdPerson, Orbit, Free, Ra
 
 ### anvilkit-app
 
-Game application runner that eliminates boilerplate. `AnvilKitApp::run()` owns the winit event loop, input forwarding, DeltaTime management, and frame lifecycle. Games implement `GameCallbacks` (init, post_update, render, on_resize, on_window_event) and pass a `GameConfig` (title, size, vsync). Provides `GameContext` for access to the ECS `App` and `RenderApp`.
+Game application runner that eliminates boilerplate. `AnvilKitApp::run()` owns the winit event loop, input forwarding, DeltaTime management, and frame lifecycle. Games implement `GameCallbacks` (init, post_update, render, on_resize, on_window_event) and pass a `GameConfig` (title, size, vsync). Provides `GameContext` for access to the ECS `App` and `RenderApp`. Since the refactor, anvilkit-app also contains schedules, ECS plugin system, and state machine (previously in anvilkit-ecs, which no longer exists).
 
-### anvilkit-ui
+### anvilkit-describe
 
-Retained-mode UI framework with flexbox layout (taffy-based). GPU-independent — rendering is delegated to `anvilkit-render`'s `UiRenderer`. Includes `Widget` (button, label, panel), `UiLayoutEngine`, event system (hit test, interactions), `UiTheme`, focus management, `UiPlugin` for ECS integration, and interactive controls (TextInput, Slider, Checkbox, Dropdown, ScrollView).
+AI-first introspection: the `Describe` trait and its derive macro allow engine types to emit structured descriptions consumable by AI agents. The companion `anvilkit-describe-derive` crate provides the proc macro.
+
+### anvilkit-mcp
+
+MCP (Model Context Protocol) server with 17 tools that exposes engine state and controls to AI agents. Tool categories: **visual** (capture_frame, describe_scene), **control** (press_key, move_mouse, spawn_object), **state** (get_component, set_component), **scene** (save_scene, load_scene). Enables agent-driven game development workflows where the agent can see and interact with the running game.
 
 ### anvilkit-gameplay
 

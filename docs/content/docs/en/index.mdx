@@ -1,38 +1,39 @@
 ---
 title: Introduction
-description: AnvilKit modular game infrastructure framework
+description: AI-first game engine — agent can see what the player sees
 ---
 
-AnvilKit is a modular game infrastructure framework written in Rust, providing composable core tools for 2D and 3D game development.
+AnvilKit is an **AI-first game engine** written in Rust. The key pitch: **agent can see what the player sees.** Canvas2D, Canvas3D, and frame capture give AI agents direct visual access to the running game, while the MCP server provides 17 tools for control and introspection.
 
 ## Core Features
 
+- **Canvas2D** — Immediate-mode 2D drawing API for the fastest path from idea to pixels
+- **Canvas3D** — 3D scene API with PBR materials, lighting, and camera control
+- **Frame Capture** — Grab rendered frames as images so AI agents can see the game
+- **MCP Server** — 17 tools (visual / control / state / scene) for agent-driven game development
+- **AI Describe** — `Describe` trait and derive macro for structured introspection by AI agents
 - **ECS Architecture** — Entity Component System based on `bevy_ecs` for high-performance game object management
 - **Unified Rendering** — `wgpu`-based 2D/3D unified rendering pipeline with PBR, HDR, IBL, and shadows
-- **Physics System** — Integrated `rapier2d`/`rapier3d` physics engine
-- **Audio System** — Spatial audio and sound effect management based on `kira`/`rodio`
+- **Audio System** — Spatial audio and sound effect management based on `rodio`
 - **Asset Pipeline** — glTF loading, skeletal animation, procedural mesh generation
 - **Input System** — Cross-platform input abstraction with custom Action Map support
-- **UI System** — Retained-mode UI based on `taffy` flexbox layout with interactive widgets
 - **App Runner** — `AnvilKitApp` eliminates boilerplate: owns event loop, input forwarding, and frame lifecycle via `GameCallbacks`
-- **Gameplay Systems** — Feature-gated building blocks: Health, Inventory, Cooldown, StatusEffect, EntityPool
+- **Gameplay Systems** — Feature-gated building blocks: Health, Inventory
 - **Data & i18n** — `DataTable` (RON/JSON) for data-driven configuration and `Locale` for localization with fallback chains
 - **Camera System** — 5 camera modes (FirstPerson, ThirdPerson, Orbit, Free, Rail), trauma shake, spring arm, transitions
-- **Developer Tools** — CLI scaffolding, code generation, performance analysis
 
 ## Tech Stack
 
 | Area | Dependency |
 |------|-----------|
-| ECS | `bevy_ecs` |
+| ECS | `bevy_ecs`, `bevy_app` |
 | Rendering | `wgpu`, `winit` |
 | Math | `glam` |
-| Physics | `rapier2d`, `rapier3d` |
-| Audio | `kira`, `rodio` |
-| UI | `taffy` |
+| Audio | `rodio` |
 | Assets | `gltf`, `image` |
 | Camera | `noise` (Perlin shake) |
 | Data | `ron`, `serde_json` |
+| AI | `anvilkit-describe`, `anvilkit-mcp` |
 | Gameplay | (no external deps — pure Rust) |
 
 ## Quick Links

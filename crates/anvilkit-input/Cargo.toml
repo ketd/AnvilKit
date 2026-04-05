@@ -13,6 +13,7 @@ description = "Keyboard, mouse, and gamepad input abstraction for AnvilKit game 
 readme = "../../README.md"
 
 [dependencies]
+anvilkit-describe = { version = "0.1.0", path = "../anvilkit-describe" }
 bevy_ecs = { workspace = true }
 glam = { workspace = true }
 log = "0.4"

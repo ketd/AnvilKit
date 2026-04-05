@@ -125,7 +125,11 @@ mod tests {
         // Generate a small area
         for cx in -1..=1 {
             for cz in -1..=1 {
-                world.chunks.insert((cx, cz), gen.generate_chunk(cx, cz));
+                let chunk = gen.generate_chunk(cx, cz);
+                let mut light = crate::lighting::LightMap::new();
+                crate::lighting::compute_initial_sky_light(&chunk, &mut light);
+                world.chunks.insert((cx, cz), chunk);
+                world.light_maps.insert((cx, cz), light);
             }
         }
         // Cast straight down from high up

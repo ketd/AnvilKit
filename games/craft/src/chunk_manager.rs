@@ -6,9 +6,20 @@ use anvilkit_render::renderer::draw::Frustum;
 
 use crate::chunk::{ChunkData, CHUNK_SIZE};
 use crate::config;
+use crate::lighting::{self, LightMap};
 use crate::mesh::{self, ChunkMesh, ChunkNeighbors};
 use crate::resources::VoxelWorld;
 use crate::world_gen::WorldGenerator;
+
+/// Compute and insert light map for a chunk that was just added to the world.
+fn insert_chunk_with_light(world: &mut VoxelWorld, cx: i32, cz: i32, chunk: ChunkData) {
+    let mut light = LightMap::new();
+    lighting::compute_initial_sky_light(&chunk, &mut light);
+    lighting::propagate_sky_light(&chunk, &mut light);
+    lighting::compute_block_light(&chunk, &mut light);
+    world.chunks.insert((cx, cz), chunk);
+    world.light_maps.insert((cx, cz), light);
+}
 
 /// Per-chunk GPU buffers.
 pub struct ChunkGpuMesh {
@@ -76,7 +87,7 @@ impl ChunkManager {
             for cz in (center_cz - radius)..=(center_cz + radius) {
                 if !world.chunks.contains_key(&(cx, cz)) {
                     let chunk = world_gen.generate_chunk(cx, cz);
-                    world.chunks.insert((cx, cz), chunk);
+                    insert_chunk_with_light(world, cx, cz, chunk);
                 }
             }
         }
@@ -141,7 +152,7 @@ impl ChunkManager {
             let mut received = 0;
             while let Ok(result) = self.chunk_result_rx.try_recv() {
                 self.pending_chunks.remove(&(result.cx, result.cz));
-                world.chunks.insert((result.cx, result.cz), result.chunk_data);
+                insert_chunk_with_light(world, result.cx, result.cz, result.chunk_data);
 
                 // Mark new chunk + four neighbors dirty for meshing with proper neighbor data
                 self.dirty_chunks.insert((result.cx, result.cz));
@@ -172,6 +183,7 @@ impl ChunkManager {
             }
             for key in far_keys {
                 world.chunks.remove(&key);
+                world.light_maps.remove(&key);
             }
         }
     }
@@ -220,9 +232,10 @@ impl ChunkManager {
             world.chunks.get(&(cx, cz + 1)),
             world.chunks.get(&(cx, cz - 1)),
         ];
+        let light_map = world.light_maps.get(&(cx, cz));
         let ox = (cx * CHUNK_SIZE as i32) as f32;
         let oz = (cz * CHUNK_SIZE as i32) as f32;
-        let cm = mesh::mesh_chunk(chunk, &neighbors, ox, oz);
+        let cm = mesh::mesh_chunk(chunk, &neighbors, light_map, ox, oz);
         self.upload_chunk_mesh(device, cx, cz, cm);
     }
 

@@ -2,6 +2,7 @@
 
 use bevy_ecs::prelude::*;
 use glam::Vec3;
+use anvilkit_describe::Describe;
 
 /// Camera rig component that automatically follows a target entity.
 ///
@@ -11,16 +12,19 @@ use glam::Vec3;
 /// the [`OrbitState.target`](crate::orbit::OrbitState) accordingly.
 ///
 /// This replaces the old pattern of manually writing `target = player_pos` in game code.
-#[derive(Component)]
+#[derive(Component, Describe)]
+/// Camera rig that follows a target entity with offset and damping.
 pub struct CameraRig {
     /// Entity to follow. The system reads this entity's `Transform` each frame.
     pub target_entity: Entity,
     /// Offset from target entity's position (world space).
     /// E.g., `Vec3::new(0.0, 1.6, 0.0)` for eye height.
+    #[describe(hint = "World-space offset from target (e.g., eye height)")]
     pub offset: Vec3,
     /// Follow damping speed. Higher = faster follow.
     /// `0.0` = instant follow (no lag).
     /// Uses frame-rate independent formula: `1 - e^(-speed * dt)`.
+    #[describe(hint = "Follow damping (0=instant)", range = "0.0..50.0", default = "0.0")]
     pub follow_damping: f32,
     /// Internal smoothed target position.
     pub(crate) smoothed_target: Vec3,
@@ -55,7 +59,7 @@ impl CameraRig {
 ///
 /// Runs in `PostUpdate`, before `camera_input_system`.
 pub fn camera_rig_system(
-    dt: Res<anvilkit_ecs::physics::DeltaTime>,
+    dt: Res<anvilkit_core::time::DeltaTime>,
     transforms: Query<&anvilkit_core::math::Transform, Without<CameraRig>>,
     mut rigs: Query<(&mut CameraRig, &mut super::OrbitState)>,
 ) {

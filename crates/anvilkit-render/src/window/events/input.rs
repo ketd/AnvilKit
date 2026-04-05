@@ -7,8 +7,8 @@ use winit::{
 };
 use log::{info, error, debug};
 
-use anvilkit_ecs::app::App;
-use anvilkit_ecs::physics::DeltaTime;
+use bevy_app::App;
+use anvilkit_core::time::DeltaTime;
 use anvilkit_input::prelude::{InputState, KeyCode, MouseButton};
 
 use super::render_app::RenderApp;
@@ -24,7 +24,7 @@ impl RenderApp {
         match event {
             WindowEvent::KeyboardInput { event, .. } => {
                 if let winit::keyboard::PhysicalKey::Code(code) = event.physical_key {
-                    if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+                    if let Some(mut input) = app.world_mut().get_resource_mut::<InputState>() {
                         if let Some(key) = KeyCode::from_winit(code) {
                             if event.state.is_pressed() {
                                 input.press_key(key);
@@ -36,7 +36,7 @@ impl RenderApp {
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
-                if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+                if let Some(mut input) = app.world_mut().get_resource_mut::<InputState>() {
                     if let Some(btn) = MouseButton::from_winit(*button) {
                         if state.is_pressed() {
                             input.press_mouse(btn);
@@ -47,12 +47,12 @@ impl RenderApp {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+                if let Some(mut input) = app.world_mut().get_resource_mut::<InputState>() {
                     input.set_mouse_position(glam::Vec2::new(position.x as f32, position.y as f32));
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+                if let Some(mut input) = app.world_mut().get_resource_mut::<InputState>() {
                     let scroll = match delta {
                         winit::event::MouseScrollDelta::LineDelta(_, y) => *y,
                         winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 120.0,
@@ -70,7 +70,7 @@ impl RenderApp {
     /// The accumulated delta is cleared automatically by [`InputState::end_frame`].
     pub fn forward_device_input(app: &mut App, event: &DeviceEvent) {
         if let DeviceEvent::MouseMotion { delta } = event {
-            if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+            if let Some(mut input) = app.world_mut().get_resource_mut::<InputState>() {
                 input.add_mouse_delta(glam::Vec2::new(delta.0 as f32, delta.1 as f32));
             }
         }
@@ -86,11 +86,11 @@ impl RenderApp {
         let raw_dt = now.duration_since(self.last_frame_time).as_secs_f32();
         self.last_frame_time = now;
         let dt = raw_dt.clamp(0.001, 0.1);
-        app.world.insert_resource(DeltaTime(dt));
+        app.world_mut().insert_resource(DeltaTime(dt));
 
         app.update();
 
-        if let Some(mut input) = app.world.get_resource_mut::<InputState>() {
+        if let Some(mut input) = app.world_mut().get_resource_mut::<InputState>() {
             input.end_frame();
         }
 
@@ -197,7 +197,7 @@ impl ApplicationHandler for RenderApp {
             // 检查 capture auto_exit
             #[cfg(feature = "capture")]
             {
-                if let Some(state) = app.world.get_resource::<crate::renderer::capture::CaptureState>() {
+                if let Some(state) = app.world().get_resource::<crate::renderer::capture::CaptureState>() {
                     if state.exit_requested {
                         info!("帧捕获完成，自动退出");
                         event_loop.exit();

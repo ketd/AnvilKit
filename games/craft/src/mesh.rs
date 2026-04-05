@@ -1,5 +1,6 @@
-use crate::block::{BlockType, Face, tile_uv, TILE_UV, TILE_INSET};
+use crate::block::{BlockType, Face, tile_uv, TILE_UV_X, TILE_UV_Y, TILE_INSET};
 use crate::chunk::{ChunkData, CHUNK_SIZE, CHUNK_HEIGHT};
+use crate::lighting::LightMap;
 use crate::vertex::BlockVertex;
 
 /// Neighbors: [+X, -X, +Z, -Z] (for cross-chunk face culling)
@@ -28,22 +29,24 @@ fn is_ao_occluder(chunk: &ChunkData, neighbors: &ChunkNeighbors, x: i32, y: i32,
 }
 
 /// Face info stored per cell in the 2D greedy meshing mask.
-/// Encodes block type + 4 AO values for greedy merge comparison.
+/// Encodes block type + 4 AO values + light level for greedy merge comparison.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct FaceCell {
     block: u8,
     /// AO packed as 4 discrete levels (0..3) per vertex, total 8 bits.
     ao_packed: u8,
+    /// Light level (packed sky/block byte) — faces with different light cannot be merged.
+    light: u8,
 }
 
 impl FaceCell {
-    const EMPTY: Self = Self { block: 0, ao_packed: 0 };
+    const EMPTY: Self = Self { block: 0, ao_packed: 0, light: 0 };
 
-    fn new(block: BlockType, ao: [f32; 4]) -> Self {
+    fn new(block: BlockType, ao: [f32; 4], light: u8) -> Self {
         // Quantize AO to 2-bit per vertex for merge comparison
         let q = |v: f32| ((v * 3.0).round() as u8).min(3);
         let ao_packed = q(ao[0]) | (q(ao[1]) << 2) | (q(ao[2]) << 4) | (q(ao[3]) << 6);
-        Self { block: block as u8, ao_packed }
+        Self { block: block as u8, ao_packed, light }
     }
 
     fn is_empty(self) -> bool {
@@ -54,16 +57,23 @@ impl FaceCell {
         let unq = |shift: u8| ((self.ao_packed >> shift) & 3) as f32 / 3.0;
         [unq(0), unq(2), unq(4), unq(6)]
     }
+
+    /// Decode light to the f32 encoding the shader expects: sky*16+block.
+    fn light_f32(self) -> f32 {
+        let sky = (self.light >> 4) as f32;
+        let block = (self.light & 0x0F) as f32;
+        sky * 16.0 + block
+    }
 }
 
 /// Generate mesh for a chunk at world offset (ox, oz) = (cx * CHUNK_SIZE, cz * CHUNK_SIZE).
-pub fn mesh_chunk(chunk: &ChunkData, neighbors: &ChunkNeighbors, ox: f32, oz: f32) -> ChunkMesh {
+pub fn mesh_chunk(chunk: &ChunkData, neighbors: &ChunkNeighbors, light_map: Option<&LightMap>, ox: f32, oz: f32) -> ChunkMesh {
     let mut vertices = Vec::with_capacity(4096);
     let mut indices = Vec::with_capacity(8192);
     let mut water_vertices = Vec::with_capacity(1024);
     let mut water_indices = Vec::with_capacity(2048);
 
-    // Plants are not greedy-meshed; emit them in a simple pass
+    // Non-cube blocks: plants (cross billboard) and torches (thin cuboid)
     for y in 0..CHUNK_HEIGHT {
         for z in 0..CHUNK_SIZE {
             for x in 0..CHUNK_SIZE {
@@ -72,7 +82,14 @@ pub fn mesh_chunk(chunk: &ChunkData, neighbors: &ChunkNeighbors, ox: f32, oz: f3
                     let wx = ox + x as f32;
                     let wy = y as f32;
                     let wz = oz + z as f32;
-                    emit_plant(&mut vertices, &mut indices, block, wx, wy, wz);
+                    let light = light_map
+                        .map(|lm| lm.get_packed(x, y, z))
+                        .unwrap_or(0xF0);
+                    if block.is_torch_shape() {
+                        emit_torch(&mut vertices, &mut indices, block, wx, wy, wz, light);
+                    } else {
+                        emit_plant(&mut vertices, &mut indices, block, wx, wy, wz, light);
+                    }
                 }
             }
         }
@@ -94,7 +111,7 @@ pub fn mesh_chunk(chunk: &ChunkData, neighbors: &ChunkNeighbors, ox: f32, oz: f3
 
     for &(face, ndx, ndy, ndz) in &face_dirs {
         greedy_face(
-            chunk, neighbors, ox, oz, face, ndx, ndy, ndz,
+            chunk, neighbors, light_map, ox, oz, face, ndx, ndy, ndz,
             &mut vertices, &mut indices,
             &mut water_vertices, &mut water_indices,
             &mut mask,
@@ -108,6 +125,7 @@ pub fn mesh_chunk(chunk: &ChunkData, neighbors: &ChunkNeighbors, ox: f32, oz: f3
 fn greedy_face(
     chunk: &ChunkData,
     neighbors: &ChunkNeighbors,
+    light_map: Option<&LightMap>,
     ox: f32,
     oz: f32,
     face: Face,
@@ -175,19 +193,25 @@ fn greedy_face(
                     mask[u + v * u_max] = FaceCell::EMPTY;
                     continue;
                 }
-
-                // Water: only top face
-                if block.is_water() && face != Face::Top {
+                // Don't generate faces toward torch-shaped neighbors —
+                // they occupy negligible space and exposing adjacent faces
+                // looks like a full block outline around a tiny item.
+                if neighbor.is_torch_shape() {
                     mask[u + v * u_max] = FaceCell::EMPTY;
                     continue;
                 }
 
+                // Sample light from the neighbor block (the air/transparent space the face looks into)
+                let face_light = light_map
+                    .map(|lm| lm.get_packed_safe(nx, ny, nz))
+                    .unwrap_or(0xF0);
+
                 if block.is_water() {
                     // Water: no AO
-                    mask[u + v * u_max] = FaceCell::new(block, [1.0; 4]);
+                    mask[u + v * u_max] = FaceCell::new(block, [1.0; 4], face_light);
                 } else {
                     let ao = compute_face_ao(chunk, neighbors, face, x, y, z);
-                    mask[u + v * u_max] = FaceCell::new(block, ao);
+                    mask[u + v * u_max] = FaceCell::new(block, ao, face_light);
                 }
             }
         }
@@ -236,10 +260,11 @@ fn greedy_face(
                 let wy = y0 as f32;
                 let wz = oz + z0 as f32;
 
+                let light_val = cell.light_f32();
                 if block.is_water() {
-                    emit_greedy_quad(water_vertices, water_indices, block, face, wx, wy, wz, w, h, [1.0; 4]);
+                    emit_greedy_quad(water_vertices, water_indices, block, face, wx, wy, wz, w, h, [1.0; 4], light_val);
                 } else {
-                    emit_greedy_quad(vertices, indices, block, face, wx, wy, wz, w, h, ao);
+                    emit_greedy_quad(vertices, indices, block, face, wx, wy, wz, w, h, ao, light_val);
                 }
 
                 u += w;
@@ -266,6 +291,7 @@ fn emit_greedy_quad(
     w: usize,
     h: usize,
     ao: [f32; 4],
+    light: f32,
 ) {
     let tile = block.face_tile(face);
     let normal = face.normal();
@@ -316,10 +342,10 @@ fn emit_greedy_quad(
         ),
     };
 
-    vertices.push(BlockVertex { position: p0, uv, normal, ao: ao[0] });
-    vertices.push(BlockVertex { position: p1, uv, normal, ao: ao[1] });
-    vertices.push(BlockVertex { position: p2, uv, normal, ao: ao[2] });
-    vertices.push(BlockVertex { position: p3, uv, normal, ao: ao[3] });
+    vertices.push(BlockVertex { position: p0, uv, normal, ao: ao[0], light });
+    vertices.push(BlockVertex { position: p1, uv, normal, ao: ao[1], light });
+    vertices.push(BlockVertex { position: p2, uv, normal, ao: ao[2], light });
+    vertices.push(BlockVertex { position: p3, uv, normal, ao: ao[3], light });
 
     // AO flip optimization
     if ao[0] + ao[2] < ao[1] + ao[3] {
@@ -443,6 +469,98 @@ fn compute_face_ao(
     }
 }
 
+/// Emit a torch-shaped block as a thin 3D cuboid (2×10×2 in 1/16ths of a block).
+/// Uses 4 side faces + 1 top face with direct atlas UV coordinates.
+fn emit_torch(
+    vertices: &mut Vec<BlockVertex>,
+    indices: &mut Vec<u32>,
+    block: BlockType,
+    x: f32,
+    y: f32,
+    z: f32,
+    light_packed: u8,
+) {
+    let tile = block.face_tile(Face::Front);
+    let (du, dv) = tile_uv(tile);
+
+    // Decode light
+    let sky = (light_packed >> 4) as f32;
+    let block_l = (light_packed & 0x0F) as f32;
+    let light = sky * 16.0 + block_l;
+    let ao = 1.0;
+
+    // Torch dimensions in block units (1 block = 16 pixels)
+    let hw = 2.0 / 16.0;       // half-width: 2px = 0.125
+    let h = 10.0 / 16.0;       // height: 10px = 0.625
+    let cx = x + 0.5;
+    let cz = z + 0.5;
+
+    let x0 = cx - hw;
+    let x1 = cx + hw;
+    let y0 = y;
+    let y1 = y + h;
+    let z0 = cz - hw;
+    let z1 = cz + hw;
+
+    // UV: map the full torch texture tile to each face.
+    // The narrow cuboid width means nearest-neighbor sampling picks the correct center columns.
+    let side_u0 = du + TILE_INSET;
+    let side_u1 = du + TILE_UV_X - TILE_INSET;
+    let side_v0 = dv + TILE_INSET;                    // top of tile
+    let side_v1 = dv + TILE_UV_Y - TILE_INSET;        // bottom of tile
+
+    // Top UV: sample the flame area from the center of the tile
+    let top_u0 = du + TILE_UV_X * (6.0 / 16.0);
+    let top_u1 = du + TILE_UV_X * (10.0 / 16.0);
+    let top_v0 = dv + TILE_UV_Y * (2.0 / 16.0);
+    let top_v1 = dv + TILE_UV_Y * (6.0 / 16.0);
+
+    // Helper: emit one quad (4 vertices, 6 indices)
+    let mut push_face = |p0: [f32; 3], p1: [f32; 3], p2: [f32; 3], p3: [f32; 3],
+                          uv0: [f32; 2], uv1: [f32; 2], uv2: [f32; 2], uv3: [f32; 2],
+                          n: [f32; 3]| {
+        let base = vertices.len() as u32;
+        vertices.push(BlockVertex { position: p0, uv: uv0, normal: n, ao, light });
+        vertices.push(BlockVertex { position: p1, uv: uv1, normal: n, ao, light });
+        vertices.push(BlockVertex { position: p2, uv: uv2, normal: n, ao, light });
+        vertices.push(BlockVertex { position: p3, uv: uv3, normal: n, ao, light });
+        indices.extend_from_slice(&[base, base+1, base+2, base, base+2, base+3]);
+        // Back face for double-sided rendering
+        indices.extend_from_slice(&[base, base+2, base+1, base, base+3, base+2]);
+    };
+
+    // Front face (+Z)
+    push_face(
+        [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1],
+        [side_u0, side_v1], [side_u1, side_v1], [side_u1, side_v0], [side_u0, side_v0],
+        [0.0, 0.0, 1.0],
+    );
+    // Back face (-Z)
+    push_face(
+        [x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0],
+        [side_u0, side_v1], [side_u1, side_v1], [side_u1, side_v0], [side_u0, side_v0],
+        [0.0, 0.0, -1.0],
+    );
+    // Right face (+X)
+    push_face(
+        [x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1],
+        [side_u0, side_v1], [side_u1, side_v1], [side_u1, side_v0], [side_u0, side_v0],
+        [1.0, 0.0, 0.0],
+    );
+    // Left face (-X)
+    push_face(
+        [x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0],
+        [side_u0, side_v1], [side_u1, side_v1], [side_u1, side_v0], [side_u0, side_v0],
+        [-1.0, 0.0, 0.0],
+    );
+    // Top face (+Y)
+    push_face(
+        [x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0],
+        [top_u0, top_v0], [top_u0, top_v1], [top_u1, top_v1], [top_u1, top_v0],
+        [0.0, 1.0, 0.0],
+    );
+}
+
 /// Emit plant as two crossed quads (X-shaped billboard).
 fn emit_plant(
     vertices: &mut Vec<BlockVertex>,
@@ -451,30 +569,38 @@ fn emit_plant(
     x: f32,
     y: f32,
     z: f32,
+    light_packed: u8,
 ) {
     let tile = block.face_tile(Face::Front);
     let (du, dv) = tile_uv(tile);
     let u0 = du + TILE_INSET;
     let v0 = dv + TILE_INSET;
-    let u1 = du + TILE_UV - TILE_INSET;
-    let v1 = dv + TILE_UV - TILE_INSET;
+    let u1 = du + TILE_UV_X - TILE_INSET;
+    let v1 = dv + TILE_UV_Y - TILE_INSET;
     let normal = [0.0, 1.0, 0.0];
     let ao = 1.0;
     let cx = x + 0.5;
     let cz = z + 0.5;
+
     let d = 0.35;
+    let h = 1.0;
+
+    // Decode light to f32 encoding
+    let sky = (light_packed >> 4) as f32;
+    let block_l = (light_packed & 0x0F) as f32;
+    let light = sky * 16.0 + block_l;
 
     let quad1 = [
         [cx - d, y, cz - d],
         [cx + d, y, cz + d],
-        [cx + d, y + 1.0, cz + d],
-        [cx - d, y + 1.0, cz - d],
+        [cx + d, y + h, cz + d],
+        [cx - d, y + h, cz - d],
     ];
     let quad2 = [
         [cx - d, y, cz + d],
         [cx + d, y, cz - d],
-        [cx + d, y + 1.0, cz - d],
-        [cx - d, y + 1.0, cz + d],
+        [cx + d, y + h, cz - d],
+        [cx - d, y + h, cz + d],
     ];
     let uvs = [[u0, v1], [u1, v1], [u1, v0], [u0, v0]];
 
@@ -486,6 +612,7 @@ fn emit_plant(
                 uv: uvs[i],
                 normal,
                 ao,
+                light,
             });
         }
         indices.extend_from_slice(&[
@@ -501,10 +628,55 @@ mod tests {
     use crate::world_gen::WorldGenerator;
 
     #[test]
+    fn torch_emits_cuboid_not_cube() {
+        let mut chunk = ChunkData::new();
+        // Place a stone floor and a torch on top
+        chunk.set(5, 10, 5, BlockType::Stone);
+        chunk.set(5, 11, 5, BlockType::Torch);
+
+        let mesh = mesh_chunk(&chunk, &[None; 4], None, 0.0, 0.0);
+
+        // Torch is 5 faces × 4 verts = 20 verts (from emit_torch)
+        // Stone has exposed faces (top is toward torch which is_torch_shape → culled)
+        // So stone should have 5 faces max (all except top toward torch)
+
+        // Check: torch vertices should have positions within the thin cuboid
+        // The cuboid is 4/16 wide centered at (5.5, ?, 5.5)
+        let torch_verts: Vec<_> = mesh.vertices.iter().filter(|v| {
+            // Torch vertices have y between 11.0 and 11.625
+            v.position[1] >= 11.0 && v.position[1] <= 11.7
+            // And UVs in the direct-UV range (not tile-index encoding)
+            && v.uv[1] >= 0.0
+        }).collect();
+
+        assert!(torch_verts.len() >= 20,
+            "Torch should produce at least 20 vertices (5 faces × 4), got {}",
+            torch_verts.len());
+
+        // Verify torch is thin: all X positions should be within [5.375, 5.625]
+        for v in &torch_verts {
+            let px = v.position[0];
+            assert!(px >= 5.3 && px <= 5.7,
+                "Torch vertex X={} should be near center (5.375..5.625)", px);
+        }
+
+        // Verify the greedy mesher does NOT generate a top face on stone
+        // pointing toward the torch (torch_shape neighbor → culled)
+        let stone_top_toward_torch: Vec<_> = mesh.vertices.iter().filter(|v| {
+            v.position[1] >= 10.99 && v.position[1] <= 11.01
+            && v.uv[1] < 0.0  // tile-index encoding = cube face
+            && v.normal[1] > 0.5  // +Y normal = top face
+        }).collect();
+        assert_eq!(stone_top_toward_torch.len(), 0,
+            "Stone top face toward torch should be culled, got {} verts",
+            stone_top_toward_torch.len());
+    }
+
+    #[test]
     fn mesh_has_geometry() {
         let gen = WorldGenerator::new(42);
         let chunk = gen.generate_chunk(0, 0);
-        let mesh = mesh_chunk(&chunk, &[None; 4], 0.0, 0.0);
+        let mesh = mesh_chunk(&chunk, &[None; 4], None, 0.0, 0.0);
         assert!(mesh.vertices.len() > 100, "Should have many opaque vertices");
         assert!(mesh.indices.len() > 100, "Should have many opaque indices");
         assert_eq!(mesh.indices.len() % 3, 0, "Opaque indices should be multiple of 3");
@@ -521,7 +693,7 @@ mod tests {
                 chunk.set(x, 10, z, BlockType::Stone);
             }
         }
-        let mesh = mesh_chunk(&chunk, &[None; 4], 0.0, 0.0);
+        let mesh = mesh_chunk(&chunk, &[None; 4], None, 0.0, 0.0);
         // Without greedy: 32*32 = 1024 top faces × 4 verts = 4096 verts (just for top)
         // With greedy: should be dramatically fewer
         assert!(mesh.vertices.len() < 500,

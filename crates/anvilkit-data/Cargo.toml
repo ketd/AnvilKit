@@ -8,6 +8,7 @@ description = "AnvilKit data tables and i18n — RON/JSON data loading and local
 
 [dependencies]
 bevy_ecs = { workspace = true }
+anvilkit-describe = { version = "0.1.0", path = "../anvilkit-describe" }
 serde = { workspace = true }
 ron = { workspace = true }
 serde_json = "1.0"

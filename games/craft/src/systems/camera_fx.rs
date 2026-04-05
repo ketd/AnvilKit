@@ -3,6 +3,7 @@ use anvilkit_camera::controller::{CameraController, CameraMode};
 use anvilkit_camera::effects::CameraEffects;
 use anvilkit_camera::orbit::OrbitState;
 use anvilkit_render::renderer::draw::ActiveCamera;
+use crate::config;
 use crate::resources::PlayerState;
 
 /// Drives camera effects (landing shake, sprint FOV) and updates
@@ -25,10 +26,12 @@ pub fn camera_effects_system(
             }
         }
 
-        // Landing shake
+        // Landing shake — only trigger on significant falls (not from ground check wobble)
         if player.on_ground && !player.was_on_ground {
-            let impact = (-player.last_vy * 0.02).clamp(0.0, 0.3);
-            if impact > 0.02 {
+            let fall_speed = -player.last_vy;
+            // Require substantial fall velocity before shaking (above jump threshold)
+            if fall_speed > config::JUMP_VEL {
+                let impact = ((fall_speed - config::JUMP_VEL) * 0.02).clamp(0.0, 0.3);
                 fx.add_shake(impact);
             }
         }

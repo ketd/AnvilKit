@@ -6,9 +6,11 @@
 
 use bevy_ecs::prelude::*;
 use glam::{Quat, Vec3};
+use anvilkit_describe::Describe;
 
 /// Easing function type for camera transitions.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Describe)]
+/// Easing function for camera transitions.
 pub enum EasingType {
     /// Linear interpolation (constant speed).
     Linear,
@@ -55,7 +57,8 @@ impl Default for EasingType {
 ///
 /// To trigger a transition, call [`start`](Self::start) with the camera's
 /// current position, rotation, and FOV before changing the mode.
-#[derive(Component)]
+#[derive(Component, Describe)]
+/// Camera transition for smooth mode/position blending.
 pub struct CameraTransition {
     /// Whether a transition is currently active.
     pub(crate) active: bool,
@@ -129,7 +132,7 @@ impl CameraTransition {
 /// When a `CameraTransition` is active, blends the camera's `Transform` and
 /// `CameraComponent` between the snapshot and the current desired state.
 pub fn camera_transition_system(
-    dt: Res<anvilkit_ecs::physics::DeltaTime>,
+    dt: Res<anvilkit_core::time::DeltaTime>,
     mut query: Query<(
         &mut CameraTransition,
         &mut anvilkit_core::math::Transform,

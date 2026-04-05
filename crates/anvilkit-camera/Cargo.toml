@@ -19,9 +19,10 @@ persistence = ["anvilkit-core/persistence"]
 
 [dependencies]
 anvilkit-core = { version = "0.1.0", path = "../anvilkit-core", features = ["bevy_ecs"] }
-anvilkit-ecs = { version = "0.1.0", path = "../anvilkit-ecs" }
+anvilkit-describe = { version = "0.1.0", path = "../anvilkit-describe" }
 anvilkit-input = { version = "0.1.0", path = "../anvilkit-input" }
 anvilkit-render = { version = "0.1.0", path = "../anvilkit-render" }
 bevy_ecs = { workspace = true }
+bevy_app = { workspace = true }
 glam = { workspace = true }
 log = "0.4"

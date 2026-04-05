@@ -59,8 +59,7 @@ app.add_systems(AnvilKitSchedule::FixedUpdate, (
 `FixedUpdate` runs at a fixed 1/60s timestep (configurable via `app.set_fixed_timestep()`), independent of frame rate. This ensures consistent physics behavior across different hardware.
 
 ```rust
-use anvilkit_ecs::prelude::*;
-use anvilkit_ecs::physics::*;
+use anvilkit::prelude::*;
 
 fn setup_physics(mut commands: Commands) {
     // Dynamic moving box
@@ -105,8 +104,7 @@ Enable the `rapier` feature for full rigid-body simulation with `rapier3d`.
 | `RaycastHit` | Result struct: `entity`, `point`, `normal`, `distance` |
 
 ```rust
-use anvilkit_ecs::prelude::*;
-use anvilkit_ecs::physics::*;
+use anvilkit::prelude::*;
 
 fn setup_rapier(mut commands: Commands) {
     // Dynamic sphere

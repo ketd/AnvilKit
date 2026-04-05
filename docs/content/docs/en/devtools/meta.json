@@ -1,4 +1,4 @@
 {
   "title": "Dev Tools",
-  "pages": ["debug-renderer", "profiler", "console", "cli"]
+  "pages": ["debug-renderer"]
 }

@@ -3,7 +3,7 @@ title: ECS & Plugins
 description: Application lifecycle, Plugin system, Schedules, Systems, and Bundles
 ---
 
-`anvilkit-ecs` provides application lifecycle management, a Plugin system, System scheduling, and component bundles, all built on top of `bevy_ecs`.
+`anvilkit-app` provides application lifecycle management, a Plugin system, System scheduling, and component bundles, all built on top of `bevy_app` and `bevy_ecs`.
 
 > **Note:** The recommended way to start a game is `AnvilKitApp::run()` with `GameCallbacks`. The `App::new()` approach shown below is for advanced use cases or testing.
 
@@ -55,8 +55,7 @@ App::new()
 Additionally, the `anvilkit-gameplay` crate provides higher-level gameplay plugins. See the [Gameplay Systems](/docs/en/gameplay/gameplay-systems) page for details.
 
 ```rust
-use anvilkit_ecs::prelude::*;
-use anvilkit_ecs::schedule::AnvilKitSchedule;
+use anvilkit::prelude::*;
 
 let mut app = App::new();
 
@@ -171,7 +170,7 @@ Events are double-buffered and automatically cleared after 2 frames.
 `GameState<S>` provides state management for game flow (menu, gameplay, pause):
 
 ```rust
-use anvilkit_ecs::state::{GameState, NextGameState, in_state, StateValue};
+use anvilkit_app::state::{GameState, NextGameState, in_state, StateValue};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum AppState { Menu, Playing, Paused }

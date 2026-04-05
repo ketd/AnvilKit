@@ -1,7 +1,7 @@
 use bevy_ecs::prelude::*;
 use glam::Vec3;
 use anvilkit_core::math::Transform;
-use anvilkit_ecs::physics::Velocity;
+use anvilkit_core::math::Velocity;
 
 use crate::components::{CueBall, NumberedBall};
 use crate::resources::BilliardConfig;
@@ -107,24 +107,24 @@ pub fn cushion_collision_system(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anvilkit_ecs::prelude::*;
-    use anvilkit_ecs::schedule::AnvilKitSchedule;
+    use anvilkit::prelude::*;
 
     #[test]
     fn test_ball_ball_collision() {
         let mut app = App::new();
+        app.add_plugins(AnvilKitEcsPlugin);
         let config = BilliardConfig::default();
         let r = config.ball_radius;
         app.insert_resource(config);
         app.add_systems(AnvilKitSchedule::Update, ball_collision_system);
 
         // Two balls overlapping (distance < 2*r), approaching each other
-        let a = app.world.spawn((
+        let a = app.world_mut().spawn((
             CueBall,
             Transform::from_xyz(0.0, r, 0.0),
             Velocity::linear(Vec3::new(5.0, 0.0, 0.0)),
         )).id();
-        let b = app.world.spawn((
+        let b = app.world_mut().spawn((
             NumberedBall { number: 1, potted: false },
             Transform::from_xyz(r * 1.5, r, 0.0), // within 2*r
             Velocity::zero(),
@@ -132,8 +132,8 @@ mod tests {
 
         app.update();
 
-        let va = app.world.get::<Velocity>(a).unwrap();
-        let vb = app.world.get::<Velocity>(b).unwrap();
+        let va = app.world().get::<Velocity>(a).unwrap();
+        let vb = app.world().get::<Velocity>(b).unwrap();
         assert!(va.linear.x < 5.0, "Ball A should slow down");
         assert!(vb.linear.x > 0.0, "Ball B should speed up");
     }
@@ -141,6 +141,7 @@ mod tests {
     #[test]
     fn test_cushion_bounce() {
         let mut app = App::new();
+        app.add_plugins(AnvilKitEcsPlugin);
         let config = BilliardConfig::default();
         let r = config.ball_radius;
         let hw = config.table_half_width;
@@ -148,7 +149,7 @@ mod tests {
         app.add_systems(AnvilKitSchedule::Update, cushion_collision_system);
 
         // Ball right at the +X boundary
-        let e = app.world.spawn((
+        let e = app.world_mut().spawn((
             CueBall,
             Transform::from_xyz(hw, r, 0.0), // past boundary (hw - r)
             Velocity::linear(Vec3::new(5.0, 0.0, 0.0)),
@@ -156,7 +157,7 @@ mod tests {
 
         app.update();
 
-        let vel = app.world.get::<Velocity>(e).unwrap();
+        let vel = app.world().get::<Velocity>(e).unwrap();
         assert!(vel.linear.x < 0.0, "Ball should bounce back from +X cushion");
     }
 }

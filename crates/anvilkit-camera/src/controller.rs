@@ -1,5 +1,6 @@
 use bevy_ecs::prelude::*;
 use glam::Vec3;
+use anvilkit_describe::Describe;
 
 use crate::input_curve::InputCurve;
 
@@ -14,7 +15,8 @@ use crate::input_curve::InputCurve;
 /// to automatically follow a target entity.
 ///
 /// `Rail` mode requires a [`CameraRail`](crate::constraints::rail::CameraRail) component.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Describe)]
+/// Camera behavioral mode.
 pub enum CameraMode {
     /// First-person: mouse directly controls yaw/pitch.
     FirstPerson,
@@ -41,28 +43,36 @@ impl Default for CameraMode {
 ///
 /// Controls how the camera responds to mouse/gamepad input and moves through
 /// the world. The actual behavior depends on the [`CameraMode`].
-#[derive(Component)]
+#[derive(Component, Describe)]
+/// Camera controller with mode, sensitivity, and smoothing.
 pub struct CameraController {
     /// Current camera control mode.
     pub mode: CameraMode,
     /// Horizontal rotation angle in radians.
+    #[describe(hint = "Yaw angle in radians")]
     pub yaw: f32,
     /// Vertical rotation angle in radians.
+    #[describe(hint = "Pitch angle in radians")]
     pub pitch: f32,
     /// Minimum and maximum pitch values in radians (clamping range).
     pub pitch_limits: (f32, f32),
     /// Mouse look sensitivity multiplier.
+    #[describe(hint = "Mouse look sensitivity", range = "0.0001..0.1", default = "0.003")]
     pub mouse_sensitivity: f32,
     /// Movement speed in units per second (Free mode).
+    #[describe(hint = "Free-fly movement speed", range = "0.1..200.0", default = "10.0")]
     pub move_speed: f32,
     /// Zoom speed multiplier for scroll-based zooming.
+    #[describe(hint = "Scroll zoom speed", range = "0.1..10.0", default = "1.0")]
     pub zoom_speed: f32,
     /// Base FOV in degrees (used as the reference for effects offsets).
+    #[describe(hint = "Base vertical FOV in degrees", range = "30.0..120.0", default = "70.0")]
     pub base_fov: f32,
 
     /// Smoothing speed for interpolation.
     /// `0.0` = instant (no smoothing), higher values = smoother but laggier.
     /// Uses frame-rate independent formula: `1 - e^(-speed * dt)`.
+    #[describe(hint = "Camera smoothing speed (0=instant)", range = "0.0..50.0", default = "0.0")]
     pub smoothing_speed: f32,
 
     /// Input response curve for mouse look.

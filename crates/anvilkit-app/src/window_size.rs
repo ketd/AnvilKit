@@ -1,13 +1,17 @@
 //! Window size ECS resource.
 
 use bevy_ecs::prelude::*;
+use anvilkit_describe::Describe;
 
 /// Window dimensions in physical pixels, automatically updated on resize.
-#[derive(Debug, Clone, Resource)]
+#[derive(Debug, Clone, Resource, Describe)]
+/// Current window dimensions in physical pixels, updated on resize.
 pub struct WindowSize {
     /// Window width in physical pixels.
+    #[describe(hint = "Current window width in physical pixels", range = "1.0..7680.0", default = "1280.0")]
     pub width: f32,
     /// Window height in physical pixels.
+    #[describe(hint = "Current window height in physical pixels", range = "1.0..4320.0", default = "720.0")]
     pub height: f32,
 }
 

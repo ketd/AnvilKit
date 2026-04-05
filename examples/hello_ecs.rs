@@ -113,7 +113,7 @@ fn main() {
             .with_size(800, 600),
     ));
     app.insert_resource(FrameTime(std::time::Instant::now()));
-    app.add_systems(AnvilKitSchedule::Update, rotate_cubes);
+    app.add_systems(bevy_app::Update, rotate_cubes);
 
     let event_loop = EventLoop::new().unwrap();
     let config = WindowConfig::new()
@@ -201,20 +201,20 @@ impl EcsApp {
             .expect("Pipeline 创建失败");
 
         // Upload mesh & create material via ECS RenderAssets
-        let mut assets = self.app.world.resource_mut::<RenderAssets>();
+        let mut assets = self.app.world_mut().resource_mut::<RenderAssets>();
         let mesh = assets.upload_mesh(device, CUBE_VERTICES, CUBE_INDICES, "Cube");
         let mat = assets.create_material(pipeline.into_pipeline(), empty_bg);
 
         // Spawn 3 cubes + 1 camera
-        self.app.world.spawn((mesh, mat, Transform::from_xyz(-2.5, 0.0, 0.0), RotationSpeed(1.0)));
-        self.app.world.spawn((mesh, mat, Transform::from_xyz( 0.0, 0.0, 0.0), RotationSpeed(1.5)));
-        self.app.world.spawn((mesh, mat, Transform::from_xyz( 2.5, 0.0, 0.0), RotationSpeed(0.7)));
+        self.app.world_mut().spawn((mesh, mat, Transform::from_xyz(-2.5, 0.0, 0.0), RotationSpeed(1.0)));
+        self.app.world_mut().spawn((mesh, mat, Transform::from_xyz( 0.0, 0.0, 0.0), RotationSpeed(1.5)));
+        self.app.world_mut().spawn((mesh, mat, Transform::from_xyz( 2.5, 0.0, 0.0), RotationSpeed(0.7)));
         // 计算相机朝向原点的旋转（LH 坐标系，forward = +Z）
         let eye = glam::Vec3::new(0.0, 2.0, -6.0);
         let look_dir = (glam::Vec3::ZERO - eye).normalize();
         let cam_rotation = glam::Quat::from_rotation_arc(glam::Vec3::Z, look_dir);
 
-        self.app.world.spawn((
+        self.app.world_mut().spawn((
             CameraComponent { fov: 45.0, near: 0.1, far: 100.0, is_active: true, aspect_ratio: w as f32 / h.max(1) as f32, ..Default::default() },
             Transform::from_xyz(eye.x, eye.y, eye.z).with_rotation(cam_rotation),
         ));
@@ -232,9 +232,9 @@ impl EcsApp {
         let Some(ub) = &self.scene_uniform_buffer else { return };
         let Some(scene_bg) = &self.scene_bind_group else { return };
         let Some(depth_view) = &self.depth_texture_view else { return };
-        let Some(active_camera) = self.app.world.get_resource::<ActiveCamera>() else { return };
-        let Some(draw_list) = self.app.world.get_resource::<DrawCommandList>() else { return };
-        let Some(render_assets) = self.app.world.get_resource::<RenderAssets>() else { return };
+        let Some(active_camera) = self.app.world().get_resource::<ActiveCamera>() else { return };
+        let Some(draw_list) = self.app.world().get_resource::<DrawCommandList>() else { return };
+        let Some(render_assets) = self.app.world().get_resource::<RenderAssets>() else { return };
 
         if draw_list.commands.is_empty() { return; }
 

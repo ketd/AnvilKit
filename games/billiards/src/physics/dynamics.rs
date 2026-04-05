@@ -1,6 +1,7 @@
 use bevy_ecs::prelude::*;
 use anvilkit_core::math::Transform;
-use anvilkit_ecs::physics::{Velocity, DeltaTime};
+use anvilkit_core::math::Velocity;
+use anvilkit_core::time::DeltaTime;
 
 use crate::components::{CueBall, NumberedBall};
 use crate::resources::BilliardConfig;
@@ -43,18 +44,18 @@ pub fn billiard_velocity_system(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anvilkit_ecs::prelude::*;
-    use anvilkit_ecs::schedule::AnvilKitSchedule;
+    use anvilkit::prelude::*;
 
     #[test]
     fn test_friction_slows_ball() {
         let mut app = App::new();
+        app.add_plugins(AnvilKitEcsPlugin);
         app.insert_resource(DeltaTime(1.0 / 60.0));
         app.insert_resource(BilliardConfig::default());
         app.add_systems(AnvilKitSchedule::Update, billiard_velocity_system);
 
         let config = BilliardConfig::default();
-        let e = app.world.spawn((
+        let e = app.world_mut().spawn((
             CueBall,
             Transform::from_xyz(0.0, config.ball_radius, 0.0),
             Velocity::linear(glam::Vec3::new(5.0, 0.0, 0.0)),
@@ -62,7 +63,7 @@ mod tests {
 
         app.update();
 
-        let vel = app.world.get::<Velocity>(e).unwrap();
+        let vel = app.world().get::<Velocity>(e).unwrap();
         assert!(vel.linear.x < 5.0, "Velocity should decrease due to friction");
         assert!(vel.linear.x > 0.0, "Velocity should still be positive");
     }
@@ -70,12 +71,13 @@ mod tests {
     #[test]
     fn test_low_velocity_zeroed() {
         let mut app = App::new();
+        app.add_plugins(AnvilKitEcsPlugin);
         app.insert_resource(DeltaTime(1.0 / 60.0));
         app.insert_resource(BilliardConfig::default());
         app.add_systems(AnvilKitSchedule::Update, billiard_velocity_system);
 
         let config = BilliardConfig::default();
-        let e = app.world.spawn((
+        let e = app.world_mut().spawn((
             CueBall,
             Transform::from_xyz(0.0, config.ball_radius, 0.0),
             Velocity::linear(glam::Vec3::new(0.005, 0.0, 0.0)),
@@ -83,19 +85,20 @@ mod tests {
 
         app.update();
 
-        let vel = app.world.get::<Velocity>(e).unwrap();
+        let vel = app.world().get::<Velocity>(e).unwrap();
         assert_eq!(vel.linear, glam::Vec3::ZERO);
     }
 
     #[test]
     fn test_ball_y_enforced() {
         let mut app = App::new();
+        app.add_plugins(AnvilKitEcsPlugin);
         app.insert_resource(DeltaTime(1.0 / 60.0));
         app.insert_resource(BilliardConfig::default());
         app.add_systems(AnvilKitSchedule::Update, billiard_velocity_system);
 
         let config = BilliardConfig::default();
-        let e = app.world.spawn((
+        let e = app.world_mut().spawn((
             CueBall,
             Transform::from_xyz(0.0, 5.0, 0.0),
             Velocity::linear(glam::Vec3::new(1.0, 0.0, 0.0)),
@@ -103,7 +106,7 @@ mod tests {
 
         app.update();
 
-        let t = app.world.get::<Transform>(e).unwrap();
+        let t = app.world().get::<Transform>(e).unwrap();
         assert!((t.translation.y - config.ball_radius).abs() < 0.01);
     }
 }

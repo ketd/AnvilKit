@@ -6,24 +6,30 @@
 
 use bevy_ecs::prelude::*;
 use glam::{Vec2, Vec3};
+use anvilkit_describe::Describe;
 
 /// Soft look-at target component.
 ///
 /// When attached to a camera entity and `enabled` is `true`, the system will
 /// gradually rotate the camera to face `target`, with damping and an optional
 /// dead zone to prevent micro-corrections.
-#[derive(Component)]
+#[derive(Component, Describe)]
+/// Soft look-at constraint for camera orientation.
 pub struct LookAtTarget {
     /// The world-space position to look at.
+    #[describe(hint = "World position to track")]
     pub target: Vec3,
     /// Screen-space dead zone (normalized `[0, 1]`).
     /// Within this zone, no rotation correction is applied.
     /// `(0.1, 0.1)` = 10% of screen in each direction from center.
+    #[describe(hint = "Dead zone in normalized screen space")]
     pub dead_zone: Vec2,
     /// Damping speed (higher = faster tracking).
     /// Uses frame-rate independent formula: `1 - e^(-speed * dt)`.
+    #[describe(hint = "Tracking damping speed", range = "0.0..100.0", default = "10.0")]
     pub damping: f32,
     /// Whether the constraint is active.
+    #[describe(hint = "Enable the look-at constraint", default = "true")]
     pub enabled: bool,
 }
 
@@ -65,7 +71,7 @@ impl LookAtTarget {
 /// For each camera with an enabled `LookAtTarget`, computes the direction
 /// to the target and smoothly rotates the camera toward it using damped slerp.
 pub fn camera_look_at_system(
-    dt: Res<anvilkit_ecs::physics::DeltaTime>,
+    dt: Res<anvilkit_core::time::DeltaTime>,
     mut query: Query<(
         &LookAtTarget,
         &mut anvilkit_core::math::Transform,

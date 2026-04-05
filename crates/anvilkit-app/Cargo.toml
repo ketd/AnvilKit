@@ -7,11 +7,12 @@ license.workspace = true
 description = "AnvilKit game application runner — handles event loop, input forwarding, and frame lifecycle"
 
 [dependencies]
-anvilkit-core = { path = "../anvilkit-core" }
-anvilkit-ecs = { path = "../anvilkit-ecs" }
+anvilkit-core = { path = "../anvilkit-core", features = ["bevy_ecs"] }
+anvilkit-describe = { version = "0.1.0", path = "../anvilkit-describe" }
 anvilkit-input = { path = "../anvilkit-input" }
 anvilkit-render = { path = "../anvilkit-render" }
 bevy_ecs = { workspace = true }
+bevy_app = { workspace = true }
 winit = { workspace = true }
 wgpu = { workspace = true }
 glam = { workspace = true }

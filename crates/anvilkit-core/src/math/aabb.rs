@@ -1,6 +1,7 @@
 //! 轴对齐包围盒 (Axis-Aligned Bounding Box)
 
 use glam::Vec3;
+use anvilkit_describe::Describe;
 
 /// 轴对齐包围盒 (Axis-Aligned Bounding Box)
 ///
@@ -16,12 +17,15 @@ use glam::Vec3;
 /// assert_eq!(aabb.center(), Vec3::ZERO);
 /// assert_eq!(aabb.half_extents(), Vec3::ONE);
 /// ```
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Describe)]
 #[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::prelude::Component))]
+/// Axis-aligned bounding box for frustum culling and spatial queries.
 pub struct Aabb {
     /// Minimum corner of the bounding box.
+    #[describe(hint = "Min corner (x, y, z)")]
     pub min: Vec3,
     /// Maximum corner of the bounding box.
+    #[describe(hint = "Max corner (x, y, z)")]
     pub max: Vec3,
 }
 

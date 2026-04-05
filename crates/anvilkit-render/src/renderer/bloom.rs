@@ -4,6 +4,7 @@
 //! 使用 13-tap downsample + 9-tap tent filter upsample 的 mip chain 方案。
 
 use bevy_ecs::prelude::*;
+use anvilkit_describe::Describe;
 use crate::renderer::RenderDevice;
 use crate::renderer::buffer::{HDR_FORMAT, BLOOM_MIP_COUNT, create_bloom_mip_chain};
 
@@ -27,17 +28,22 @@ const BLOOM_UPSAMPLE_SHADER: &str = include_str!("../shaders/bloom_upsample.wgsl
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Debug, Clone, Resource)]
+#[derive(Debug, Clone, Resource, Describe)]
 pub struct BloomSettings {
     /// Whether bloom is enabled.
+    #[describe(hint = "Toggle bloom post-processing", default = "true")]
     pub enabled: bool,
     /// HDR brightness threshold for bloom extraction.
+    #[describe(range = "0.0..10.0", default = "1.0", hint = "Higher values = less bloom, only bright areas glow")]
     pub threshold: f32,
     /// Soft knee range for smooth threshold transition.
+    #[describe(range = "0.0..1.0", default = "0.1", hint = "Smooths the hard cutoff around threshold")]
     pub knee: f32,
     /// Bloom intensity (multiplied during upsample composite).
+    #[describe(range = "0.0..2.0", default = "0.3", hint = "Overall bloom brightness multiplier")]
     pub intensity: f32,
     /// Number of downsample mip levels (default 5).
+    #[describe(range = "1..8", default = "5", hint = "More mips = wider bloom, costs GPU")]
     pub mip_count: u32,
 }
 

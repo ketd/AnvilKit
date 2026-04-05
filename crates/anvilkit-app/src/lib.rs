@@ -24,14 +24,22 @@
 //! ```
 
 use bevy_ecs::prelude::*;
+use anvilkit_describe::Describe;
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::WindowId;
 
-use anvilkit_ecs::app::App;
+use crate::ecs_app::App;
 use anvilkit_render::window::events::RenderApp;
 use anvilkit_render::window::window::WindowConfig;
+
+// --- Modules migrated from anvilkit-ecs ---
+pub mod ecs_app;
+pub mod ecs_plugin;
+pub mod schedule;
+pub mod auto_plugins;
+pub mod state;
 
 mod window_size;
 pub mod screen;
@@ -42,17 +50,23 @@ pub use screen::{CursorMode, ScreenPlugin};
 pub use egui_integration::{EguiIntegration, EguiTextures};
 
 /// Game configuration for [`AnvilKitApp::run()`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Describe)]
+/// Top-level game window and input configuration.
 pub struct GameConfig {
     /// Window title.
+    #[describe(hint = "Text shown in the window title bar", default = "AnvilKit Game")]
     pub title: String,
     /// Initial window width.
+    #[describe(hint = "Window width in physical pixels", range = "320..7680", default = "1280")]
     pub width: u32,
     /// Initial window height.
+    #[describe(hint = "Window height in physical pixels", range = "240..4320", default = "720")]
     pub height: u32,
     /// Enable VSync.
+    #[describe(hint = "Synchronize frame presentation with display refresh", default = "true")]
     pub vsync: bool,
     /// Whether to enable raw mouse input (for FPS cameras).
+    #[describe(hint = "Use raw/unfiltered mouse input for FPS cameras", default = "true")]
     pub raw_mouse_input: bool,
 }
 
@@ -106,12 +120,12 @@ pub struct GameContext<'a> {
 impl<'a> GameContext<'a> {
     /// Get the ECS world.
     pub fn world(&self) -> &World {
-        &self.app.world
+        self.app.world()
     }
 
     /// Get the ECS world mutably.
     pub fn world_mut(&mut self) -> &mut World {
-        &mut self.app.world
+        self.app.world_mut()
     }
 }
 
@@ -119,10 +133,23 @@ impl<'a> GameContext<'a> {
 ///
 /// All methods have default no-op implementations, so you only need to override
 /// what your game requires.
+///
+/// ## Lifecycle order per frame
+///
+/// 1. `update()` — game logic before ECS schedules
+/// 2. ECS schedules run (PreUpdate → Update → PostUpdate)
+/// 3. `post_update()` — game logic after ECS schedules
+/// 4. Cursor sync / input forwarding
+/// 5. `render()` — draw the frame
+/// 6. `ui()` — draw egui UI
 pub trait GameCallbacks: 'static {
     /// Called once after the GPU device and window are initialized.
     /// Use this to create pipelines, load assets, spawn initial entities.
     fn init(&mut self, _ctx: &mut GameContext) {}
+
+    /// Called each frame before ECS schedules run.
+    /// Use for game logic that should execute before systems (e.g., block interaction, chunk loading).
+    fn update(&mut self, _ctx: &mut GameContext) {}
 
     /// Called each frame after ECS update, before render.
     /// Use for game-specific post-update logic (e.g., chunk loading, AI ticks).
@@ -131,8 +158,9 @@ pub trait GameCallbacks: 'static {
     /// Called each frame to render. The swapchain texture is available via `ctx.render_app`.
     fn render(&mut self, _ctx: &mut GameContext) {}
 
-    /// Called each frame after render() with the egui context for drawing UI.
-    /// The egui context is already in an active frame (between begin_frame and end_frame).
+    /// Optional egui UI hook. NOT automatically called by the framework — games
+    /// call this manually from `render()` when they have an active egui frame.
+    /// Provided as a convention for separating render and UI logic.
     fn ui(&mut self, _ctx: &mut GameContext, _egui_ctx: &egui::Context) {}
 
     /// Called when the window is resized.
@@ -144,6 +172,10 @@ pub trait GameCallbacks: 'static {
     fn on_window_event(&mut self, _ctx: &mut GameContext, _event: &WindowEvent) -> bool {
         false
     }
+
+    /// Called when the application is about to exit (window close, `app.exit()`).
+    /// Use for cleanup, auto-save, etc.
+    fn on_shutdown(&mut self, _ctx: &mut GameContext) {}
 }
 
 /// The main application runner.
@@ -157,6 +189,25 @@ pub struct AnvilKitApp<G: GameCallbacks> {
     config: GameConfig,
     initialized: bool,
     egui: Option<EguiIntegration>,
+}
+
+/// Helper macro to construct GameContext from AnvilKitApp fields.
+/// Works around Rust's split borrow limitations with struct fields.
+macro_rules! game_ctx {
+    ($self:ident) => {
+        GameContext {
+            app: &mut $self.app,
+            render_app: &mut $self.render_app,
+            egui: None,
+        }
+    };
+    ($self:ident, egui) => {
+        GameContext {
+            app: &mut $self.app,
+            render_app: &mut $self.render_app,
+            egui: $self.egui.as_mut(),
+        }
+    };
 }
 
 impl<G: GameCallbacks> AnvilKitApp<G> {
@@ -191,9 +242,9 @@ impl<G: GameCallbacks> ApplicationHandler for AnvilKitApp<G> {
                 if s.0 > 0 && s.1 > 0 { Some(s) } else { None }
             } {
                 let (w, h) = self.render_app.window_state().size();
-                self.app.world.insert_resource(WindowSize::new(w as f32, h as f32));
+                self.app.world_mut().insert_resource(WindowSize::new(w as f32, h as f32));
             } else {
-                self.app.world.insert_resource(WindowSize::new(
+                self.app.world_mut().insert_resource(WindowSize::new(
                     self.config.width as f32,
                     self.config.height as f32,
                 ));
@@ -211,15 +262,11 @@ impl<G: GameCallbacks> ApplicationHandler for AnvilKitApp<G> {
                         format,
                         window,
                     ));
-                    self.app.world.insert_resource(EguiTextures::default());
+                    self.app.world_mut().insert_resource(EguiTextures::default());
                 }
             }
 
-            let mut ctx = GameContext {
-                app: &mut self.app,
-                render_app: &mut self.render_app,
-                egui: None,
-            };
+            let mut ctx = game_ctx!(self);
             self.game.init(&mut ctx);
             self.initialized = true;
         }
@@ -244,11 +291,7 @@ impl<G: GameCallbacks> ApplicationHandler for AnvilKitApp<G> {
 
         // Let game handle event (skip if egui consumed it)
         if !egui_consumed {
-            let mut ctx = GameContext {
-                app: &mut self.app,
-                render_app: &mut self.render_app,
-                egui: None,
-            };
+            let mut ctx = game_ctx!(self);
             if self.game.on_window_event(&mut ctx, &event) {
                 return; // consumed by game
             }
@@ -256,18 +299,16 @@ impl<G: GameCallbacks> ApplicationHandler for AnvilKitApp<G> {
 
         match &event {
             WindowEvent::CloseRequested => {
+                let mut ctx = game_ctx!(self);
+                self.game.on_shutdown(&mut ctx);
                 event_loop.exit();
                 return;
             }
             WindowEvent::Resized(size) => {
                 let (w, h) = (size.width, size.height);
                 if w > 0 && h > 0 {
-                    self.app.world.insert_resource(WindowSize::new(w as f32, h as f32));
-                    let mut ctx = GameContext {
-                        app: &mut self.app,
-                        render_app: &mut self.render_app,
-                        egui: None,
-                    };
+                    self.app.world_mut().insert_resource(WindowSize::new(w as f32, h as f32));
+                    let mut ctx = game_ctx!(self);
                     self.game.on_resize(&mut ctx, w, h);
                 }
             }
@@ -280,12 +321,7 @@ impl<G: GameCallbacks> ApplicationHandler for AnvilKitApp<G> {
                 }
 
                 // Game render — gets egui integration so it can call ui() + render egui
-                // on its own swapchain frame
-                let mut ctx = GameContext {
-                    app: &mut self.app,
-                    render_app: &mut self.render_app,
-                    egui: self.egui.as_mut(),
-                };
+                let mut ctx = game_ctx!(self, egui);
                 self.game.render(&mut ctx);
             }
             _ => {}
@@ -316,11 +352,17 @@ impl<G: GameCallbacks> ApplicationHandler for AnvilKitApp<G> {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // Frame tick: DeltaTime → ECS update → end_frame → request_redraw
+        // 1. Game update hook (before ECS schedules)
+        {
+            let mut ctx = game_ctx!(self);
+            self.game.update(&mut ctx);
+        }
+
+        // 2. Frame tick: DeltaTime → ECS update → end_frame → request_redraw
         self.render_app.tick(&mut self.app);
 
         // Apply cursor mode from ECS resource (set by ScreenPlugin's cursor_sync_system)
-        if let Some(cursor_mode) = self.app.world.get_resource::<screen::CursorMode>() {
+        if let Some(cursor_mode) = self.app.world().get_resource::<screen::CursorMode>() {
             if let Some(window) = self.render_app.window() {
                 match cursor_mode {
                     screen::CursorMode::Free => {
@@ -340,15 +382,15 @@ impl<G: GameCallbacks> ApplicationHandler for AnvilKitApp<G> {
         }
 
         // Game post-update hook
-        let mut ctx = GameContext {
-            app: &mut self.app,
-            render_app: &mut self.render_app,
-            egui: None,
-        };
-        self.game.post_update(&mut ctx);
+        {
+            let mut ctx = game_ctx!(self);
+            self.game.post_update(&mut ctx);
+        }
 
-        // Check if the app wants to exit (e.g., game called app.exit())
-        if self.app.should_exit() {
+        // Check if the app wants to exit (e.g., game called app.exit_game())
+        if self.app.should_exit().is_some() {
+            let mut ctx = game_ctx!(self);
+            self.game.on_shutdown(&mut ctx);
             event_loop.exit();
         }
     }
@@ -359,6 +401,12 @@ pub mod prelude {
     pub use crate::{AnvilKitApp, GameCallbacks, GameConfig, GameContext, WindowSize};
     pub use crate::screen::{CursorMode, ScreenPlugin};
     pub use crate::egui_integration::EguiTextures;
+    pub use crate::ecs_app::{App, Plugin, DeltaTime, AppExt};
+    pub use crate::ecs_plugin::AnvilKitEcsPlugin;
+    pub use crate::schedule::{AnvilKitSchedule, AnvilKitSystemSet, ScheduleBuilder, common_conditions};
+    pub use crate::auto_plugins::{AutoInputPlugin, AutoDeltaTimePlugin};
+    pub use crate::state::{GameState, NextGameState, StateTransitionEvent, StateValue, in_state, state_transition_system};
+    pub use bevy_ecs::prelude::*;
     pub use egui;
 }
 

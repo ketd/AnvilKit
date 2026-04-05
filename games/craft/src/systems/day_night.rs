@@ -1,5 +1,5 @@
 use bevy_ecs::prelude::*;
-use anvilkit_ecs::physics::DeltaTime;
+use anvilkit_core::time::DeltaTime;
 use crate::resources::DayNightCycle;
 
 /// Advances the day/night cycle each frame.

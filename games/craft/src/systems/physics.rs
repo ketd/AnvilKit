@@ -1,6 +1,8 @@
 use bevy_ecs::prelude::*;
 use anvilkit_core::math::Transform;
-use anvilkit_ecs::physics::{DeltaTime, Velocity, AabbCollider};
+use anvilkit_core::time::DeltaTime;
+use anvilkit_core::math::Velocity;
+use anvilkit_render::transform::AabbCollider;
 use anvilkit_render::plugin::CameraComponent;
 
 use crate::components::FpsCamera;
@@ -60,6 +62,8 @@ pub fn player_physics_system(
     mut query: Query<(&mut Transform, &mut Velocity, &AabbCollider, &CameraComponent), With<FpsCamera>>,
 ) {
     if player.flying {
+        // Clear physics_pos while flying so the first walk frame reads from transform
+        player.physics_pos = None;
         return;
     }
 
@@ -86,7 +90,25 @@ pub fn player_physics_system(
         // Cache vy for landing impact detection
         player.last_vy = vel.linear.y;
 
-        let pos = transform.translation;
+        // Use physics-authoritative position to avoid head bob feedback
+        let pos = player.physics_pos.unwrap_or(transform.translation);
+
+        // Void fall safety: teleport to spawn if fallen below world
+        if pos.y < -64.0 {
+            transform.translation = glam::Vec3::new(
+                (crate::chunk::CHUNK_SIZE as f32) * 3.5,
+                50.0,
+                (crate::chunk::CHUNK_SIZE as f32) * 3.5,
+            );
+            vel.linear.y = 0.0;
+            player.on_ground = false;
+            player.physics_pos = Some(transform.translation);
+            log::warn!("Player fell into void, teleporting to spawn");
+            continue;
+        }
+
+        // Sync transform from physics_pos (undo any head bob offset from previous frame)
+        transform.translation = pos;
 
         // Safety: push out if embedded in a block
         if collides_aabb(&world, pos, half_w, height, eye_offset) {
@@ -94,7 +116,7 @@ pub fn player_physics_system(
                 "Player embedded at ({:.2}, {:.2}, {:.2})! Pushing up.",
                 pos.x, pos.y, pos.z
             );
-            for _ in 0..5 {
+            for _ in 0..10 {
                 transform.translation.y += 1.0;
                 if !collides_aabb(&world, transform.translation, half_w, height, eye_offset) {
                     break;
@@ -102,6 +124,7 @@ pub fn player_physics_system(
             }
             vel.linear.y = 0.0;
             player.on_ground = false;
+            player.physics_pos = Some(transform.translation);
             continue;
         }
 
@@ -111,9 +134,13 @@ pub fn player_physics_system(
             let test_pos_y = glam::Vec3::new(pos.x, new_y, pos.z);
             if collides_aabb(&world, test_pos_y, half_w, height, eye_offset) {
                 if vel.linear.y < 0.0 {
+                    // Landing: snap feet to the top of the block we hit.
+                    // Must use new_y (the fallen position) to find the correct block.
                     let feet_y = new_y - eye_offset;
                     let block_top = feet_y.floor() + 1.0;
-                    transform.translation.y = block_top + eye_offset + 0.001;
+                    // Tiny epsilon (0.0005) keeps feet strictly above the integer boundary
+                    // to avoid float-precision collide-with-supporting-block issues.
+                    transform.translation.y = block_top + eye_offset + 0.0005;
                     player.on_ground = true;
                 }
                 vel.linear.y = 0.0;
@@ -122,10 +149,34 @@ pub fn player_physics_system(
                 player.on_ground = false;
             }
         } else if player.on_ground {
-            let below = glam::Vec3::new(pos.x, pos.y - 0.05, pos.z);
-            if !collides_aabb(&world, below, half_w, height, eye_offset) {
+            // Stable ground check: query blocks directly below the player's footprint.
+            // This replaces the old AABB-probe approach which caused per-frame oscillation
+            // at block boundaries (probe shifts the AABB into/out of collision each frame).
+            let feet_y = pos.y - eye_offset;
+            let support_y = (feet_y - 0.01).floor() as i32;
+
+            // Shrink footprint slightly (0.01 inset) to avoid edge-case support from
+            // blocks the player is barely touching.
+            let min_bx = (pos.x - half_w + 0.01).floor() as i32;
+            let max_bx = (pos.x + half_w - 0.01).floor() as i32;
+            let min_bz = (pos.z - half_w + 0.01).floor() as i32;
+            let max_bz = (pos.z + half_w - 0.01).floor() as i32;
+
+            let mut supported = false;
+            'support: for bx in min_bx..=max_bx {
+                for bz in min_bz..=max_bz {
+                    if world.get_block(bx, support_y, bz).is_obstacle() {
+                        supported = true;
+                        break 'support;
+                    }
+                }
+            }
+
+            if !supported {
                 player.on_ground = false;
-                vel.linear.y = -config::GRAVITY * delta;
+                // Don't apply a gravity impulse here — the normal gravity code at the
+                // top of the loop handles it on the next frame. This avoids the
+                // "kick → snap → kick" oscillation the old code had.
             }
         }
 
@@ -150,5 +201,8 @@ pub fn player_physics_system(
             }
         }
         vel.linear.z = 0.0;
+
+        // Store physics-authoritative position (before head bob/shake is applied in PostUpdate)
+        player.physics_pos = Some(transform.translation);
     }
 }

@@ -15,6 +15,7 @@
 //! ```
 
 use bevy_ecs::prelude::*;
+use anvilkit_describe::Describe;
 use crate::renderer::assets::MaterialHandle;
 
 /// 默认 PBR 材质句柄资源
@@ -50,17 +51,23 @@ pub struct DefaultMaterialHandle(pub MaterialHandle);
 ///     .with_metallic(0.0)
 ///     .with_roughness(0.7);
 /// ```
-#[derive(Debug, Clone, Component)]
+#[derive(Debug, Clone, Component, Describe)]
+/// Standard PBR material component with base color, metallic, roughness, and emissive.
 pub struct StandardMaterial {
     /// 基础颜色 (linear RGBA)
+    #[describe(hint = "Base color in linear RGBA", default = "[1.0, 1.0, 1.0, 1.0]")]
     pub base_color: [f32; 4],
     /// 金属度 [0.0 = 电介质, 1.0 = 金属]
+    #[describe(hint = "0 = dielectric, 1 = full metal", range = "0.0..1.0", default = "0.0")]
     pub metallic: f32,
     /// 粗糙度 [0.0 = 镜面, 1.0 = 粗糙]
+    #[describe(hint = "0 = mirror-smooth, 1 = fully rough", range = "0.0..1.0", default = "0.5")]
     pub roughness: f32,
     /// 法线贴图强度
+    #[describe(hint = "Normal map intensity multiplier", range = "0.0..2.0", default = "1.0")]
     pub normal_scale: f32,
     /// 自发光因子 (linear RGB)
+    #[describe(hint = "Emissive color factor [R,G,B]", default = "[0.0, 0.0, 0.0]")]
     pub emissive_factor: [f32; 3],
 }
 

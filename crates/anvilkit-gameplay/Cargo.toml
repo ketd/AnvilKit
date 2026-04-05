@@ -4,16 +4,14 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "AnvilKit gameplay systems — stats, inventory, cooldowns, status effects, entity pools"
+description = "AnvilKit gameplay systems — health, inventory"
 
 [dependencies]
 bevy_ecs = { workspace = true }
+anvilkit-describe = { version = "0.1.0", path = "../anvilkit-describe" }
 log = "0.4"
 
 [features]
-default = ["stats", "inventory", "cooldown", "status-effect", "entity-pool"]
+default = ["stats", "inventory"]
 stats = []
 inventory = []
-cooldown = []
-status-effect = []
-entity-pool = []

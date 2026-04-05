@@ -3,7 +3,7 @@ use std::thread;
 #[allow(unused_imports)]
 use anvilkit::prelude::*;
 use anvilkit_app::{AnvilKitApp, GameCallbacks, GameConfig, GameContext, ScreenPlugin};
-use anvilkit_ecs::state::{GameState, NextGameState, in_state};
+use anvilkit_app::state::{GameState, NextGameState, in_state};
 
 // DefaultPlugins handles: ECS, Render, Camera, Audio, Input, DeltaTime
 use anvilkit_render::renderer::{
@@ -17,7 +17,8 @@ use anvilkit_render::renderer::{
 };
 use anvilkit_render::plugin::CameraComponent;
 use anvilkit_input::prelude::{InputState, MouseButton, ActionMap, InputBinding, KeyCode as AK};
-use anvilkit_ecs::physics::{Velocity, AabbCollider};
+use anvilkit_core::math::Velocity;
+use anvilkit_render::transform::AabbCollider;
 use anvilkit_camera::controller::{CameraController, CameraMode};
 use anvilkit_camera::effects::CameraEffects;
 
@@ -41,6 +42,9 @@ use craft::systems::survival as survival_sys;
 use craft::config;
 use craft::persistence;
 use craft::ui::{CraftScreen, SettingsReturnTo};
+use craft::mob;
+use craft::crafting;
+use craft::world_manager::DebugInfo;
 use anvilkit_gameplay::health::{Health, DamageEvent, HealEvent, DeathEvent, health_system};
 use anvilkit_gameplay::inventory::{SlotInventory, Inventory, ItemStack};
 
@@ -59,7 +63,9 @@ fn main() {
 
     let mut app = App::new();
     app.add_plugins(DefaultPlugins::new().with_window(window_config()));
+    app.add_plugins(anvilkit_camera::plugin::CameraPlugin);
     app.insert_resource(WorldSeed::default());
+    app.insert_resource(craft::world_manager::GameMode::default());
     app.insert_resource(PlayerState::default());
     app.insert_resource(VoxelWorld::default());
     app.insert_resource(SelectedBlock::default());
@@ -69,6 +75,17 @@ fn main() {
     app.insert_resource(BloomSettings { enabled: false, ..BloomSettings::default() });
     app.insert_resource(SsaoSettings { enabled: false, ..SsaoSettings::default() });
     app.insert_resource(ActiveFilter::default());
+
+    // Mob system resources
+    app.insert_resource(mob::MobSpawnTimer::default());
+    // Crafting system resources
+    app.insert_resource(crafting::ItemRegistry::default());
+    app.insert_resource(crafting::RecipeRegistry::default());
+    app.insert_resource(crafting::SmeltingRegistry::default());
+    app.insert_resource(crafting::MiningProgress::default());
+    app.insert_resource(crafting::Hunger::default());
+    // Debug overlay
+    app.insert_resource(DebugInfo::default());
 
     // Screen state machine + auto cursor management
     ScreenPlugin::new(CraftScreen::MainMenu)
@@ -129,7 +146,26 @@ fn main() {
         camera_effects_system
             .after(physics_sys::player_physics_system)
             .after(survival_sys::fall_damage_system)
-            .run_if(playing),
+            .run_if(playing.clone()),
+    ));
+
+    // Mob + crafting systems (separate add_systems to stay within bevy_ecs tuple limit)
+    let playing2 = in_state(CraftScreen::Playing);
+    app.add_systems(AnvilKitSchedule::Update, (
+        mob::passive_ai_system.run_if(playing2.clone()),
+        mob::hostile_ai_system.run_if(playing2.clone()),
+        mob::mob_physics_system
+            .after(mob::passive_ai_system)
+            .after(mob::hostile_ai_system)
+            .run_if(playing2.clone()),
+        mob::mob_spawn_system.run_if(playing2.clone()),
+        mob::mob_despawn_system.run_if(playing2.clone()),
+        mob::mob_death_system.run_if(playing2.clone()),
+        mob::mob_flee_on_damage_system.run_if(playing2.clone()),
+        mob::item_drop_system.run_if(playing2.clone()),
+        mob::item_pickup_system.run_if(playing2.clone()),
+        crafting::hunger_tick_system.run_if(playing2.clone()),
+        crafting::furnace_tick_system.run_if(playing2),
     ));
 
     // FPS Camera — spawn at a reasonable height above terrain
@@ -138,7 +174,7 @@ fn main() {
         50.0,
         (CHUNK_SIZE as f32) * 3.5,
     );
-    app.world.spawn((
+    app.world_mut().spawn((
         FpsCamera,
         CameraComponent {
             fov: config::FOV,
@@ -171,6 +207,8 @@ fn main() {
             config::PLAYER_WIDTH * 0.5,
         )),
         Health::new(20.0).with_regen(0.5),
+        crafting::Hunger::default(),
+        crafting::Equipment::default(),
         {
             let mut inventory = SlotInventory::new(9);
             for (i, &block) in config::BLOCK_PALETTE.iter().enumerate() {
@@ -180,7 +218,7 @@ fn main() {
         },
     ));
 
-    let seed = app.world.resource::<WorldSeed>().0;
+    let seed = app.world().resource::<WorldSeed>().0;
 
     // Async chunk generation channels (crossbeam for multi-consumer request channel)
     let (request_tx, request_rx) = crossbeam_channel::unbounded::<(i32, i32)>();
@@ -214,6 +252,9 @@ fn main() {
         line_renderer: None,
         text_renderer: None,
         ui_renderer: None,
+        sprite_renderer: None,
+        sprite_atlas_bg: None,
+        egui_atlas_id: None,
         current_hit: None,
         frame_count: 0,
         settings_state: craft::ui::settings_menu::SettingsState::default(),
@@ -228,6 +269,11 @@ struct CraftGame {
     line_renderer: Option<OverlayLineRenderer>,
     text_renderer: Option<TextRenderer>,
     ui_renderer: Option<anvilkit_render::renderer::ui::UiRenderer>,
+    sprite_renderer: Option<anvilkit_render::renderer::sprite::SpriteRenderer>,
+    /// Atlas bind group compatible with SpriteRenderer's texture layout.
+    sprite_atlas_bg: Option<wgpu::BindGroup>,
+    /// Atlas texture registered with egui for inventory block icons.
+    egui_atlas_id: Option<egui::TextureId>,
     // Current raycast hit (updated each frame)
     current_hit: Option<VoxelHit>,
     // Debug frame counter
@@ -277,7 +323,7 @@ impl CraftGame {
 
         // Try loading saved world first
         {
-            let mut world = ctx.app.world.resource_mut::<VoxelWorld>();
+            let mut world = ctx.app.world_mut().resource_mut::<VoxelWorld>();
             match persistence::load_world(&mut world) {
                 Ok((seed, loaded)) if !loaded.is_empty() => {
                     println!("Loaded {} modified chunks from save (seed={})", loaded.len(), seed);
@@ -305,7 +351,7 @@ impl CraftGame {
         // the async workers will generate any that are missing.
         // The game starts immediately — chunks arrive via update() polling.
         {
-            let world = ctx.app.world.resource::<VoxelWorld>();
+            let world = ctx.app.world().resource::<VoxelWorld>();
             let load_radius = self.chunks.load_radius;
             // Only request chunks not already present from the save file
             for cx in -load_radius..=load_radius {
@@ -346,6 +392,7 @@ impl CraftGame {
             }
         };
         for pixel in atlas_img.pixels_mut() {
+            // Magenta color key → transparent
             if pixel[0] == 255 && pixel[1] == 0 && pixel[2] == 255 {
                 pixel[0] = 0;
                 pixel[1] = 0;
@@ -353,13 +400,54 @@ impl CraftGame {
                 pixel[3] = 0;
             }
         }
+
+        // Re-overlay Minetest textures that have alpha transparency.
+        // The right half of the atlas was composited onto an opaque black background,
+        // destroying the PNG alpha channel. Re-apply these textures with proper alpha.
+        {
+            let mt_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/minetest_textures/");
+            // (tile_col_in_right_half, tile_row, filename)
+            // Tile index in 32-col atlas: idx = (16 + col) + row * 32
+            let alpha_tiles: &[(u32, u32, &str)] = &[
+                (22, 3, "default_torch_on_floor.png"),       // tile 118
+                (23, 3, "default_torch_on_floor.png"),       // tile 119 (cactus side reuses, but cactus is opaque)
+                (24, 3, "default_cactus_top.png"),           // tile 120
+            ];
+            for &(col32, row, filename) in alpha_tiles {
+                let path = format!("{}{}", mt_dir, filename);
+                if let Ok(tile_img) = image::open(&path) {
+                    let tile_rgba = tile_img.to_rgba8();
+                    let (tw, th) = tile_rgba.dimensions();
+                    let dest_x = col32 * 16;
+                    let dest_y = row * 16;
+                    // Clear the tile area to transparent first
+                    for ty in 0..th.min(16) {
+                        for tx in 0..tw.min(16) {
+                            let dx = dest_x + tx;
+                            let dy = dest_y + ty;
+                            if dx < atlas_img.width() && dy < atlas_img.height() {
+                                let src = tile_rgba.get_pixel(tx, ty);
+                                if src[3] == 0 {
+                                    // Transparent in source → transparent in atlas
+                                    atlas_img.put_pixel(dx, dy, image::Rgba([0, 0, 0, 0]));
+                                } else {
+                                    // Opaque in source → copy directly
+                                    atlas_img.put_pixel(dx, dy, *src);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let (aw, ah) = atlas_img.dimensions();
 
         let gpu = setup::init_voxel_gpu(device, format, w, h, &atlas_img, aw, ah);
 
         // Upload chunk meshes
         {
-            let world = ctx.app.world.resource::<VoxelWorld>();
+            let world = ctx.app.world().resource::<VoxelWorld>();
             self.chunks.upload_all(&world, device);
         }
 
@@ -367,6 +455,32 @@ impl CraftGame {
         self.line_renderer = Some(OverlayLineRenderer::new(device, format));
         self.text_renderer = Some(TextRenderer::new(device, format));
         self.ui_renderer = Some(anvilkit_render::renderer::ui::UiRenderer::new(device, format));
+
+        // Init sprite renderer for textured HUD icons (hotbar block previews)
+        let sr = anvilkit_render::renderer::sprite::SpriteRenderer::new(device, format);
+        // Create a bind group using the sprite renderer's texture layout with the atlas texture
+        let sprite_bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Sprite Atlas BG"),
+            layout: &sr.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&gpu.atlas_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&gpu.atlas_sampler),
+                },
+            ],
+        });
+        self.sprite_renderer = Some(sr);
+        self.sprite_atlas_bg = Some(sprite_bg);
+
+        // Register atlas texture with egui for inventory block icons
+        if let Some(ref mut egui) = ctx.egui {
+            let tex_id = egui.register_texture(device.device(), &gpu.atlas_view);
+            self.egui_atlas_id = Some(tex_id);
+        }
 
         self.voxel_gpu = Some(gpu);
         // initialization complete
@@ -381,26 +495,26 @@ impl CraftGame {
 
     fn update_chunks(&mut self, ctx: &mut GameContext) {
         let cam_pos = {
-            let cam = ctx.app.world.get_resource::<ActiveCamera>();
+            let cam = ctx.app.world().get_resource::<ActiveCamera>();
             match cam {
                 Some(c) => c.camera_pos,
                 None => return,
             }
         };
-        let mut world = ctx.app.world.resource_mut::<VoxelWorld>();
+        let mut world = ctx.app.world_mut().resource_mut::<VoxelWorld>();
         self.chunks.update(&mut world, cam_pos);
     }
 
     fn remesh_dirty_chunks(&mut self, ctx: &mut GameContext) {
         let Some(device) = ctx.render_app.render_device() else { return };
-        let world = ctx.app.world.resource::<VoxelWorld>();
+        let world = ctx.app.world().resource::<VoxelWorld>();
         self.chunks.remesh_dirty(&world, device);
     }
 
     fn handle_block_interaction(&mut self, ctx: &mut GameContext) {
         let (w, h) = ctx.render_app.window_state().size();
         let (cam_vp, cam_pos) = {
-            let Some(cam) = ctx.app.world.get_resource::<ActiveCamera>() else { return };
+            let Some(cam) = ctx.app.world().get_resource::<ActiveCamera>() else { return };
             (cam.view_proj, cam.camera_pos)
         };
 
@@ -410,7 +524,7 @@ impl CraftGame {
         let (ray_origin, ray_dir) = screen_to_ray(screen_center, window_size, &cam_vp);
 
         // Raycast into voxel world
-        let world = ctx.app.world.resource::<VoxelWorld>();
+        let world = ctx.app.world().resource::<VoxelWorld>();
         self.current_hit = raycast::raycast_voxels(
             &world,
             [ray_origin.x, ray_origin.y, ray_origin.z],
@@ -420,7 +534,7 @@ impl CraftGame {
 
         // Check mouse buttons via ActionMap
         let (left_just, right_just) = {
-            let actions = ctx.app.world.resource::<ActionMap>();
+            let actions = ctx.app.world().resource::<ActionMap>();
             (
                 actions.is_action_just_pressed("break_block"),
                 actions.is_action_just_pressed("place_block"),
@@ -432,17 +546,17 @@ impl CraftGame {
                 // Break block — add broken block to inventory
                 let [bx, by, bz] = hit.block_pos;
                 let broken_block = {
-                    let world = ctx.app.world.resource::<VoxelWorld>();
+                    let world = ctx.app.world().resource::<VoxelWorld>();
                     world.get_block(bx, by, bz)
                 };
                 if broken_block != BlockType::Air {
-                    let mut world = ctx.app.world.resource_mut::<VoxelWorld>();
+                    let mut world = ctx.app.world_mut().resource_mut::<VoxelWorld>();
                     world.set_block(bx, by, bz, BlockType::Air);
                     self.chunks.mark_dirty_with_neighbors(bx, bz);
 
                     // Add to player inventory
-                    let mut q = ctx.app.world.query::<&mut SlotInventory>();
-                    for mut inv in q.iter_mut(&mut ctx.app.world) {
+                    let mut q = ctx.app.world_mut().query::<&mut SlotInventory>();
+                    for mut inv in q.iter_mut(ctx.app.world_mut()) {
                         let _ = inv.add_item(
                             ItemStack::new(broken_block.item_id(), 1),
                             64,
@@ -468,14 +582,18 @@ impl CraftGame {
                     && player_max[2] > block_min[2] && player_min[2] < block_max[2];
 
                 if !overlaps {
-                    let selected = ctx.app.world.resource::<SelectedBlock>().block_type;
-                    let item_id = selected.item_id();
+                    let selected = ctx.app.world().resource::<SelectedBlock>().block_type;
+                    let is_creative = *ctx.app.world().resource::<craft::world_manager::GameMode>()
+                        == craft::world_manager::GameMode::Creative;
 
-                    // Check inventory has the block and consume one
-                    let has_block = {
-                        let mut q = ctx.app.world.query::<&mut SlotInventory>();
+                    // Creative mode: infinite blocks. Survival: consume from inventory.
+                    let can_place = if is_creative {
+                        true
+                    } else {
+                        let item_id = selected.item_id();
+                        let mut q = ctx.app.world_mut().query::<&mut SlotInventory>();
                         let mut found = false;
-                        for mut inv in q.iter_mut(&mut ctx.app.world) {
+                        for mut inv in q.iter_mut(ctx.app.world_mut()) {
                             if inv.remove_item(item_id, 1) > 0 {
                                 found = true;
                                 break;
@@ -484,8 +602,8 @@ impl CraftGame {
                         found
                     };
 
-                    if has_block {
-                        let mut world = ctx.app.world.resource_mut::<VoxelWorld>();
+                    if can_place {
+                        let mut world = ctx.app.world_mut().resource_mut::<VoxelWorld>();
                         world.set_block(px, py, pz, selected);
                         self.chunks.mark_dirty_with_neighbors(px, pz);
                     }
@@ -504,14 +622,14 @@ impl CraftGame {
 
         // Camera data
         let (cam_vp, cam_pos) = {
-            let Some(cam) = ctx.app.world.get_resource::<ActiveCamera>() else {
+            let Some(cam) = ctx.app.world().get_resource::<ActiveCamera>() else {
                 return;
             };
             (cam.view_proj, cam.camera_pos)
         };
 
         // Day/night cycle data
-        let cycle = ctx.app.world.resource::<DayNightCycle>();
+        let cycle = ctx.app.world().resource::<DayNightCycle>();
         let light_dir = cycle.light_dir();
         let ambient = cycle.ambient();
         let fog_color = cycle.fog_color();
@@ -549,8 +667,8 @@ impl CraftGame {
 
         // --- Update filter uniform (before tonemap pass) ---
         {
-            let active_filter = ctx.app.world.resource::<ActiveFilter>();
-            let cycle = ctx.app.world.resource::<DayNightCycle>();
+            let active_filter = ctx.app.world().resource::<ActiveFilter>();
+            let cycle = ctx.app.world().resource::<DayNightCycle>();
             let is_srgb = ctx.render_app.surface_format()
                 .map(|f| f.is_srgb())
                 .unwrap_or(false);
@@ -677,7 +795,7 @@ impl CraftGame {
 
         // SSAO pass: depth → half-res AO → blur
         {
-            let ssao_settings = ctx.app.world.resource::<SsaoSettings>();
+            let ssao_settings = ctx.app.world().resource::<SsaoSettings>();
             // Build projection matrix (same as camera uses)
             let (w, h) = ctx.render_app.window_state().size();
             let aspect = w as f32 / h as f32;
@@ -689,7 +807,7 @@ impl CraftGame {
 
         // Bloom passes: downsample → upsample
         {
-            let bloom_settings = ctx.app.world.resource::<BloomSettings>();
+            let bloom_settings = ctx.app.world().resource::<BloomSettings>();
             gpu.bloom.execute(device, &mut enc, &gpu.hdr_view, &bloom_settings);
         }
 
@@ -759,22 +877,33 @@ impl CraftGame {
             lr.render(device, &mut enc, swapchain, &lines, &ortho);
         }
 
-        // Block highlight wireframe (3D)
+        // Block highlight wireframes (3D)
         if let Some(ref hit) = self.current_hit {
             if let Some(ref mut lr) = self.line_renderer {
-                let wireframe_lines = block_wireframe(hit.block_pos, glam::Vec3::new(0.2, 0.2, 0.2));
-                lr.render(device, &mut enc, swapchain, &wireframe_lines, cam_vp);
+                // Dark wireframe on the targeted solid block
+                let target_lines = block_wireframe(hit.block_pos, glam::Vec3::new(0.15, 0.15, 0.15));
+                lr.render(device, &mut enc, swapchain, &target_lines, cam_vp);
+
+                // Bright wireframe on the adjacent placement position
+                let place_pos = [
+                    hit.block_pos[0] + hit.face_normal[0],
+                    hit.block_pos[1] + hit.face_normal[1],
+                    hit.block_pos[2] + hit.face_normal[2],
+                ];
+                let place_lines = block_wireframe(place_pos, glam::Vec3::new(0.9, 0.9, 0.9));
+                lr.render(device, &mut enc, swapchain, &place_lines, cam_vp);
             }
         }
 
         // Text: coordinates and selected block
-        let selected = ctx.app.world.resource::<SelectedBlock>();
-        let player = ctx.app.world.resource::<PlayerState>();
-        let cycle = ctx.app.world.resource::<DayNightCycle>();
+        let selected = ctx.app.world().resource::<SelectedBlock>();
+        let player = ctx.app.world().resource::<PlayerState>();
+        let cycle = ctx.app.world().resource::<DayNightCycle>();
         let selected_index = selected.index;
+        let hotbar_palette = selected.palette;
 
         // Use locale for display names
-        let locale = ctx.app.world.get_resource::<anvilkit_data::Locale>();
+        let locale = ctx.app.world().get_resource::<anvilkit_data::Locale>();
         let fly_text = locale.map_or("FLY", |l| l.t("hud.fly"));
         let walk_text = locale.map_or("WALK", |l| l.t("hud.walk"));
         let block_name = locale.map_or_else(
@@ -795,17 +924,19 @@ impl CraftGame {
             tr.draw_text(device, &mut enc, swapchain, &block_text, 8.0, 28.0, 16.0, white, sw, sh);
         }
 
-        // Health bar: rendered above the hotbar
-        {
+        // Health bar: rendered above the hotbar (hidden in Creative mode)
+        let is_creative = *ctx.app.world().resource::<craft::world_manager::GameMode>()
+            == craft::world_manager::GameMode::Creative;
+        if !is_creative {
             use anvilkit_render::renderer::ui::UiNode;
 
             let hp_fraction = {
-                let mut q = ctx.app.world.query::<&Health>();
-                q.iter(&ctx.app.world).next().map(|h| h.fraction()).unwrap_or(1.0)
+                let mut q = ctx.app.world_mut().query::<&Health>();
+                q.iter(ctx.app.world()).next().map(|h| h.fraction()).unwrap_or(1.0)
             };
             let hp_text = {
-                let mut q = ctx.app.world.query::<&Health>();
-                q.iter(&ctx.app.world).next().map(|h| format!("{:.0}/{:.0}", h.current, h.max)).unwrap_or_default()
+                let mut q = ctx.app.world_mut().query::<&Health>();
+                q.iter(ctx.app.world()).next().map(|h| format!("{:.0}/{:.0}", h.current, h.max)).unwrap_or_default()
             };
 
             let bar_w = 200.0_f32;
@@ -895,48 +1026,86 @@ impl CraftGame {
                 ui.render(device, &mut enc, swapchain, &node_refs, sw, sh);
             }
 
-            // Draw block names inside slots + slot number
-            if let Some(ref mut tr) = self.text_renderer {
-                let locale = ctx.app.world.get_resource::<anvilkit_data::Locale>();
-                let highlight = glam::Vec3::new(1.0, 1.0, 0.0);
-                let dim = glam::Vec3::new(0.6, 0.6, 0.6);
+            // Render textured block icons from atlas inside each slot
+            if let (Some(ref mut sr), Some(ref sprite_bg)) = (&mut self.sprite_renderer, &self.sprite_atlas_bg) {
+                use anvilkit_render::renderer::sprite::{SpriteBatch, SpriteVertex};
+                use craft::block::{Face, tile_uv, TILE_UV_X, TILE_UV_Y};
+
+                let mut batch = SpriteBatch::new();
+                let icon_margin = 6.0_f32;
+                let icon_size = slot_size - icon_margin * 2.0;
 
                 for i in 0..9usize {
-                    let block = config::BLOCK_PALETTE[i];
+                    let block = hotbar_palette[i];
+                    let sx = bar_x + i as f32 * (slot_size + slot_gap) + icon_margin;
+                    let sy = bar_y + icon_margin;
+
+                    // Use the front face tile for the icon (most recognizable)
+                    let tile = block.face_tile(Face::Front);
+                    let (u0, v0) = tile_uv(tile);
+                    let u1 = u0 + TILE_UV_X;
+                    let v1 = v0 + TILE_UV_Y;
+
+                    // Quad: 2 triangles, screen-space positions, atlas UVs
+                    let x0 = sx;
+                    let y0 = sy;
+                    let x1 = sx + icon_size;
+                    let y1 = sy + icon_size;
+                    let color = [1.0_f32, 1.0, 1.0]; // no tint
+
+                    batch.vertices.push(SpriteVertex { position: [x0, y0, 0.0], texcoord: [u0, v0], color });
+                    batch.vertices.push(SpriteVertex { position: [x1, y0, 0.0], texcoord: [u1, v0], color });
+                    batch.vertices.push(SpriteVertex { position: [x1, y1, 0.0], texcoord: [u1, v1], color });
+                    batch.vertices.push(SpriteVertex { position: [x0, y0, 0.0], texcoord: [u0, v0], color });
+                    batch.vertices.push(SpriteVertex { position: [x1, y1, 0.0], texcoord: [u1, v1], color });
+                    batch.vertices.push(SpriteVertex { position: [x0, y1, 0.0], texcoord: [u0, v1], color });
+                }
+
+                sr.render(device, &mut enc, swapchain, &batch, sprite_bg, sw, sh);
+            }
+
+            // Draw slot number + block name text over icons
+            if let Some(ref mut tr) = self.text_renderer {
+                let locale = ctx.app.world().get_resource::<anvilkit_data::Locale>();
+                let highlight = glam::Vec3::new(1.0, 1.0, 0.0);
+
+                for i in 0..9usize {
+                    let block = hotbar_palette[i];
                     let is_selected = i == selected_index;
                     let sx = bar_x + i as f32 * (slot_size + slot_gap);
 
                     // Slot number (top-left corner, small)
                     let num = format!("{}", i + 1);
+                    let num_color = if is_selected {
+                        glam::Vec3::new(1.0, 1.0, 0.0)
+                    } else {
+                        glam::Vec3::new(1.0, 1.0, 1.0)
+                    };
                     tr.draw_text(device, &mut enc, swapchain, &num,
-                        sx + 3.0, bar_y + 2.0, 10.0, dim, sw, sh);
+                        sx + 3.0, bar_y + 2.0, 10.0, num_color, sw, sh);
 
-                    // Block name (centered, larger)
+                    // Block name (bottom center, small)
                     let name = locale.map_or_else(
                         || format!("{:?}", block),
                         |l| l.t(block.locale_key()).to_string(),
                     );
-                    // Show up to 5 chars to fit in slot
                     let short: String = name.chars().take(5).collect();
-                    let text_w = short.len() as f32 * 11.0 * 0.5;
+                    let text_w = short.len() as f32 * 8.0 * 0.5;
                     let tx = sx + (slot_size - text_w) * 0.5;
-                    let ty = bar_y + slot_size * 0.3;
+                    let ty = bar_y + slot_size - 12.0;
                     let color = if is_selected { highlight } else { white };
                     tr.draw_text(device, &mut enc, swapchain, &short,
-                        tx, ty, 11.0, color, sw, sh);
-
-                    // Quantity "x64" (bottom-right)
-                    tr.draw_text(device, &mut enc, swapchain, "x64",
-                        sx + slot_size - 20.0, bar_y + slot_size - 13.0, 9.0, dim, sw, sh);
+                        tx, ty, 8.0, color, sw, sh);
                 }
             }
 
             // Selected block full name below hotbar
             if let Some(ref mut tr) = self.text_renderer {
-                let locale = ctx.app.world.get_resource::<anvilkit_data::Locale>();
+                let locale = ctx.app.world().get_resource::<anvilkit_data::Locale>();
+                let current_block = hotbar_palette[selected_index];
                 let full_name = locale.map_or_else(
-                    || format!("{:?}", config::BLOCK_PALETTE[selected_index]),
-                    |l| l.t(config::BLOCK_PALETTE[selected_index].locale_key()).to_string(),
+                    || format!("{:?}", current_block),
+                    |l| l.t(current_block.locale_key()).to_string(),
                 );
                 let text_w = full_name.len() as f32 * 12.0 * 0.5;
                 let tx = (sw - text_w) * 0.5;
@@ -958,8 +1127,8 @@ impl CraftGame {
 
         // Draw UI using egui
         let egui_ctx = egui.ctx.clone();
-        let screen = ctx.app.world.resource::<GameState<CraftScreen>>().0;
-        let return_to = *ctx.app.world.resource::<SettingsReturnTo>();
+        let screen = ctx.app.world().resource::<GameState<CraftScreen>>().0;
+        let return_to = *ctx.app.world().resource::<SettingsReturnTo>();
 
         let next_screen = match screen {
             CraftScreen::MainMenu => {
@@ -974,15 +1143,21 @@ impl CraftGame {
                 craft::ui::settings_menu::draw(&egui_ctx, &mut self.settings_state, return_to)
             }
             CraftScreen::Inventory => {
-                let mut sel = ctx.app.world.resource::<SelectedBlock>().index;
-                let slots: Vec<(String, u32)> = {
-                    let locale = ctx.app.world.resource::<anvilkit_data::Locale>();
-                    config::BLOCK_PALETTE.iter().map(|bt| {
-                        (locale.t(bt.locale_key()).to_string(), 64)
-                    }).collect()
-                };
-                let result = craft::ui::inventory::draw(&egui_ctx, &slots, &mut sel);
-                ctx.app.world.resource_mut::<SelectedBlock>().index = sel;
+                let current_block = ctx.app.world().resource::<SelectedBlock>().block_type;
+                let locale = ctx.app.world().resource::<anvilkit_data::Locale>();
+                let (result, picked) = craft::ui::inventory::draw(
+                    &egui_ctx,
+                    Some(&*locale),
+                    current_block,
+                    self.egui_atlas_id,
+                );
+                // When a block is picked, replace the current hotbar slot
+                if let Some(block) = picked {
+                    let mut sel = ctx.app.world_mut().resource_mut::<SelectedBlock>();
+                    let idx = sel.index;
+                    sel.block_type = block;
+                    sel.palette[idx] = block;
+                }
                 result
             }
             CraftScreen::Playing => None,
@@ -992,25 +1167,25 @@ impl CraftGame {
         // Handle state transitions from UI
         if let Some(target) = next_screen {
             match target {
-                CraftScreen::Quit => { ctx.app.exit(); }
+                CraftScreen::Quit => { ctx.app.exit_game(); }
                 CraftScreen::SaveAndQuit => {
-                    let save_seed = ctx.app.world.resource::<WorldSeed>().0;
-                    let world = ctx.app.world.resource::<VoxelWorld>();
+                    let save_seed = ctx.app.world().resource::<WorldSeed>().0;
+                    let world = ctx.app.world().resource::<VoxelWorld>();
                     let _ = persistence::save_world(&world, &world.modified_chunks, save_seed);
-                    ctx.app.world.resource_mut::<NextGameState<CraftScreen>>()
+                    ctx.app.world_mut().resource_mut::<NextGameState<CraftScreen>>()
                         .set(CraftScreen::MainMenu);
                 }
                 CraftScreen::Settings => {
-                    let from = ctx.app.world.resource::<GameState<CraftScreen>>().0;
-                    *ctx.app.world.resource_mut::<SettingsReturnTo>() = match from {
+                    let from = ctx.app.world().resource::<GameState<CraftScreen>>().0;
+                    *ctx.app.world_mut().resource_mut::<SettingsReturnTo>() = match from {
                         CraftScreen::MainMenu => SettingsReturnTo::MainMenu,
                         _ => SettingsReturnTo::Paused,
                     };
-                    ctx.app.world.resource_mut::<NextGameState<CraftScreen>>()
+                    ctx.app.world_mut().resource_mut::<NextGameState<CraftScreen>>()
                         .set(CraftScreen::Settings);
                 }
                 other => {
-                    ctx.app.world.resource_mut::<NextGameState<CraftScreen>>()
+                    ctx.app.world_mut().resource_mut::<NextGameState<CraftScreen>>()
                         .set(other);
                 }
             }
@@ -1063,8 +1238,54 @@ fn block_wireframe(pos: [i32; 3], color: glam::Vec3) -> Vec<(glam::Vec3, glam::V
 
 impl GameCallbacks for CraftGame {
     fn init(&mut self, ctx: &mut GameContext) {
+        // Load persisted settings
+        self.settings_state = craft::ui::settings_menu::SettingsState::load_or_default();
         self.init_scene(ctx);
         self.setup_action_map(ctx);
+    }
+
+    fn update(&mut self, ctx: &mut GameContext) {
+        // Freeze camera input when not playing (pause, settings, inventory, etc.)
+        let screen = ctx.app.world().resource::<GameState<CraftScreen>>().0;
+        if screen != CraftScreen::Playing {
+            // Zero mouse delta so camera_input_system doesn't rotate the view
+            ctx.app.world_mut().resource_mut::<anvilkit_input::prelude::InputState>()
+                .end_frame();
+        }
+
+        // Apply settings to game systems each frame
+        let fov = self.settings_state.fov;
+        let sens = self.settings_state.sensitivity * 0.001;
+
+        // FOV
+        let mut cam_q = ctx.app.world_mut().query::<&mut CameraComponent>();
+        for mut cam in cam_q.iter_mut(ctx.app.world_mut()) {
+            cam.fov = fov;
+        }
+
+        // Mouse sensitivity
+        let mut ctrl_q = ctx.app.world_mut().query::<&mut CameraController>();
+        for mut ctrl in ctrl_q.iter_mut(ctx.app.world_mut()) {
+            ctrl.mouse_sensitivity = sens;
+        }
+
+        // View distance → chunk load radius
+        self.chunks.load_radius = self.settings_state.view_distance as i32;
+
+        // Update debug info
+        let loaded_chunks = ctx.app.world().resource::<VoxelWorld>().chunks.len();
+        let cam_data = ctx.app.world().get_resource::<ActiveCamera>()
+            .map(|cam| (cam.camera_pos.to_array(), [
+                (cam.camera_pos.x as i32).div_euclid(CHUNK_SIZE as i32),
+                (cam.camera_pos.z as i32).div_euclid(CHUNK_SIZE as i32),
+            ]));
+        if let Some(mut debug) = ctx.app.world_mut().get_resource_mut::<DebugInfo>() {
+            debug.loaded_chunks = loaded_chunks;
+            if let Some((pos, chunk_pos)) = cam_data {
+                debug.player_pos = pos;
+                debug.chunk_pos = chunk_pos;
+            }
+        }
     }
 
     fn on_resize(&mut self, ctx: &mut GameContext, width: u32, height: u32) {
@@ -1075,7 +1296,7 @@ impl GameCallbacks for CraftGame {
                 let (_, hv) =
                     create_hdr_render_target(device, width, height, "Voxel HDR RT");
                 let samp = create_sampler(device, "Tonemap Sampler");
-                let bloom_mips = ctx.app.world.resource::<BloomSettings>().mip_count;
+                let bloom_mips = ctx.app.world().resource::<BloomSettings>().mip_count;
                 gpu.bloom.resize(device, width, height, bloom_mips);
                 gpu.ssao.resize(device, width, height);
                 let bloom_view = gpu.bloom.mip_views.first().unwrap_or(&hv);
@@ -1113,6 +1334,24 @@ impl GameCallbacks for CraftGame {
         }
     }
 
+    fn on_shutdown(&mut self, ctx: &mut GameContext) {
+        // Auto-save on exit
+        let save_seed = ctx.app.world().resource::<WorldSeed>().0;
+        let world = ctx.app.world().resource::<VoxelWorld>();
+        match persistence::save_world(&world, &world.modified_chunks, save_seed) {
+            Ok(n) => println!("Auto-save: {} chunks saved", n),
+            Err(e) => println!("Auto-save failed: {}", e),
+        }
+        let player_data = self.gather_player_save_data(ctx);
+        match persistence::save_player(&player_data) {
+            Ok(()) => println!("Player state auto-saved"),
+            Err(e) => println!("Player save failed: {}", e),
+        }
+        // Save settings
+        self.settings_state.save();
+        println!("Settings saved");
+    }
+
     fn on_window_event(&mut self, ctx: &mut GameContext, ev: &WindowEvent) -> bool {
         match ev {
             WindowEvent::KeyboardInput { event, .. } => {
@@ -1121,12 +1360,12 @@ impl GameCallbacks for CraftGame {
                     if event.state.is_pressed() {
                         // Ctrl+S: save world
                         if code == WK::KeyS && !event.repeat {
-                            let input = ctx.app.world.resource::<InputState>();
+                            let input = ctx.app.world().resource::<InputState>();
                             if input.is_key_pressed(anvilkit_input::prelude::KeyCode::LControl)
                                 || input.is_key_pressed(anvilkit_input::prelude::KeyCode::RControl)
                             {
-                                let save_seed = ctx.app.world.resource::<WorldSeed>().0;
-                                let world = ctx.app.world.resource::<VoxelWorld>();
+                                let save_seed = ctx.app.world().resource::<WorldSeed>().0;
+                                let world = ctx.app.world().resource::<VoxelWorld>();
                                 match persistence::save_world(&world, &world.modified_chunks, save_seed) {
                                     Ok(n) => println!("Saved {} modified chunks to {:?}", n, persistence::save_path()),
                                     Err(e) => println!("Save failed: {}", e),
@@ -1142,8 +1381,8 @@ impl GameCallbacks for CraftGame {
                         }
                         match code {
                             WK::Escape => {
-                                let current = ctx.app.world.resource::<GameState<CraftScreen>>().0;
-                                let settings_ret = *ctx.app.world.resource::<SettingsReturnTo>();
+                                let current = ctx.app.world().resource::<GameState<CraftScreen>>().0;
+                                let settings_ret = *ctx.app.world().resource::<SettingsReturnTo>();
                                 let target = match current {
                                     CraftScreen::Playing => Some(CraftScreen::Paused),
                                     CraftScreen::Paused => Some(CraftScreen::Playing),
@@ -1155,15 +1394,15 @@ impl GameCallbacks for CraftGame {
                                     CraftScreen::MainMenu | CraftScreen::Quit | CraftScreen::SaveAndQuit => None,
                                 };
                                 if let Some(t) = target {
-                                    ctx.app.world.resource_mut::<NextGameState<CraftScreen>>().set(t);
+                                    ctx.app.world_mut().resource_mut::<NextGameState<CraftScreen>>().set(t);
                                 } else {
-                                    ctx.app.exit();
+                                    ctx.app.exit_game();
                                 }
                                 return true;
                             }
                             WK::KeyE if !event.repeat => {
-                                let current = ctx.app.world.resource::<GameState<CraftScreen>>().0;
-                                let mut next = ctx.app.world.resource_mut::<NextGameState<CraftScreen>>();
+                                let current = ctx.app.world().resource::<GameState<CraftScreen>>().0;
+                                let mut next = ctx.app.world_mut().resource_mut::<NextGameState<CraftScreen>>();
                                 match current {
                                     CraftScreen::Playing => next.set(CraftScreen::Inventory),
                                     CraftScreen::Inventory => next.set(CraftScreen::Playing),
@@ -1172,8 +1411,8 @@ impl GameCallbacks for CraftGame {
                                 return true;
                             }
                             WK::F5 => {
-                                let mut q = ctx.app.world.query::<&mut CameraController>();
-                                for mut ctrl in q.iter_mut(&mut ctx.app.world) {
+                                let mut q = ctx.app.world_mut().query::<&mut CameraController>();
+                                for mut ctrl in q.iter_mut(ctx.app.world_mut()) {
                                     ctrl.toggle_perspective();
                                     let mode_name = match &ctrl.mode {
                                         CameraMode::FirstPerson => "First Person",
@@ -1183,6 +1422,13 @@ impl GameCallbacks for CraftGame {
                                         CameraMode::Rail => "Rail",
                                     };
                                     println!("Camera: {}", mode_name);
+                                }
+                            }
+                            // F3: toggle debug overlay
+                            WK::F3 if !event.repeat => {
+                                if let Some(mut debug) = ctx.app.world_mut().get_resource_mut::<DebugInfo>() {
+                                    debug.show = !debug.show;
+                                    println!("Debug overlay: {}", if debug.show { "ON" } else { "OFF" });
                                 }
                             }
                             // Tab, F1, Digit1-9 handled by ECS systems
@@ -1211,7 +1457,7 @@ impl GameCallbacks for CraftGame {
         let Some(frame) = ctx.render_app.get_current_frame() else { return; };
         let swapchain = frame.texture.create_view(&Default::default());
 
-        let screen = ctx.app.world.resource::<GameState<CraftScreen>>().0;
+        let screen = ctx.app.world().resource::<GameState<CraftScreen>>().0;
 
         // Render 3D scene + HUD (skipped for MainMenu)
         if screen != CraftScreen::MainMenu {
@@ -1240,13 +1486,13 @@ impl CraftGame {
     fn do_post_update(&mut self, ctx: &mut GameContext) {
         // Periodic debug log (every 120 frames ~ 2 sec)
         if self.frame_count % 120 == 0 {
-            let flying = ctx.app.world.resource::<PlayerState>().flying;
-            let on_ground = ctx.app.world.resource::<PlayerState>().on_ground;
+            let flying = ctx.app.world().resource::<PlayerState>().flying;
+            let on_ground = ctx.app.world().resource::<PlayerState>().on_ground;
             let vel = {
-                let mut q = ctx.app.world.query::<&Velocity>();
-                q.iter(&ctx.app.world).next().map(|v| v.linear).unwrap_or(glam::Vec3::ZERO)
+                let mut q = ctx.app.world_mut().query::<&Velocity>();
+                q.iter(ctx.app.world()).next().map(|v| v.linear).unwrap_or(glam::Vec3::ZERO)
             };
-            if let Some(cam) = ctx.app.world.get_resource::<ActiveCamera>() {
+            if let Some(cam) = ctx.app.world().get_resource::<ActiveCamera>() {
                 let p = cam.camera_pos;
                 log::debug!(
                     "[F{}] pos=({:.1},{:.1},{:.1}) vel=({:.1},{:.1},{:.1}) fly={} gnd={}",
@@ -1259,7 +1505,7 @@ impl CraftGame {
         }
 
         // Block interaction — only when playing
-        let screen = ctx.app.world.resource::<GameState<CraftScreen>>().0;
+        let screen = ctx.app.world().resource::<GameState<CraftScreen>>().0;
         if screen == CraftScreen::Playing {
             self.handle_block_interaction(ctx);
         }
@@ -1273,25 +1519,25 @@ impl CraftGame {
 
     /// Gather all player state into a serializable struct for saving.
     fn gather_player_save_data(&self, ctx: &mut GameContext) -> persistence::PlayerSaveData {
-        let cam_pos = ctx.app.world.get_resource::<ActiveCamera>()
+        let cam_pos = ctx.app.world().get_resource::<ActiveCamera>()
             .map(|c| c.camera_pos)
             .unwrap_or(glam::Vec3::ZERO);
 
         // Copy resource values to avoid borrow conflicts with queries below
-        let flying = ctx.app.world.resource::<PlayerState>().flying;
-        let day_night_time = ctx.app.world.resource::<DayNightCycle>().time;
-        let selected_slot = ctx.app.world.resource::<SelectedBlock>().index;
+        let flying = ctx.app.world().resource::<PlayerState>().flying;
+        let day_night_time = ctx.app.world().resource::<DayNightCycle>().time;
+        let selected_slot = ctx.app.world().resource::<SelectedBlock>().index;
 
         let (health, max_health) = {
-            let mut q = ctx.app.world.query::<&Health>();
-            q.iter(&ctx.app.world).next()
+            let mut q = ctx.app.world_mut().query::<&Health>();
+            q.iter(ctx.app.world()).next()
                 .map(|h| (h.current, h.max))
                 .unwrap_or((20.0, 20.0))
         };
 
         let inventory = {
-            let mut q = ctx.app.world.query::<&SlotInventory>();
-            q.iter(&ctx.app.world).next()
+            let mut q = ctx.app.world_mut().query::<&SlotInventory>();
+            q.iter(ctx.app.world()).next()
                 .map(|inv| {
                     (0..9).map(|i| {
                         inv.get_slot(i).map(|s| (s.item_id, s.quantity))
@@ -1315,8 +1561,8 @@ impl CraftGame {
     fn apply_player_save_data(&self, ctx: &mut GameContext, data: &persistence::PlayerSaveData) {
         // Position
         {
-            let mut q = ctx.app.world.query::<&mut Transform>();
-            for mut transform in q.iter_mut(&mut ctx.app.world) {
+            let mut q = ctx.app.world_mut().query::<&mut Transform>();
+            for mut transform in q.iter_mut(ctx.app.world_mut()) {
                 transform.translation = glam::Vec3::new(
                     data.position[0],
                     data.position[1],
@@ -1327,8 +1573,8 @@ impl CraftGame {
 
         // Health
         {
-            let mut q = ctx.app.world.query::<&mut Health>();
-            for mut hp in q.iter_mut(&mut ctx.app.world) {
+            let mut q = ctx.app.world_mut().query::<&mut Health>();
+            for mut hp in q.iter_mut(ctx.app.world_mut()) {
                 hp.max = data.max_health;
                 hp.current = data.health.min(data.max_health);
             }
@@ -1336,8 +1582,8 @@ impl CraftGame {
 
         // Inventory
         {
-            let mut q = ctx.app.world.query::<&mut SlotInventory>();
-            for mut inv in q.iter_mut(&mut ctx.app.world) {
+            let mut q = ctx.app.world_mut().query::<&mut SlotInventory>();
+            for mut inv in q.iter_mut(ctx.app.world_mut()) {
                 for (i, slot_data) in data.inventory.iter().enumerate() {
                     if i >= 9 { break; }
                     match slot_data {
@@ -1354,19 +1600,19 @@ impl CraftGame {
 
         // Player state
         {
-            let mut player = ctx.app.world.resource_mut::<PlayerState>();
+            let mut player = ctx.app.world_mut().resource_mut::<PlayerState>();
             player.flying = data.flying;
         }
 
         // Day/night cycle
         {
-            let mut cycle = ctx.app.world.resource_mut::<DayNightCycle>();
+            let mut cycle = ctx.app.world_mut().resource_mut::<DayNightCycle>();
             cycle.time = data.day_night_time;
         }
 
         // Selected block
         {
-            let mut selected = ctx.app.world.resource_mut::<SelectedBlock>();
+            let mut selected = ctx.app.world_mut().resource_mut::<SelectedBlock>();
             selected.index = data.selected_slot;
             if data.selected_slot < config::BLOCK_PALETTE.len() {
                 selected.block_type = config::BLOCK_PALETTE[data.selected_slot];

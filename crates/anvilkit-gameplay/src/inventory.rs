@@ -6,6 +6,7 @@
 //! - [`StackInventory`] — auto-stacking, dynamically growing container
 
 use bevy_ecs::prelude::*;
+use anvilkit_describe::Describe;
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -103,7 +104,8 @@ pub trait Inventory {
 // ---------------------------------------------------------------------------
 
 /// Fixed-size inventory backed by a `Vec<Option<ItemStack>>`.
-#[derive(Debug, Clone, Component)]
+#[derive(Debug, Clone, Component, Describe)]
+/// Fixed-size slot-based inventory.
 pub struct SlotInventory {
     slots: Vec<Option<ItemStack>>,
 }
@@ -191,7 +193,8 @@ impl Inventory for SlotInventory {
 // ---------------------------------------------------------------------------
 
 /// Dynamically growing inventory that automatically stacks items.
-#[derive(Debug, Clone, Component, Default)]
+#[derive(Debug, Clone, Component, Default, Describe)]
+/// Auto-stacking dynamic inventory.
 pub struct StackInventory {
     stacks: Vec<ItemStack>,
 }

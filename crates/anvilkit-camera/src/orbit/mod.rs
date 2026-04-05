@@ -5,6 +5,7 @@ pub mod spring_arm;
 
 use bevy_ecs::prelude::*;
 use glam::Vec3;
+use anvilkit_describe::Describe;
 
 /// Orbit state component — stores orbit distance, limits, and target position.
 ///
@@ -15,15 +16,20 @@ use glam::Vec3;
 /// This replaces the old pattern of embedding distance/target data inside the
 /// `CameraMode` enum variants, enabling cleaner system queries and state persistence
 /// across mode switches.
-#[derive(Component)]
+#[derive(Component, Describe)]
+/// Orbit camera state: target, distance, and limits.
 pub struct OrbitState {
     /// World-space position the camera orbits around.
+    #[describe(hint = "Orbit center position")]
     pub target: Vec3,
     /// Current distance from the target.
+    #[describe(hint = "Distance from orbit target", range = "0.1..1000.0", default = "5.0")]
     pub distance: f32,
     /// Minimum allowed orbit distance.
+    #[describe(hint = "Minimum orbit distance", range = "0.1..100.0", default = "1.0")]
     pub min_distance: f32,
     /// Maximum allowed orbit distance.
+    #[describe(hint = "Maximum orbit distance", range = "1.0..10000.0", default = "50.0")]
     pub max_distance: f32,
     /// Offset applied to target position before computing orbit.
     /// E.g., `Vec3::new(0.0, 1.6, 0.0)` for eye height in third-person.

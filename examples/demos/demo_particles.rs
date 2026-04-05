@@ -283,7 +283,7 @@ impl DemoParticlesApp {
         let (sv, si) = mesh_data_to_pbr(&sphere_data);
 
         let (mesh_h, mat_h, sphere_mesh_h, particle_handles) = {
-            let mut assets = self.app.world.resource_mut::<RenderAssets>();
+            let mut assets = self.app.world_mut().resource_mut::<RenderAssets>();
             let pipeline_handle = assets.register_pipeline(pipeline.into_pipeline());
             let mesh_h = assets.upload_mesh_u32(device, &self.mesh_vertices, &self.mesh_indices, "Helmet");
             let mat_h = assets.create_material_with_pipeline(pipeline_handle, mat_bg);
@@ -316,7 +316,7 @@ impl DemoParticlesApp {
         }; // assets dropped here
 
         // Spawn helmet entity
-        self.app.world.spawn((
+        self.app.world_mut().spawn((
             mesh_h, mat_h,
             MaterialParams {
                 metallic: self.material.metallic_factor,
@@ -330,7 +330,7 @@ impl DemoParticlesApp {
 
         // Spawn 12 firefly particles
         for (particle_mat_h, x, y, z, i) in particle_handles {
-            self.app.world.spawn((
+            self.app.world_mut().spawn((
                 sphere_mesh_h, particle_mat_h,
                 MaterialParams {
                     metallic: 0.0,
@@ -348,7 +348,7 @@ impl DemoParticlesApp {
         let eye = glam::Vec3::new(0.0, 0.5, -4.0);
         let look_dir = (glam::Vec3::ZERO - eye).normalize();
         let cam_rot = glam::Quat::from_rotation_arc(glam::Vec3::Z, look_dir);
-        self.app.world.spawn((
+        self.app.world_mut().spawn((
             CameraComponent { fov: 45.0, near: 0.1, far: 100.0, is_active: true, aspect_ratio: w as f32 / h.max(1) as f32, ..Default::default() },
             Transform::from_xyz(eye.x, eye.y, eye.z).with_rotation(cam_rot),
             GlobalTransform(glam::Mat4::from_translation(eye)),
@@ -380,16 +380,16 @@ impl DemoParticlesApp {
         let Some(tm_pipe) = &self.tonemap_pipeline else { return };
         let Some(tm_bg) = &self.tonemap_bg else { return };
         let Some(ibl_bg) = &self.ibl_bg else { return };
-        let Some(cam) = self.app.world.get_resource::<ActiveCamera>() else { return };
-        let Some(dl) = self.app.world.get_resource::<DrawCommandList>() else { return };
-        let Some(ra) = self.app.world.get_resource::<RenderAssets>() else { return };
+        let Some(cam) = self.app.world().get_resource::<ActiveCamera>() else { return };
+        let Some(dl) = self.app.world().get_resource::<DrawCommandList>() else { return };
+        let Some(ra) = self.app.world().get_resource::<RenderAssets>() else { return };
         if dl.commands.is_empty() { return; }
 
         let Some(frame) = self.render_app.get_current_frame() else { return };
         let swapchain = frame.texture.create_view(&Default::default());
 
         let def_lights = SceneLights::default();
-        let lights = self.app.world.get_resource::<SceneLights>().unwrap_or(&def_lights);
+        let lights = self.app.world().get_resource::<SceneLights>().unwrap_or(&def_lights);
         let (gpu_lights, lc) = pack_lights(lights);
         let ld = lights.directional.direction.normalize();
         let lp = -ld * 15.0;
@@ -499,8 +499,8 @@ impl DemoParticlesApp {
         if self.capture.should_capture() {
             if let Some(ref cr) = self.capture_resources {
                 if let Some(path) = self.capture.current_output_path() {
-                    let pixels = cr.read_pixels(device.device());
-                    save_png(&pixels, cr.width, cr.height, &path);
+                    if let Ok(pixels) = cr.read_pixels(device.device()) {
+                    save_png(&pixels, cr.width, cr.height, &path); }
                 }
             }
             self.capture.on_frame_captured();
@@ -533,7 +533,7 @@ impl ApplicationHandler for DemoParticlesApp {
     }
 
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
-        if let Some(ft) = self.app.world.get_resource::<FrameTime>() {
+        if let Some(ft) = self.app.world().get_resource::<FrameTime>() {
             let t = ft.0.elapsed().as_secs_f32();
 
             // Orbit camera
@@ -549,7 +549,7 @@ impl ApplicationHandler for DemoParticlesApp {
             let target = glam::Vec3::ZERO;
             let look_dir = (target - eye).normalize();
             let cam_rot = glam::Quat::from_rotation_arc(glam::Vec3::Z, look_dir);
-            for (cam, mut transform) in self.app.world.query::<(&CameraComponent, &mut Transform)>().iter_mut(&mut self.app.world) {
+            for (cam, mut transform) in self.app.world_mut().query::<(&CameraComponent, &mut Transform)>().iter_mut(self.app.world_mut()) {
                 if cam.is_active {
                     transform.translation = eye;
                     transform.rotation = cam_rot;
@@ -557,7 +557,7 @@ impl ApplicationHandler for DemoParticlesApp {
             }
 
             // Animate firefly particles — each has a unique orbit pattern
-            for (firefly, mut transform, mut gt) in self.app.world.query::<(&Firefly, &mut Transform, &mut GlobalTransform)>().iter_mut(&mut self.app.world) {
+            for (firefly, mut transform, mut gt) in self.app.world_mut().query::<(&Firefly, &mut Transform, &mut GlobalTransform)>().iter_mut(self.app.world_mut()) {
                 let i = firefly.0 as f32;
                 let orbit_angle = t * (1.0 + i * 0.3);
                 let orbit_radius = 1.5 + i * 0.1;

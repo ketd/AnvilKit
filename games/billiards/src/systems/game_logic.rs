@@ -1,7 +1,7 @@
 use bevy_ecs::prelude::*;
 use glam::Vec3;
 use anvilkit_core::math::Transform;
-use anvilkit_ecs::physics::Velocity;
+use anvilkit_core::math::Velocity;
 
 use crate::components::{CueBall, NumberedBall};
 use crate::resources::{BilliardConfig, GameState, GamePhase, BallTracker};

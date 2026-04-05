@@ -2,7 +2,10 @@
 //!
 //! 提供与 AnvilKit ECS 系统的集成，实现渲染功能的插件化。
 
-use anvilkit_ecs::prelude::*;
+use bevy_ecs::prelude::*;
+use bevy_app::{App, Plugin};
+use anvilkit_core::math::{Transform, GlobalTransform};
+use anvilkit_describe::Describe;
 use log::info;
 
 use crate::window::WindowConfig;
@@ -18,7 +21,8 @@ use crate::renderer::state::RenderState;
 ///
 /// ```rust,no_run
 /// use anvilkit_render::prelude::*;
-/// use anvilkit_ecs::prelude::*;
+/// use bevy_ecs::prelude::*;
+/// use bevy_app::{App, Plugin};
 ///
 /// // 创建应用并添加渲染插件
 /// let mut app = App::new();
@@ -113,7 +117,7 @@ impl Plugin for RenderPlugin {
 
         // 添加真实 ECS 渲染系统到 PostUpdate 阶段
         app.add_systems(
-            AnvilKitSchedule::PostUpdate,
+            bevy_app::PostUpdate,
             (
                 camera_system,
                 render_extract_system.after(camera_system),
@@ -136,15 +140,20 @@ impl Plugin for RenderPlugin {
 /// let config = RenderConfig::default();
 /// assert_eq!(config.msaa_samples, 4);
 /// ```
-#[derive(Debug, Clone, Resource)]
+#[derive(Debug, Clone, Resource, Describe)]
+/// Global render configuration resource.
 pub struct RenderConfig {
     /// 窗口配置
+    #[describe(hint = "Window configuration (title, size, vsync)")]
     pub window_config: WindowConfig,
     /// MSAA 采样数（默认 4，设为 1 禁用）
+    #[describe(hint = "Anti-aliasing sample count; 1 disables MSAA", range = "1..8", default = "4")]
     pub msaa_samples: u32,
     /// 场景清除颜色 (linear RGBA)
+    #[describe(hint = "Background clear color in linear RGBA", default = "[0.15, 0.3, 0.6, 1.0]")]
     pub clear_color: [f32; 4],
     /// 默认背面剔除模式
+    #[describe(hint = "Face culling mode: wgpu::Face (Back, Front, or none)", default = "Back")]
     pub default_cull_mode: wgpu::Face,
 }
 
@@ -207,21 +216,28 @@ impl Default for Projection {
 }
 
 /// Camera component with projection, clipping planes, and activation state.
-#[derive(Debug, Clone, Component)]
+#[derive(Debug, Clone, Component, Describe)]
+/// Camera projection and activation parameters.
 pub struct CameraComponent {
     /// 投影模式
     pub projection: Projection,
     /// 视野角度（度）— 向后兼容，perspective 模式下等同于 projection.fov
+    #[describe(hint = "Vertical field of view in degrees", range = "1.0..179.0", default = "60.0")]
     pub fov: f32,
     /// 近裁剪面
+    #[describe(hint = "Near clipping plane distance", range = "0.001..100.0", default = "0.1")]
     pub near: f32,
     /// 远裁剪面
+    #[describe(hint = "Far clipping plane distance", range = "10.0..100000.0", default = "1000.0")]
     pub far: f32,
     /// 是否激活
+    #[describe(hint = "Whether this camera is the active renderer", default = "true")]
     pub is_active: bool,
     /// 宽高比（由 RenderApp 在 resize 时更新，或用户手动设置）
+    #[describe(hint = "Width / height ratio")]
     pub aspect_ratio: f32,
     /// 渲染优先级（多相机时按优先级排序，高优先级先渲染）
+    #[describe(hint = "Render priority (higher = rendered first)", default = "0")]
     pub priority: i32,
 }
 

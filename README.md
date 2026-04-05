@@ -4,7 +4,7 @@
 
 <br/><br/>
 
-A modular game engine built with Rust — forging games from composable crates.
+The first AI-agent-native game engine — built with Rust, designed for AI.
 
 [![crates.io](https://img.shields.io/crates/v/anvilkit.svg?style=flat-square&color=00E5FF)](https://crates.io/crates/anvilkit)
 [![docs.rs](https://img.shields.io/docsrs/anvilkit?style=flat-square&color=9D00FF)](https://docs.rs/anvilkit)
@@ -21,7 +21,9 @@ English | **[中文](README_ZH.md)**
 
 ## What is AnvilKit?
 
-AnvilKit is a **modular game infrastructure** — not a monolithic engine, but a set of focused crates you compose to build exactly the game you need.
+AnvilKit is an **AI-first game engine** — every API type self-describes via the `Describe` trait, errors include agent-readable hints, and an MCP server lets AI agents interact with the running game natively. Built on `bevy_ecs` 0.15 + `wgpu` 0.19.
+
+See [POSITIONING.md](POSITIONING.md) for the full vision and [ROADMAP.md](ROADMAP.md) for progress.
 
 ```toml
 # Use the facade crate for everything:

@@ -40,10 +40,8 @@ pub mod persistence;
 pub mod prelude {
     // 数学类型
     pub use crate::math::{Transform, GlobalTransform};
-    pub use crate::math::geometry::{Rect, Circle, Bounds2D, Bounds3D};
     pub use crate::math::{Aabb, Frustum};
-    pub use crate::math::interpolation::{Lerp, Slerp, Interpolate};
-    
+
     // 时间类型
     pub use crate::time::{Time, Timer};
     
@@ -65,7 +63,7 @@ pub mod prelude {
     // 持久化类型 (requires "persistence" feature)
     #[cfg(feature = "persistence")]
     pub use crate::persistence::{
-        Settings, SaveManager, WorldStorage,
+        SaveManager, WorldStorage,
         AutoSaveConfig, AutoSaveState, auto_save_tick, next_autosave_slot,
         SaveSlotInfo, SaveMigration, MigrationRunner,
     };
@@ -107,10 +105,9 @@ mod tests {
     #[test]
     fn test_prelude_imports() {
         use crate::prelude::*;
-        
+
         // 测试可以使用预导入的类型
         let _transform = Transform::IDENTITY;
         let _time = Time::new();
-        let _rect = Rect::new(Vec2::ZERO, Vec2::ONE);
     }
 }

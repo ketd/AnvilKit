@@ -1,7 +1,8 @@
 use bevy_ecs::prelude::*;
 use glam::Vec3;
 use anvilkit_core::math::Transform;
-use anvilkit_ecs::physics::{Velocity, DeltaTime};
+use anvilkit_core::math::Velocity;
+use anvilkit_core::time::DeltaTime;
 use anvilkit_input::prelude::{InputState, MouseButton};
 use anvilkit_render::renderer::raycast::{screen_to_ray, ray_plane_intersection};
 use anvilkit_render::renderer::draw::ActiveCamera;

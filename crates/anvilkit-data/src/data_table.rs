@@ -70,6 +70,20 @@ where
             .map_err(|e| format!("Failed to parse JSON: {}", e))?;
         Ok(Self { entries, name: name.into() })
     }
+
+    /// Load from a RON file on disk.
+    pub fn from_ron_file(name: impl Into<String>, path: impl AsRef<std::path::Path>) -> Result<Self, String> {
+        let content = std::fs::read_to_string(path.as_ref())
+            .map_err(|e| format!("Failed to read file {}: {}", path.as_ref().display(), e))?;
+        Self::from_ron(name, &content)
+    }
+
+    /// Load from a JSON file on disk.
+    pub fn from_json_file(name: impl Into<String>, path: impl AsRef<std::path::Path>) -> Result<Self, String> {
+        let content = std::fs::read_to_string(path.as_ref())
+            .map_err(|e| format!("Failed to read file {}: {}", path.as_ref().display(), e))?;
+        Self::from_json(name, &content)
+    }
 }
 
 #[cfg(test)]
@@ -100,6 +114,27 @@ mod tests {
         let table: DataTable<String, i32> = DataTable::from_ron("stats", ron).unwrap();
         assert_eq!(table.get(&"hp".to_string()), Some(&100));
         assert_eq!(table.len(), 3);
+    }
+
+    #[test]
+    fn test_from_ron_file() {
+        // Write a temp RON file
+        let dir = std::env::temp_dir().join("anvilkit_data_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("test_table.ron");
+        std::fs::write(&path, r#"{"a": 1, "b": 2}"#).unwrap();
+
+        let table: DataTable<String, i32> = DataTable::from_ron_file("test", &path).unwrap();
+        assert_eq!(table.get(&"a".to_string()), Some(&1));
+        assert_eq!(table.len(), 2);
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_from_ron_file_not_found() {
+        let result: Result<DataTable<String, i32>, _> = DataTable::from_ron_file("test", "/nonexistent/path.ron");
+        assert!(result.is_err());
     }
 
     #[test]

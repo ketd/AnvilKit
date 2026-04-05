@@ -8,7 +8,6 @@ publish = false
 anvilkit = { path = "../../crates/anvilkit" }
 anvilkit-app = { path = "../../crates/anvilkit-app" }
 anvilkit-core = { path = "../../crates/anvilkit-core", features = ["bevy_ecs"] }
-anvilkit-ecs = { path = "../../crates/anvilkit-ecs" }
 anvilkit-render = { path = "../../crates/anvilkit-render" }
 anvilkit-assets = { path = "../../crates/anvilkit-assets" }
 anvilkit-input = { path = "../../crates/anvilkit-input" }

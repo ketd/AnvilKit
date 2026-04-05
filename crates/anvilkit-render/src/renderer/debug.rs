@@ -6,6 +6,7 @@
 //! - [`OverlayLineRenderer`]: 2D/3D 叠加线段渲染（十字准星、瞄准线等）
 
 use bevy_ecs::prelude::*;
+use anvilkit_describe::Describe;
 use glam::{Vec3, Mat4};
 use crate::renderer::RenderDevice;
 use crate::renderer::buffer::{ColorVertex, Vertex, create_uniform_buffer};
@@ -27,7 +28,8 @@ use super::shared::{CachedBuffer, MatrixUniform};
 /// assert!(!mode.is_normal());
 /// assert!(DebugMode::None.is_normal());
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Describe)]
+/// Debug rendering visualization mode.
 pub enum DebugMode {
     /// 正常渲染
     None,
@@ -65,25 +67,35 @@ impl Default for DebugMode {
 /// assert_eq!(stats.draw_calls, 2);
 /// assert_eq!(stats.triangles, 300);
 /// ```
-#[derive(Debug, Clone, Resource)]
+#[derive(Debug, Clone, Resource, Describe)]
+/// Per-frame rendering performance statistics.
 pub struct RenderStats {
     /// 绘制调用次数
+    #[describe(hint = "Number of GPU draw calls this frame", range = "0..100000", default = "0")]
     pub draw_calls: u32,
     /// 渲染的三角形总数
+    #[describe(hint = "Total triangles rendered this frame", range = "0..10000000", default = "0")]
     pub triangles: u32,
     /// 渲染的顶点总数
+    #[describe(hint = "Total vertices processed this frame", range = "0..30000000", default = "0")]
     pub vertices: u32,
     /// 活跃的光源数
+    #[describe(hint = "Number of active lights in the scene", range = "0..256", default = "0")]
     pub active_lights: u32,
     /// 视锥体剔除掉的物体数
+    #[describe(hint = "Objects culled by frustum this frame", range = "0..100000", default = "0")]
     pub culled_objects: u32,
     /// 可见物体数
+    #[describe(hint = "Objects visible after culling", range = "0..100000", default = "0")]
     pub visible_objects: u32,
     /// 帧时间（毫秒）
+    #[describe(hint = "Frame duration in milliseconds", range = "0.0..1000.0", default = "0.0")]
     pub frame_time_ms: f32,
     /// FPS（基于帧时间计算）
+    #[describe(hint = "Frames per second (1/frame_time)", range = "0.0..10000.0", default = "0.0")]
     pub fps: f32,
     /// GPU 内存使用估计（字节）
+    #[describe(hint = "Estimated GPU memory usage in bytes", default = "0")]
     pub gpu_memory_bytes: u64,
 }
 
@@ -151,9 +163,11 @@ impl Default for RenderStats {
 /// let overlay = DebugOverlay::default();
 /// assert!(!overlay.show_stats);
 /// ```
-#[derive(Debug, Clone, Resource)]
+#[derive(Debug, Clone, Resource, Describe)]
+/// Debug overlay configuration.
 pub struct DebugOverlay {
     /// 是否显示统计信息
+    #[describe(hint = "Show performance stats overlay", default = "false")]
     pub show_stats: bool,
     /// 当前调试模式
     pub debug_mode: DebugMode,

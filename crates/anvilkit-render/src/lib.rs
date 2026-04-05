@@ -22,7 +22,7 @@
 //! 
 //! ```rust,no_run
 //! use anvilkit_render::prelude::*;
-//! use anvilkit_ecs::prelude::*;
+//! use bevy_ecs::prelude::*;
 //! 
 //! // 创建应用并添加渲染插件
 //! let mut app = App::new();
@@ -36,6 +36,8 @@ pub mod window;
 pub mod renderer;
 pub mod plugin;
 pub mod demo_app;
+pub mod transform;
+pub mod component;
 
 /// 预导入模块
 ///
@@ -71,7 +73,12 @@ pub mod prelude {
 
     // 重新导出 AnvilKit 核心类型
     pub use anvilkit_core::prelude::*;
-    pub use anvilkit_ecs::prelude::*;
+    // Transform hierarchy types
+    pub use crate::transform::*;
+    pub use crate::component::*;
+    // Re-export bevy_app types for examples and downstream users
+    pub use bevy_app::{App, Plugin};
+    pub use bevy_ecs::prelude::*;
 }
 
 #[cfg(test)]

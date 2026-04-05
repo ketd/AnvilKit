@@ -31,11 +31,49 @@ use anvilkit_render::renderer::{
 };
 use anvilkit_render::plugin::CameraComponent;
 use anvilkit_input::prelude::{InputState, KeyCode};
-use anvilkit_ecs::physics::{
-    Velocity, DeltaTime, CollisionEvent, AabbCollider,
-    velocity_integration_system, collision_detection_system,
-};
-// Audio types available: anvilkit_ecs::audio::{AudioSource, PlaybackState}
+use anvilkit_core::math::Velocity;
+use anvilkit_core::time::DeltaTime;
+use anvilkit_render::transform::AabbCollider;
+
+// --- Inline physics types/systems (migrated from dissolved anvilkit-ecs) ---
+
+/// Collision event between two entities.
+#[derive(Debug, Clone, Copy, bevy_ecs::event::Event)]
+struct CollisionEvent { a: Entity, b: Entity }
+
+/// Velocity integration: transform.translation += velocity.linear * dt
+fn velocity_integration_system(
+    dt: Res<DeltaTime>,
+    mut query: Query<(&mut Transform, &Velocity)>,
+) {
+    for (mut transform, velocity) in &mut query {
+        transform.translation += velocity.linear * dt.0;
+    }
+}
+
+/// N^2 AABB collision detection
+fn collision_detection_system(
+    query: Query<(Entity, &Transform, &AabbCollider)>,
+    mut events: EventWriter<CollisionEvent>,
+) {
+    let entities: Vec<_> = query.iter().collect();
+    for i in 0..entities.len() {
+        for j in (i + 1)..entities.len() {
+            let (ea, ta, ca) = &entities[i];
+            let (eb, tb, cb) = &entities[j];
+            let a_min = ta.translation - ca.half_extents * ta.scale;
+            let a_max = ta.translation + ca.half_extents * ta.scale;
+            let b_min = tb.translation - cb.half_extents * tb.scale;
+            let b_max = tb.translation + cb.half_extents * tb.scale;
+            if a_min.x <= b_max.x && a_max.x >= b_min.x
+                && a_min.y <= b_max.y && a_max.y >= b_min.y
+                && a_min.z <= b_max.z && a_max.z >= b_min.z
+            {
+                events.send(CollisionEvent { a: *ea, b: *eb });
+            }
+        }
+    }
+}
 use anvilkit_render::renderer::particle::{ParticleSystem, Particle, ParticleRenderer};
 use anvilkit_render::renderer::ui::{UiNode, UiText, UiStyle, Val, UiRenderer};
 
@@ -275,7 +313,7 @@ fn main() {
     app.insert_resource(GameParticles { system: ParticleSystem::new(500) });
 
     // Systems
-    app.add_systems(AnvilKitSchedule::Update, (
+    app.add_systems(bevy_app::Update, (
         player_movement_system,
         velocity_integration_system.after(player_movement_system),
         collision_detection_system.after(velocity_integration_system),
@@ -303,7 +341,7 @@ fn main() {
     });
 
     // Spawn player entity (MeshHandle/MaterialHandle added after GPU init)
-    let player_entity = app.world.spawn((
+    let player_entity = app.world_mut().spawn((
         Player,
         Transform::from_xyz(0.0, 0.5, 0.0),
         GlobalTransform::default(),
@@ -321,7 +359,7 @@ fn main() {
     ];
     let mut obstacle_entities = Vec::new();
     for pos in &obstacle_positions {
-        let e = app.world.spawn((
+        let e = app.world_mut().spawn((
             Obstacle,
             Transform::from_xyz(pos.x, pos.y, pos.z),
             GlobalTransform::default(),
@@ -332,7 +370,7 @@ fn main() {
     }
 
     // Ground plane entity
-    let ground_entity = app.world.spawn((
+    let ground_entity = app.world_mut().spawn((
         Transform::from_xyz(0.0, -0.05, 0.0).with_scale(glam::Vec3::new(20.0, 0.1, 20.0)),
         GlobalTransform::default(),
         MaterialParams { metallic: 0.0, roughness: 0.8, normal_scale: 1.0, emissive_factor: [0.0; 3] },
@@ -342,14 +380,14 @@ fn main() {
     let eye = glam::Vec3::new(0.0, 12.0, -10.0);
     let look_dir = (glam::Vec3::ZERO - eye).normalize();
     let cam_rot = glam::Quat::from_rotation_arc(glam::Vec3::Z, look_dir);
-    app.world.spawn((
+    app.world_mut().spawn((
         CameraComponent { fov: 50.0, near: 0.1, far: 100.0, is_active: true, aspect_ratio: 1024.0 / 768.0, ..Default::default() },
         Transform::from_xyz(eye.x, eye.y, eye.z).with_rotation(cam_rot),
         GlobalTransform::default(),
     ));
 
     // UI nodes
-    app.world.spawn(UiNode {
+    app.world_mut().spawn(UiNode {
         background_color: [0.0, 0.0, 0.0, 0.7],
         corner_radius: 8.0,
         text: Some(UiText::new("Score: 0").with_font_size(24.0)),
@@ -358,7 +396,7 @@ fn main() {
         style: UiStyle { width: Val::Px(200.0), height: Val::Px(40.0), ..Default::default() },
         ..Default::default()
     });
-    app.world.spawn(UiNode {
+    app.world_mut().spawn(UiNode {
         background_color: [0.5, 0.0, 0.0, 0.7],
         corner_radius: 8.0,
         text: Some(UiText::new("HP: 100").with_font_size(24.0).with_color([1.0, 0.2, 0.2, 1.0])),
@@ -595,18 +633,18 @@ impl GameApp {
             .build(device).expect("Failed to create tonemap pipeline");
 
         // Upload cube mesh + create materials
-        let mut assets = self.app.world.resource_mut::<RenderAssets>();
+        let mut assets = self.app.world_mut().resource_mut::<RenderAssets>();
         let mesh_h = assets.upload_mesh_u32(device, &self.cube_verts, &self.cube_indices, "Cube");
         let player_mat_h = assets.create_material(player_pipeline, player_mat_bg);
         let obstacle_mat_h = assets.create_material(obstacle_pipeline, obstacle_mat_bg);
         let ground_mat_h = assets.create_material(ground_pipeline, ground_mat_bg);
 
         // Attach mesh/material handles to entities
-        self.app.world.entity_mut(self.player_entity).insert((mesh_h, player_mat_h));
+        self.app.world_mut().entity_mut(self.player_entity).insert((mesh_h, player_mat_h));
         for &e in &self.obstacle_entities {
-            self.app.world.entity_mut(e).insert((mesh_h, obstacle_mat_h));
+            self.app.world_mut().entity_mut(e).insert((mesh_h, obstacle_mat_h));
         }
-        self.app.world.entity_mut(self.ground_entity).insert((mesh_h, ground_mat_h));
+        self.app.world_mut().entity_mut(self.ground_entity).insert((mesh_h, ground_mat_h));
 
         // Particle and UI renderers (render onto swapchain after tonemap)
         let particle_renderer = ParticleRenderer::new(device, format);
@@ -636,16 +674,16 @@ impl GameApp {
         let Some(tm_pipe) = &self.tonemap_pipeline else { return };
         let Some(tm_bg) = &self.tonemap_bg else { return };
         let Some(ibl_bg) = &self.ibl_bg else { return };
-        let Some(cam) = self.app.world.get_resource::<ActiveCamera>() else { return };
-        let Some(dl) = self.app.world.get_resource::<DrawCommandList>() else { return };
-        let Some(ra) = self.app.world.get_resource::<RenderAssets>() else { return };
+        let Some(cam) = self.app.world().get_resource::<ActiveCamera>() else { return };
+        let Some(dl) = self.app.world().get_resource::<DrawCommandList>() else { return };
+        let Some(ra) = self.app.world().get_resource::<RenderAssets>() else { return };
         if dl.commands.is_empty() { return; }
 
         let Some(frame) = self.render_app.get_current_frame() else { return };
         let swapchain = frame.texture.create_view(&Default::default());
 
         let def_lights = SceneLights::default();
-        let lights = self.app.world.get_resource::<SceneLights>().unwrap_or(&def_lights);
+        let lights = self.app.world().get_resource::<SceneLights>().unwrap_or(&def_lights);
         let (gpu_lights, lc) = pack_lights(lights);
         let ld = lights.directional.direction.normalize();
 
@@ -717,9 +755,9 @@ impl GameApp {
 
         // Particle rendering → swapchain (additive overlay)
         if let Some(ref mut pr) = self.particle_renderer {
-            if let Some(particles) = self.app.world.get_resource::<GameParticles>() {
+            if let Some(particles) = self.app.world().get_resource::<GameParticles>() {
                 let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Game Particle Enc") });
-                pr.render(device, &mut enc, &swapchain, &particles.system, &cam.view_proj);
+                pr.render(device, &mut enc, &swapchain, None, &particles.system, &cam.view_proj, None);
                 device.queue().submit(std::iter::once(enc.finish()));
             }
         }
@@ -728,8 +766,8 @@ impl GameApp {
         if let Some(ref mut ur) = self.ui_renderer {
             let (sw, sh) = self.render_app.window_state().size();
             // Collect UI node data (query needs &mut World, so clone the data)
-            let ui_nodes: Vec<UiNode> = self.app.world.query::<&UiNode>()
-                .iter(&self.app.world)
+            let ui_nodes: Vec<UiNode> = self.app.world_mut().query::<&UiNode>()
+                .iter(self.app.world())
                 .filter(|n| n.visible)
                 .cloned()
                 .collect();
@@ -783,7 +821,7 @@ impl ApplicationHandler for GameApp {
                 use winit::keyboard::{KeyCode as WK, PhysicalKey};
                 if let PhysicalKey::Code(code) = event.physical_key {
                     if let Some(key) = anvilkit_input::prelude::KeyCode::from_winit(code) {
-                        if let Some(mut input) = self.app.world.get_resource_mut::<InputState>() {
+                        if let Some(mut input) = self.app.world_mut().get_resource_mut::<InputState>() {
                             if event.state.is_pressed() { input.press_key(key); }
                             else { input.release_key(key); }
                         }
@@ -807,7 +845,7 @@ impl ApplicationHandler for GameApp {
 
     fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
         self.app.update();
-        if let Some(mut input) = self.app.world.get_resource_mut::<InputState>() {
+        if let Some(mut input) = self.app.world_mut().get_resource_mut::<InputState>() {
             input.end_frame();
         }
         if let Some(w) = self.render_app.window() { w.request_redraw(); }

@@ -59,8 +59,7 @@ app.add_systems(AnvilKitSchedule::FixedUpdate, (
 `FixedUpdate` 以固定 1/60s 时间步长运行（可通过 `app.set_fixed_timestep()` 配置），独立于帧率。确保不同硬件上的物理行为一致。
 
 ```rust
-use anvilkit_ecs::prelude::*;
-use anvilkit_ecs::physics::*;
+use anvilkit::prelude::*;
 
 fn setup_physics(mut commands: Commands) {
     // 动态移动方块
@@ -105,8 +104,7 @@ fn read_collisions(mut events: EventReader<CollisionEvent>) {
 | `RaycastHit` | 结果结构体：`entity`、`point`、`normal`、`distance` |
 
 ```rust
-use anvilkit_ecs::prelude::*;
-use anvilkit_ecs::physics::*;
+use anvilkit::prelude::*;
 
 fn setup_rapier(mut commands: Commands) {
     // 动态球体

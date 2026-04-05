@@ -1,6 +1,7 @@
 use bevy_ecs::prelude::*;
 use anvilkit_core::math::Transform;
-use anvilkit_ecs::physics::{DeltaTime, Velocity};
+use anvilkit_core::time::DeltaTime;
+use anvilkit_core::math::Velocity;
 use anvilkit_input::prelude::ActionMap;
 use anvilkit_camera::prelude::CameraController;
 
@@ -72,7 +73,7 @@ pub fn hotbar_selection_system(
         let action = format!("slot_{}", i + 1);
         if actions.is_action_just_pressed(&action) {
             selected.index = i;
-            selected.block_type = config::BLOCK_PALETTE[i];
+            selected.block_type = selected.palette[i];
         }
     }
 }
@@ -81,10 +82,22 @@ pub fn hotbar_selection_system(
 pub fn toggle_actions_system(
     actions: Res<ActionMap>,
     mut player: ResMut<PlayerState>,
+    mut vel_query: Query<&mut Velocity, With<FpsCamera>>,
     mut filter: Option<ResMut<ActiveFilter>>,
 ) {
     if actions.is_action_just_pressed("toggle_flying") {
+        let was_flying = player.flying;
         player.flying = !player.flying;
+
+        // When switching flying → walking: reset velocity so the player doesn't
+        // accumulate a huge fall and die (which looks like "game reset" via respawn).
+        if was_flying && !player.flying {
+            player.on_ground = false;
+            player.last_vy = 0.0;
+            if let Ok(mut vel) = vel_query.get_single_mut() {
+                vel.linear = glam::Vec3::ZERO;
+            }
+        }
     }
     if actions.is_action_just_pressed("cycle_filter") {
         if let Some(ref mut af) = filter {

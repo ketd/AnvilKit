@@ -1,8 +1,8 @@
 use bevy_ecs::prelude::*;
 
-use anvilkit_ecs::app::App;
-use anvilkit_ecs::schedule::AnvilKitSchedule;
-use anvilkit_ecs::state::{
+use crate::ecs_app::App;
+use crate::schedule::AnvilKitSchedule;
+use crate::state::{
     GameState, NextGameState, StateTransitionEvent, StateValue, state_transition_system,
 };
 

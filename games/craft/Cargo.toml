@@ -8,13 +8,11 @@ publish = false
 anvilkit = { path = "../../crates/anvilkit" }
 anvilkit-app = { path = "../../crates/anvilkit-app" }
 anvilkit-core = { path = "../../crates/anvilkit-core", features = ["bevy_ecs", "persistence"] }
-anvilkit-ecs = { path = "../../crates/anvilkit-ecs" }
-anvilkit-render = { path = "../../crates/anvilkit-render" }
+anvilkit-render = { path = "../../crates/anvilkit-render", features = ["advanced-render"] }
 anvilkit-assets = { path = "../../crates/anvilkit-assets" }
 anvilkit-input = { path = "../../crates/anvilkit-input" }
 anvilkit-camera = { path = "../../crates/anvilkit-camera" }
 anvilkit-data = { path = "../../crates/anvilkit-data" }
-anvilkit-ui = { path = "../../crates/anvilkit-ui" }
 egui = { workspace = true }
 anvilkit-gameplay = { path = "../../crates/anvilkit-gameplay" }
 bevy_ecs = { workspace = true }

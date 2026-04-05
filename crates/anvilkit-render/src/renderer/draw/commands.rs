@@ -1,6 +1,7 @@
 //! 绘制命令和绘制命令列表
 
 use bevy_ecs::prelude::*;
+use anvilkit_describe::Describe;
 use glam::Mat4;
 
 use crate::renderer::assets::{MeshHandle, MaterialHandle};
@@ -9,15 +10,20 @@ use crate::renderer::assets::{MeshHandle, MaterialHandle};
 ///
 /// 附加到实体上以控制 PBR 材质参数。
 /// 如果实体没有此组件，render_extract_system 使用默认值 (metallic=0, roughness=0.5, normal_scale=1.0)。
-#[derive(Debug, Clone, Component)]
+#[derive(Debug, Clone, Component, Describe)]
+/// Per-entity PBR material parameter overrides.
 pub struct MaterialParams {
     /// Metalness factor (0 = dielectric, 1 = metal).
+    #[describe(hint = "0 = dielectric, 1 = full metal", range = "0.0..1.0", default = "0.0")]
     pub metallic: f32,
     /// Surface roughness (0 = mirror, 1 = diffuse).
+    #[describe(hint = "0 = mirror-smooth, 1 = fully rough", range = "0.0..1.0", default = "0.5")]
     pub roughness: f32,
     /// Normal map intensity multiplier.
+    #[describe(hint = "Normal map intensity multiplier", range = "0.0..2.0", default = "1.0")]
     pub normal_scale: f32,
     /// Emissive color factor [R, G, B].
+    #[describe(hint = "Emissive color factor [R,G,B]", default = "[0.0, 0.0, 0.0]")]
     pub emissive_factor: [f32; 3],
 }
 

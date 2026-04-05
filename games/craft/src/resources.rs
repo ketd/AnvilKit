@@ -3,17 +3,20 @@ use bevy_ecs::prelude::*;
 
 use crate::block::BlockType;
 use crate::chunk::{ChunkData, CHUNK_SIZE, CHUNK_HEIGHT};
+use crate::lighting::LightMap;
 use crate::config;
 
 /// Stores all loaded chunk data keyed by (cx, cz).
 #[derive(Resource, Default)]
 pub struct VoxelWorld {
     pub chunks: HashMap<(i32, i32), ChunkData>,
+    pub light_maps: HashMap<(i32, i32), LightMap>,
     pub modified_chunks: HashSet<(i32, i32)>,
 }
 
 impl VoxelWorld {
-    /// Get block at absolute world coordinates. Returns Air for unloaded/OOB.
+    /// Get block at absolute world coordinates. Returns Air for OOB, Stone for unloaded chunks
+    /// (prevents player from falling through unloaded terrain).
     pub fn get_block(&self, x: i32, y: i32, z: i32) -> BlockType {
         if y < 0 || y >= CHUNK_HEIGHT as i32 {
             return BlockType::Air;
@@ -24,7 +27,29 @@ impl VoxelWorld {
         let lz = z.rem_euclid(CHUNK_SIZE as i32);
         match self.chunks.get(&(cx, cz)) {
             Some(chunk) => chunk.get_safe(lx, y, lz),
-            None => BlockType::Air,
+            // Unloaded chunks: return Stone below surface level to prevent falling through.
+            // Return Air above typical surface to allow flying over unloaded areas.
+            None => if y < config::WATER_LEVEL { BlockType::Stone } else { BlockType::Air },
+        }
+    }
+
+    /// Get light map for a chunk, if loaded.
+    pub fn get_light_map(&self, cx: i32, cz: i32) -> Option<&LightMap> {
+        self.light_maps.get(&(cx, cz))
+    }
+
+    /// Get packed light value at absolute world coordinates. Returns 240 (full sky) if unloaded.
+    pub fn get_light(&self, x: i32, y: i32, z: i32) -> u8 {
+        if y < 0 || y >= CHUNK_HEIGHT as i32 {
+            return if y >= CHUNK_HEIGHT as i32 { 0xF0 } else { 0 };
+        }
+        let cx = x.div_euclid(CHUNK_SIZE as i32);
+        let cz = z.div_euclid(CHUNK_SIZE as i32);
+        let lx = x.rem_euclid(CHUNK_SIZE as i32);
+        let lz = z.rem_euclid(CHUNK_SIZE as i32);
+        match self.light_maps.get(&(cx, cz)) {
+            Some(lm) => lm.get_packed_safe(lx, y, lz),
+            None => 0xF0, // default to full sky light
         }
     }
 
@@ -64,6 +89,10 @@ pub struct PlayerState {
     pub sprinting: bool,
     /// Cached vertical velocity from last frame (for landing impact FX).
     pub last_vy: f32,
+    /// Physics-authoritative position (not affected by head bob/shake).
+    /// The physics system writes here and sets transform from this, so that
+    /// camera effects applied in PostUpdate don't feed back into physics.
+    pub physics_pos: Option<glam::Vec3>,
 }
 
 impl Default for PlayerState {
@@ -76,22 +105,26 @@ impl Default for PlayerState {
             was_on_ground: false,
             sprinting: false,
             last_vy: 0.0,
+            physics_pos: None,
         }
     }
 }
 
-/// Currently selected block type for placement.
+/// Currently selected block type for placement + mutable hotbar palette.
 #[derive(Debug, Resource)]
 pub struct SelectedBlock {
     pub block_type: BlockType,
     pub index: usize,
+    /// Mutable hotbar palette (initialized from config::BLOCK_PALETTE).
+    pub palette: [BlockType; 9],
 }
 
 impl Default for SelectedBlock {
     fn default() -> Self {
         Self {
-            block_type: BlockType::Grass,
+            block_type: config::BLOCK_PALETTE[0],
             index: 0,
+            palette: config::BLOCK_PALETTE,
         }
     }
 }

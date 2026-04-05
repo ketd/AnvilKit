@@ -110,6 +110,8 @@ pub struct RenderState {
     pub scene_bind_group_layout: wgpu::BindGroupLayout,
     /// Depth buffer texture view for the main pass.
     pub depth_texture_view: wgpu::TextureView,
+    /// HDR off-screen render target texture (retained for copy operations).
+    pub hdr_texture: wgpu::Texture,
     /// HDR off-screen render target texture view.
     pub hdr_texture_view: wgpu::TextureView,
     /// Tone-mapping post-process render pipeline.

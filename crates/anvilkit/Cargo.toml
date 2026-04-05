@@ -14,21 +14,19 @@ description = "AnvilKit game engine — a modular, ECS-based game engine built w
 readme = "../../README.md"
 
 [dependencies]
-anvilkit-core = { version = "0.1.0", path = "../anvilkit-core" }
-anvilkit-ecs = { version = "0.1.0", path = "../anvilkit-ecs" }
+anvilkit-core = { version = "0.1.0", path = "../anvilkit-core", features = ["bevy_ecs"] }
 anvilkit-render = { version = "0.1.0", path = "../anvilkit-render" }
 anvilkit-assets = { version = "0.1.0", path = "../anvilkit-assets" }
 anvilkit-input = { version = "0.1.0", path = "../anvilkit-input" }
 anvilkit-audio = { version = "0.1.0", path = "../anvilkit-audio" }
-anvilkit-camera = { version = "0.1.0", path = "../anvilkit-camera" }
 anvilkit-app = { version = "0.1.0", path = "../anvilkit-app" }
-anvilkit-ui = { version = "0.1.0", path = "../anvilkit-ui" }
-anvilkit-gameplay = { version = "0.1.0", path = "../anvilkit-gameplay" }
-anvilkit-data = { version = "0.1.0", path = "../anvilkit-data" }
+anvilkit-describe = { version = "0.1.0", path = "../anvilkit-describe" }
+anvilkit-mcp = { version = "0.1.0", path = "../anvilkit-mcp", optional = true }
+bevy_ecs = { workspace = true }
 
 [features]
 default = []
-serde = ["anvilkit-core/serde", "anvilkit-ecs/serde"]
-rapier = ["anvilkit-ecs/rapier"]
-persistence = ["anvilkit-core/persistence", "anvilkit-ecs/persistence", "anvilkit-camera/persistence"]
-debug = ["anvilkit-core/debug", "anvilkit-ecs/debug", "anvilkit-render/debug"]
+serde = ["anvilkit-core/serde"]
+persistence = ["anvilkit-core/persistence"]
+debug = ["anvilkit-core/debug", "anvilkit-render/debug"]
+mcp = ["anvilkit-mcp"]

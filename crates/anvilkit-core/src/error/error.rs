@@ -413,6 +413,61 @@ impl AnvilKitError {
         }
     }
 
+    /// Stable error code for agent pattern-matching (e.g., "RENDER_SHADER_COMPILE").
+    ///
+    /// Error codes follow `CATEGORY_DETAIL` format. Agents use these to dispatch
+    /// error handling logic without parsing human-readable messages.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Render { .. } => "RENDER_ERROR",
+            Self::Physics { .. } => "PHYSICS_ERROR",
+            Self::Asset { path: Some(_), .. } => "ASSET_NOT_FOUND",
+            Self::Asset { .. } => "ASSET_ERROR",
+            Self::Audio { .. } => "AUDIO_ERROR",
+            Self::Input { .. } => "INPUT_ERROR",
+            Self::Ecs { .. } => "ECS_ERROR",
+            Self::Window { .. } => "WINDOW_ERROR",
+            Self::Config { .. } => "CONFIG_ERROR",
+            Self::Network { .. } => "NETWORK_ERROR",
+            Self::Io(_) => "IO_ERROR",
+            Self::Serialization { .. } => "SERIALIZATION_ERROR",
+            Self::Persistence { .. } => "PERSISTENCE_ERROR",
+            Self::Generic { .. } => "GENERIC_ERROR",
+        }
+    }
+
+    /// Agent-readable hint for resolving this error.
+    ///
+    /// Returns a concise suggestion that an AI agent can act on.
+    /// Unlike `message()`, hints are structured for agent consumption:
+    /// they describe *what to try*, not *what went wrong*.
+    pub fn hint(&self) -> &'static str {
+        match self {
+            Self::Render { .. } => "Check GPU driver compatibility and shader syntax (WGSL)",
+            Self::Physics { .. } => "Verify collider shapes and rigid body configuration",
+            Self::Asset { path: Some(_), .. } => "Check that the file path is relative to the assets/ directory and the file exists",
+            Self::Asset { .. } => "Verify asset format is supported (PNG/JPEG for images, glTF for models, WAV/OGG for audio)",
+            Self::Audio { .. } => "Verify audio device is available and file format is supported (WAV, OGG, MP3)",
+            Self::Input { .. } => "Check input binding configuration and device availability",
+            Self::Ecs { .. } => "Verify component/resource types are registered and entities exist",
+            Self::Window { .. } => "Check window configuration (size > 0, valid title) and platform support",
+            Self::Config { .. } => "Verify configuration file syntax (RON format) and key names",
+            Self::Network { .. } => "Check network connectivity, port availability, and protocol compatibility",
+            Self::Io(_) => "Check file permissions, disk space, and path validity",
+            Self::Serialization { .. } => "Verify data format matches expected schema (RON or JSON)",
+            Self::Persistence { .. } => "Check save directory permissions and file integrity",
+            Self::Generic { .. } => "Review the error message for details",
+        }
+    }
+
+    /// Serialize this error as agent-parseable structured text.
+    ///
+    /// Format: `[CODE] message | hint: <hint>`
+    /// Agents can parse this with a simple regex: `\[(\w+)\] (.*) \| hint: (.*)`
+    pub fn to_agent_string(&self) -> String {
+        format!("[{}] {} | hint: {}", self.code(), self.message(), self.hint())
+    }
+
     /// 获取错误消息
     ///
     /// 返回不包含错误类型前缀的纯错误消息。
@@ -667,5 +722,38 @@ mod tests {
     fn test_error_is_send_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<AnvilKitError>();
+    }
+
+    #[test]
+    fn test_error_code() {
+        assert_eq!(AnvilKitError::render("test").code(), "RENDER_ERROR");
+        assert_eq!(AnvilKitError::asset("test").code(), "ASSET_ERROR");
+        assert_eq!(AnvilKitError::asset_with_path("test", "foo.png").code(), "ASSET_NOT_FOUND");
+        assert_eq!(AnvilKitError::ecs("test").code(), "ECS_ERROR");
+    }
+
+    #[test]
+    fn test_error_hint() {
+        let err = AnvilKitError::asset_with_path("texture load failed", "textures/missing.png");
+        assert!(err.hint().contains("assets/"));
+    }
+
+    #[test]
+    fn test_to_agent_string() {
+        let err = AnvilKitError::render("shader compile failed");
+        let agent_str = err.to_agent_string();
+        assert!(agent_str.starts_with("[RENDER_ERROR]"));
+        assert!(agent_str.contains("shader compile failed"));
+        assert!(agent_str.contains("hint:"));
+        assert!(agent_str.contains("WGSL"));
+    }
+
+    #[test]
+    fn test_agent_string_parseable() {
+        let err = AnvilKitError::asset_with_path("not found", "foo.png");
+        let s = err.to_agent_string();
+        // Agent regex: \[(\w+)\] (.*) \| hint: (.*)
+        assert!(s.starts_with("[ASSET_NOT_FOUND]"));
+        assert!(s.contains(" | hint: "));
     }
 }

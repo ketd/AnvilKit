@@ -1,0 +1,19 @@
+(
+    position: (34.77446, 24.6005, 288.453),
+    health: 20.0,
+    max_health: 20.0,
+    flying: false,
+    day_night_time: 0.9638974,
+    inventory: [
+        Some((1, 64)),
+        Some((7, 57)),
+        Some((3, 64)),
+        Some((2, 64)),
+        Some((4, 64)),
+        Some((5, 64)),
+        Some((10, 63)),
+        Some((11, 64)),
+        Some((8, 64)),
+    ],
+    selected_slot: 0,
+)

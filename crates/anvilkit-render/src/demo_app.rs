@@ -16,7 +16,7 @@
 
 use crate::window::WindowConfig;
 use crate::plugin::RenderPlugin;
-use anvilkit_ecs::prelude::*;
+use bevy_app::App;
 
 /// Demo 应用脚手架
 ///

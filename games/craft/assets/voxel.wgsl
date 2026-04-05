@@ -24,6 +24,7 @@ struct VertexInput {
     @location(1) uv: vec2<f32>,
     @location(2) normal: vec3<f32>,
     @location(3) ao: f32,
+    @location(4) light: f32,  // packed: sky*16 + block
 };
 
 struct VertexOutput {
@@ -32,6 +33,7 @@ struct VertexOutput {
     @location(1) normal: vec3<f32>,
     @location(2) ao: f32,
     @location(3) world_pos: vec3<f32>,
+    @location(4) light: f32,
 };
 
 @vertex
@@ -41,28 +43,33 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.uv = in.uv;
     out.normal = in.normal;
     out.ao = in.ao;
+    out.light = in.light;
     out.world_pos = in.position;
     return out;
 }
 
-// Water vertex shader — displaces Y with multi-layer sine waves
+// Water vertex shader — displaces Y with multi-layer sine waves (top faces only)
 @vertex
 fn vs_water(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     let t = scene.time_ambient.x * 600.0;
     let p = in.position;
 
-    // Multi-octave sine wave displacement
-    let wave1 = sin(p.x * 0.8 + t * 1.2) * cos(p.z * 0.6 + t * 0.9) * 0.08;
-    let wave2 = sin(p.x * 1.5 - t * 0.7 + p.z * 1.2) * 0.05;
-    let wave3 = cos(p.z * 2.0 + t * 1.6 + p.x * 0.5) * 0.03;
-    let dy = wave1 + wave2 + wave3;
+    // Only displace top faces (normal pointing up); side/bottom faces stay flat
+    var dy = 0.0;
+    if (in.normal.y > 0.5) {
+        let wave1 = sin(p.x * 0.8 + t * 1.2) * cos(p.z * 0.6 + t * 0.9) * 0.08;
+        let wave2 = sin(p.x * 1.5 - t * 0.7 + p.z * 1.2) * 0.05;
+        let wave3 = cos(p.z * 2.0 + t * 1.6 + p.x * 0.5) * 0.03;
+        dy = wave1 + wave2 + wave3;
+    }
 
     let displaced = vec3<f32>(p.x, p.y + dy, p.z);
     out.clip_position = scene.view_proj * vec4<f32>(displaced, 1.0);
     out.uv = in.uv;
-    out.normal = in.normal; // fragment shader recomputes wave normal
+    out.normal = in.normal;
     out.ao = in.ao;
+    out.light = in.light;
     out.world_pos = displaced;
     return out;
 }
@@ -70,11 +77,13 @@ fn vs_water(in: VertexInput) -> VertexOutput {
 // Compute atlas UV for a block face from tile index and world position.
 // Each block gets its own correctly-tiled UV, even across greedy-merged quads.
 fn block_atlas_uv(tile_idx: u32, normal: vec3<f32>, wp: vec3<f32>) -> vec2<f32> {
-    let tile_col = f32(tile_idx % 16u);
-    let tile_row = f32(tile_idx / 16u);
-    let tile_base = vec2<f32>(tile_col / 16.0, tile_row / 16.0);
-    let tile_size = 1.0 / 16.0;
-    let inset = 1.0 / 2048.0;
+    // Atlas layout: 32 columns x 16 rows (512x256 pixels)
+    let tile_col = f32(tile_idx % 32u);
+    let tile_row = f32(tile_idx / 32u);
+    let tile_base = vec2<f32>(tile_col / 32.0, tile_row / 16.0);
+    let tile_size_x = 1.0 / 32.0;
+    let tile_size_y = 1.0 / 16.0;
+    let inset = 1.0 / 4096.0;
 
     // Compute per-block UV from world position based on face normal.
     // Matches the UV orientation of the original per-block emit_face.
@@ -100,7 +109,7 @@ fn block_atlas_uv(tile_idx: u32, normal: vec3<f32>, wp: vec3<f32>) -> vec2<f32> 
         }
     }
 
-    return tile_base + inset + local_uv * (tile_size - 2.0 * inset);
+    return tile_base + vec2<f32>(inset, inset) + local_uv * vec2<f32>(tile_size_x - 2.0 * inset, tile_size_y - 2.0 * inset);
 }
 
 @fragment
@@ -129,7 +138,19 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let ambient = scene.time_ambient.y;
     let diffuse = ndotl * (1.0 - ambient);
-    let light = ambient + diffuse;
+    let sun_light = ambient + diffuse;
+
+    // Block lighting: unpack sky*16+block
+    let sky_light = floor(in.light / 16.0) / 15.0;
+    let block_light = (in.light % 16.0) / 15.0;
+    // Day factor from sun height (ambient proxy)
+    let day_factor = clamp(ambient / 0.4, 0.0, 1.0);
+    let block_lighting = max(sky_light * day_factor, block_light);
+
+    // Combine sun + block lighting.
+    // Minimum floor (0.06) ensures even unlit areas show faint geometry —
+    // pitch-black voids feel broken; torches still matter since 0.06 is very dim.
+    let light = max(sun_light * block_lighting, 0.06);
 
     // AO darkening: remap [0,1] → [0.15,1] so fully occluded corners are
     // very dark but never pure black.
@@ -193,63 +214,76 @@ fn fbm_water(p: vec2<f32>, t: f32) -> f32 {
 fn fs_water(in: VertexOutput) -> @location(0) vec4<f32> {
     let t = scene.time_ambient.x * 600.0; // convert normalized cycle time to seconds
     let wp = in.world_pos;
-
-    // --- Animated surface normal via height-field gradient ---
-    let eps = 0.15;
-    let h_c = fbm_water(wp.xz, t);
-    let h_r = fbm_water(wp.xz + vec2<f32>(eps, 0.0), t);
-    let h_u = fbm_water(wp.xz + vec2<f32>(0.0, eps), t);
-    // Tangent-space normal from height gradient (wave amplitude scaled down)
-    let wave_strength = 0.35;
-    let dx = (h_r - h_c) / eps * wave_strength;
-    let dz = (h_u - h_c) / eps * wave_strength;
-    let wave_normal = normalize(vec3<f32>(-dx, 1.0, -dz));
+    let n = normalize(in.normal);
+    let is_top = n.y > 0.5;
 
     // --- View direction ---
     let view_dir = normalize(scene.camera_pos.xyz - wp);
-
-    // --- Fresnel: more reflective at grazing angles ---
-    let fresnel_base = 0.02; // water F0
-    let cos_theta = max(dot(wave_normal, view_dir), 0.0);
-    let fresnel = fresnel_base + (1.0 - fresnel_base) * pow(1.0 - cos_theta, 5.0);
-
-    // --- Deep vs shallow color ---
-    let deep_color  = vec3<f32>(0.05, 0.15, 0.35);
-    let shallow_color = vec3<f32>(0.15, 0.45, 0.55);
-    // Use noise as pseudo-depth variation
-    let depth_factor = clamp(h_c * 1.5, 0.0, 1.0);
-    let water_base = mix(deep_color, shallow_color, depth_factor);
-
-    // --- Directional lighting ---
     let light_dir = normalize(scene.light_dir.xyz);
     let ambient = scene.time_ambient.y;
-    let ndotl = max(dot(wave_normal, light_dir), 0.0);
+
+    // --- Shading normal: animated waves for top faces, vertex normal for sides ---
+    var shade_normal: vec3<f32>;
+    var water_base: vec3<f32>;
+    var fresnel: f32;
+
+    if (is_top) {
+        // Animated surface normal via height-field gradient
+        let eps = 0.15;
+        let h_c = fbm_water(wp.xz, t);
+        let h_r = fbm_water(wp.xz + vec2<f32>(eps, 0.0), t);
+        let h_u = fbm_water(wp.xz + vec2<f32>(0.0, eps), t);
+        let wave_strength = 0.35;
+        let ddx = (h_r - h_c) / eps * wave_strength;
+        let ddz = (h_u - h_c) / eps * wave_strength;
+        shade_normal = normalize(vec3<f32>(-ddx, 1.0, -ddz));
+
+        // Deep vs shallow color
+        let deep_color  = vec3<f32>(0.05, 0.15, 0.35);
+        let shallow_color = vec3<f32>(0.15, 0.45, 0.55);
+        let depth_factor = clamp(h_c * 1.5, 0.0, 1.0);
+        water_base = mix(deep_color, shallow_color, depth_factor);
+
+        // Fresnel
+        let fresnel_base = 0.02;
+        let cos_theta = max(dot(shade_normal, view_dir), 0.0);
+        fresnel = fresnel_base + (1.0 - fresnel_base) * pow(1.0 - cos_theta, 5.0);
+    } else {
+        // Side/bottom faces: use vertex normal, darker underwater color
+        shade_normal = n;
+        water_base = vec3<f32>(0.04, 0.10, 0.28); // darker for underwater sides
+        fresnel = 0.02;
+    }
+
+    // --- Directional lighting ---
+    let ndotl = max(dot(shade_normal, light_dir), 0.0);
     let diffuse = ndotl * (1.0 - ambient);
     let light = ambient + diffuse;
 
     var color = water_base * light;
 
-    // --- Sun specular (Blinn-Phong on wave normal) ---
-    let half_vec = normalize(light_dir + view_dir);
-    let spec = pow(max(dot(wave_normal, half_vec), 0.0), 128.0);
-    // Only add specular when sun is above horizon
-    let sun_visible = clamp(light_dir.y * 4.0, 0.0, 1.0);
-    let spec_color = vec3<f32>(1.0, 0.95, 0.8) * spec * 1.2 * sun_visible;
-    color += spec_color;
+    // --- Sun specular (top faces only) ---
+    if (is_top) {
+        let half_vec = normalize(light_dir + view_dir);
+        let spec = pow(max(dot(shade_normal, half_vec), 0.0), 128.0);
+        let sun_visible = clamp(light_dir.y * 4.0, 0.0, 1.0);
+        let spec_color = vec3<f32>(1.0, 0.95, 0.8) * spec * 1.2 * sun_visible;
+        color += spec_color;
 
-    // --- Sky reflection tint ---
-    let sky_reflect = mix(
-        vec3<f32>(0.15, 0.25, 0.40), // night sky reflection
-        scene.fog_color.rgb * 0.6,    // day sky reflection (from fog color)
-        clamp(light_dir.y + 0.3, 0.0, 1.0)
-    );
-    color = mix(color, sky_reflect, fresnel * 0.6);
+        // Sky reflection tint
+        let sky_reflect = mix(
+            vec3<f32>(0.15, 0.25, 0.40),
+            scene.fog_color.rgb * 0.6,
+            clamp(light_dir.y + 0.3, 0.0, 1.0)
+        );
+        color = mix(color, sky_reflect, fresnel * 0.6);
 
-    // --- Caustic pattern (bright ripple highlights) ---
-    let caustic1 = vnoise(wp.xz * 3.0 + vec2<f32>(t * 1.2, t * 0.9));
-    let caustic2 = vnoise(wp.xz * 3.5 + vec2<f32>(-t * 0.8, t * 1.1));
-    let caustic = pow(clamp(caustic1 * caustic2 * 2.5, 0.0, 1.0), 2.0) * 0.15;
-    color += vec3<f32>(caustic) * light;
+        // Caustic pattern
+        let caustic1 = vnoise(wp.xz * 3.0 + vec2<f32>(t * 1.2, t * 0.9));
+        let caustic2 = vnoise(wp.xz * 3.5 + vec2<f32>(-t * 0.8, t * 1.1));
+        let caustic = pow(clamp(caustic1 * caustic2 * 2.5, 0.0, 1.0), 2.0) * 0.15;
+        color += vec3<f32>(caustic) * light;
+    }
 
     // --- Distance fog ---
     let dist = length(wp - scene.camera_pos.xyz);
@@ -258,8 +292,13 @@ fn fs_water(in: VertexOutput) -> @location(0) vec4<f32> {
     let fog_factor = clamp((dist - fog_start) / (fog_end - fog_start), 0.0, 1.0);
     color = mix(color, scene.fog_color.rgb, fog_factor);
 
-    // --- Alpha: more opaque at distance and at grazing angles ---
-    let alpha = mix(0.55, 0.85, fresnel) * (1.0 - fog_factor * 0.5);
+    // --- Alpha: top faces use Fresnel-based alpha, sides are more opaque ---
+    var alpha: f32;
+    if (is_top) {
+        alpha = mix(0.55, 0.85, fresnel) * (1.0 - fog_factor * 0.5);
+    } else {
+        alpha = 0.75 * (1.0 - fog_factor * 0.5);
+    }
 
     return vec4<f32>(color, alpha);
 }

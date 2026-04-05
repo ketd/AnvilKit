@@ -7,7 +7,7 @@
 
 use bevy_ecs::prelude::*;
 use anvilkit_core::math::Transform;
-use anvilkit_ecs::physics::DeltaTime;
+use anvilkit_core::time::DeltaTime;
 use anvilkit_input::prelude::{InputState, KeyCode};
 use anvilkit_render::plugin::CameraComponent;
 use glam::Vec3;

@@ -282,11 +282,11 @@ impl ShowcaseApp {
             .build(device).expect("Failed to create tonemap pipeline");
 
         // Upload mesh
-        let mut assets = self.app.world.resource_mut::<RenderAssets>();
+        let mut assets = self.app.world_mut().resource_mut::<RenderAssets>();
         let mesh_h = assets.upload_mesh_u32(device, &self.mesh_vertices, &self.mesh_indices, "Helmet");
         let mat_h = assets.create_material(pipeline.into_pipeline(), mat_bg);
 
-        self.app.world.spawn((
+        self.app.world_mut().spawn((
             mesh_h, mat_h,
             MaterialParams {
                 metallic: self.material.metallic_factor,
@@ -302,7 +302,7 @@ impl ShowcaseApp {
         let eye = glam::Vec3::new(0.0, 0.5, -3.0);
         let look_dir = (glam::Vec3::ZERO - eye).normalize();
         let cam_rot = glam::Quat::from_rotation_arc(glam::Vec3::Z, look_dir);
-        self.app.world.spawn((
+        self.app.world_mut().spawn((
             CameraComponent { fov: 45.0, near: 0.1, far: 100.0, is_active: true, aspect_ratio: w as f32 / h.max(1) as f32, ..Default::default() },
             Transform::from_xyz(eye.x, eye.y, eye.z).with_rotation(cam_rot),
             GlobalTransform::default(),
@@ -330,16 +330,16 @@ impl ShowcaseApp {
         let Some(tm_pipe) = &self.tonemap_pipeline else { return };
         let Some(tm_bg) = &self.tonemap_bg else { return };
         let Some(ibl_bg) = &self.ibl_bg else { return };
-        let Some(cam) = self.app.world.get_resource::<ActiveCamera>() else { return };
-        let Some(dl) = self.app.world.get_resource::<DrawCommandList>() else { return };
-        let Some(ra) = self.app.world.get_resource::<RenderAssets>() else { return };
+        let Some(cam) = self.app.world().get_resource::<ActiveCamera>() else { return };
+        let Some(dl) = self.app.world().get_resource::<DrawCommandList>() else { return };
+        let Some(ra) = self.app.world().get_resource::<RenderAssets>() else { return };
         if dl.commands.is_empty() { return; }
 
         let Some(frame) = self.render_app.get_current_frame() else { return };
         let swapchain = frame.texture.create_view(&Default::default());
 
         let def_lights = SceneLights::default();
-        let lights = self.app.world.get_resource::<SceneLights>().unwrap_or(&def_lights);
+        let lights = self.app.world().get_resource::<SceneLights>().unwrap_or(&def_lights);
         let (gpu_lights, lc) = pack_lights(lights);
         let ld = lights.directional.direction.normalize();
         let lp = -ld * 15.0;
@@ -466,7 +466,7 @@ impl ApplicationHandler for ShowcaseApp {
 
     fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
         // Orbit camera
-        if let Some(ft) = self.app.world.get_resource::<FrameTime>() {
+        if let Some(ft) = self.app.world().get_resource::<FrameTime>() {
             let t = ft.0.elapsed().as_secs_f32();
             let radius = 3.5;
             let height = 0.8;
@@ -480,7 +480,7 @@ impl ApplicationHandler for ShowcaseApp {
             let look_dir = (target - eye).normalize();
             let cam_rot = glam::Quat::from_rotation_arc(glam::Vec3::Z, look_dir);
 
-            for (cam, mut transform) in self.app.world.query::<(&CameraComponent, &mut Transform)>().iter_mut(&mut self.app.world) {
+            for (cam, mut transform) in self.app.world_mut().query::<(&CameraComponent, &mut Transform)>().iter_mut(self.app.world_mut()) {
                 if cam.is_active {
                     transform.translation = eye;
                     transform.rotation = cam_rot;

@@ -1,0 +1,10 @@
+[package]
+name = "breakout"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anvilkit = { version = "0.1.0", path = "../../crates/anvilkit" }
+anvilkit-app = { version = "0.1.0", path = "../../crates/anvilkit-app" }
+anvilkit-render = { version = "0.1.0", path = "../../crates/anvilkit-render", features = ["capture"] }
+anvilkit-input = { version = "0.1.0", path = "../../crates/anvilkit-input" }

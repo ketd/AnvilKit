@@ -3,6 +3,8 @@
 //! 提供定时自动存档的计时器逻辑和槽位轮换。
 //! 本模块不依赖 ECS，游戏每帧调用 `auto_save_tick()` 即可驱动自动存档。
 
+use anvilkit_describe::Describe;
+
 /// 自动存档配置
 ///
 /// 控制自动存档的间隔时间、槽位名称和轮换数量。
@@ -19,16 +21,21 @@
 ///     max_autosaves: 3,
 /// };
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Describe)]
 #[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::system::Resource))]
+/// Auto-save configuration: interval, slot naming, and rotation count.
 pub struct AutoSaveConfig {
     /// 是否启用自动存档。
+    #[describe(hint = "Enable automatic saving", default = "true")]
     pub enabled: bool,
     /// 自动存档间隔（秒）。默认 300.0（5 分钟）。
+    #[describe(hint = "Seconds between auto-saves", range = "10.0..3600.0", default = "300.0")]
     pub interval_secs: f64,
     /// 自动存档槽位名称前缀。默认 `"_autosave"`。
+    #[describe(hint = "Slot name prefix for auto-save files", default = "_autosave")]
     pub slot_name: String,
     /// 最大自动存档轮换数量。默认 3（轮换 `_autosave_1`, `_autosave_2`, `_autosave_3`）。
+    #[describe(hint = "Number of rotating auto-save slots", range = "1..10", default = "3")]
     pub max_autosaves: usize,
 }
 

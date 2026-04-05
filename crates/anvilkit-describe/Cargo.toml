@@ -1,0 +1,12 @@
+[package]
+name = "anvilkit-describe"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Self-describing API types for AI-agent introspection in AnvilKit"
+
+[dependencies]
+anvilkit-describe-derive = { version = "0.1.0", path = "../anvilkit-describe-derive" }
+serde = { workspace = true }
+serde_json = "1"

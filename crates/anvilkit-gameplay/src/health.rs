@@ -12,7 +12,6 @@
 //!
 //! - [`health_system`] — reads `DamageEvent` / `HealEvent`, applies them to
 //!   [`Health`] components, and emits [`DeathEvent`] when health drops to zero.
-//! - [`health_regen_system`] — applies `regen_rate * dt` each tick.
 //!
 //! ## Example
 //!
@@ -28,19 +27,24 @@
 //! ```
 
 use bevy_ecs::prelude::*;
+use anvilkit_describe::Describe;
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 /// Health component tracking current / max hit-points and passive regen.
-#[derive(Debug, Clone, Component)]
+#[derive(Debug, Clone, Component, Describe)]
+/// Entity health with current/max HP and passive regeneration.
 pub struct Health {
     /// Current hit-points (clamped to `0.0..=max`).
+    #[describe(hint = "Current HP", range = "0.0..100000.0")]
     pub current: f32,
     /// Maximum hit-points.
+    #[describe(hint = "Maximum HP", range = "1.0..100000.0", default = "100.0")]
     pub max: f32,
-    /// Hit-points regenerated per second (applied by [`health_regen_system`]).
+    /// Hit-points regenerated per second.
+    #[describe(hint = "HP regenerated per second", range = "0.0..1000.0", default = "0.0")]
     pub regen_rate: f32,
 }
 
@@ -146,20 +150,6 @@ pub fn health_system(
     for ev in heal_events.read() {
         if let Ok(mut hp) = health_query.get_mut(ev.target) {
             hp.heal(ev.amount);
-        }
-    }
-}
-
-/// Applies passive regeneration (`regen_rate * delta`) to every living entity.
-///
-/// The `delta` parameter is a plain `f32` representing seconds elapsed since
-/// the last tick, making this function easy to test without a full engine time
-/// resource.
-pub fn health_regen_system(delta: f32, mut query: Query<&mut Health>) {
-    for mut hp in query.iter_mut() {
-        if hp.is_alive() && hp.regen_rate > 0.0 {
-            let amount = hp.regen_rate * delta;
-            hp.heal(amount);
         }
     }
 }
@@ -283,7 +273,7 @@ mod tests {
 
         // DeathEvent should have been emitted
         let death_events = world.resource::<Events<DeathEvent>>();
-        let mut reader = death_events.get_reader();
+        let mut reader = death_events.get_cursor();
         let deaths: Vec<_> = reader.read(death_events).collect();
         assert_eq!(deaths.len(), 1);
         assert_eq!(deaths[0].entity, entity);

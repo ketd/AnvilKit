@@ -5,6 +5,7 @@
 
 use std::path::{Path, PathBuf};
 use bevy_ecs::prelude::Resource;
+use anvilkit_describe::Describe;
 use log::info;
 
 /// 帧捕获状态（ECS Resource）
@@ -22,7 +23,8 @@ use log::info;
 /// // 连续录帧（150 帧后自动退出）
 /// let state = CaptureState::recording("output/frames", 150);
 /// ```
-#[derive(Debug, Clone, Resource)]
+#[derive(Debug, Clone, Resource, Describe)]
+/// Frame capture state controlling screenshot and recording behavior.
 pub struct CaptureState {
     /// 单帧截图请求路径（截完自动清除）
     pub screenshot_path: Option<PathBuf>,

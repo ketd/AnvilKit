@@ -10,17 +10,56 @@ Auto-generated API documentation is available on [docs.rs](https://docs.rs) for 
 | Crate | Description | docs.rs |
 |-------|-------------|---------|
 | `anvilkit-core` | Core types -- Transform, Time, Timer, Persistence | [docs.rs/anvilkit-core](https://docs.rs/anvilkit-core) |
-| `anvilkit-ecs` | Entity Component System -- App, Plugin, FixedUpdate, Events, GameState, SerializableRegistry, AutoPlugins | [docs.rs/anvilkit-ecs](https://docs.rs/anvilkit-ecs) |
-| `anvilkit-render` | Rendering -- PBR pipeline, StandardMaterial, PostProcessSettings, shadow system, DemoApp | [docs.rs/anvilkit-render](https://docs.rs/anvilkit-render) |
+| `anvilkit-app` | Game application runner -- GameCallbacks, schedules, state machine, ECS plugin system | [docs.rs/anvilkit-app](https://docs.rs/anvilkit-app) |
+| `anvilkit-render` | Rendering -- wgpu, Canvas2D, Canvas3D, PBR pipeline, frame capture, transform hierarchy | [docs.rs/anvilkit-render](https://docs.rs/anvilkit-render) |
 | `anvilkit-assets` | Asset pipeline -- glTF loading, animation, MeshData factories, AudioAsset, hot-reload | [docs.rs/anvilkit-assets](https://docs.rs/anvilkit-assets) |
 | `anvilkit-audio` | Audio -- AudioSource, AudioBus, spatial audio, looping/pitch | [docs.rs/anvilkit-audio](https://docs.rs/anvilkit-audio) |
 | `anvilkit-input` | Input -- keyboard, mouse, gamepad, ActionMap, ActionId, AxisBinding | [docs.rs/anvilkit-input](https://docs.rs/anvilkit-input) |
 | `anvilkit-camera` | Camera system -- 5 modes, OrbitState, SpringArm, CameraRig, trauma shake, transitions, rail, input curves | [docs.rs/anvilkit-camera](https://docs.rs/anvilkit-camera) |
-| `anvilkit-app` | Game application runner -- AnvilKitApp, GameCallbacks, GameConfig, WindowSize | [docs.rs/anvilkit-app](https://docs.rs/anvilkit-app) |
-| `anvilkit-ui` | UI framework -- flexbox layout, widgets, events, focus, theming | [docs.rs/anvilkit-ui](https://docs.rs/anvilkit-ui) |
-| `anvilkit-gameplay` | Gameplay systems -- Stats, Health, Inventory, Cooldown, StatusEffect, EntityPool | [docs.rs/anvilkit-gameplay](https://docs.rs/anvilkit-gameplay) |
+| `anvilkit-describe` | AI-first introspection -- Describe trait and derive macro | [docs.rs/anvilkit-describe](https://docs.rs/anvilkit-describe) |
+| `anvilkit-mcp` | MCP server -- 17 tools (visual, control, state, scene) for agent interaction | [docs.rs/anvilkit-mcp](https://docs.rs/anvilkit-mcp) |
+| `anvilkit-gameplay` | Gameplay systems -- Health, Inventory | [docs.rs/anvilkit-gameplay](https://docs.rs/anvilkit-gameplay) |
 | `anvilkit-data` | Data tables (RON/JSON) and i18n localization | [docs.rs/anvilkit-data](https://docs.rs/anvilkit-data) |
-| `anvilkit` | Umbrella crate -- re-exports all sub-crates | [docs.rs/anvilkit](https://docs.rs/anvilkit) |
+| `anvilkit` | Umbrella crate -- facade, prelude, DefaultPlugins | [docs.rs/anvilkit](https://docs.rs/anvilkit) |
+
+## Key APIs
+
+### Canvas2D
+
+Immediate-mode 2D drawing API in `anvilkit_render::renderer::canvas2d`.
+
+| Type | Description |
+|------|-------------|
+| `Canvas2DRenderer` | GPU resources for 2D rendering. Created once in `init()`. |
+| `Canvas2D` | Per-frame drawing context obtained via `Canvas2D::begin()`. |
+
+Methods on `Canvas2D`: `clear()`, `draw_rect()`, `draw_text()`, `draw_sprite()`, `finish()`.
+
+### Canvas3D
+
+Scene-graph 3D API in `anvilkit_render::renderer::canvas3d`.
+
+| Type | Description |
+|------|-------------|
+| `Canvas3DRenderer` | GPU resources for 3D rendering. Created once in `init()`. |
+| `Canvas3D` | Per-frame 3D scene context obtained via `Canvas3D::begin()`. |
+
+Methods on `Canvas3D`: `clear()`, `spawn_mesh()`, `set_camera()`, `add_light()`, `finish()`.
+
+### Frame Capture
+
+Both Canvas2D and Canvas3D support `capture_frame()`, which returns the rendered frame as raw image bytes. This is the foundation of the AI-first design: agents can see what the player sees.
+
+### MCP Tools (anvilkit-mcp)
+
+The MCP server exposes 17 tools organized into four categories:
+
+| Category | Tools |
+|----------|-------|
+| **Visual** | `capture_frame`, `describe_scene`, `get_screen_info` |
+| **Control** | `press_key`, `release_key`, `move_mouse`, `click`, `scroll` |
+| **State** | `get_component`, `set_component`, `list_entities`, `get_resource` |
+| **Scene** | `spawn_object`, `despawn_object`, `save_scene`, `load_scene`, `run_system` |
 
 ## Building Docs Locally
 

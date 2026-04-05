@@ -17,7 +17,7 @@ description: 设置、存档管理器和世界存储，用于游戏数据
 - 向调度中添加 `auto_save_tick_system`，该系统计算经过时间，并在配置的间隔到期时触发存档。
 
 ```rust
-use anvilkit_ecs::plugins::PersistencePlugin;
+use anvilkit_app::plugins::PersistencePlugin;
 
 app.add_plugins(PersistencePlugin);
 

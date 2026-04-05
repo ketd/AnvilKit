@@ -28,6 +28,7 @@
 
 use glam::{Vec3, Quat, Mat4};
 use crate::error::{AnvilKitError, Result};
+use anvilkit_describe::Describe;
 
 /// 表示 3D 空间中位置、旋转和缩放的变换组件。
 /// 
@@ -44,15 +45,19 @@ use crate::error::{AnvilKitError, Result};
 /// ## 线程安全
 /// 
 /// `Transform` 实现了 `Send` 和 `Sync`，可以安全地在线程间传递。
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Describe)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::component::Component))]
+/// 3D transform: position, rotation, and scale.
 pub struct Transform {
     /// 世界空间中的位置
+    #[describe(hint = "Position in world space", default = "(0, 0, 0)")]
     pub translation: Vec3,
     /// 四元数表示的旋转
+    #[describe(hint = "Quaternion rotation")]
     pub rotation: Quat,
     /// 各轴的缩放因子
+    #[describe(hint = "Scale per axis", default = "(1, 1, 1)")]
     pub scale: Vec3,
 }
 

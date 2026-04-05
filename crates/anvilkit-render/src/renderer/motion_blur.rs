@@ -4,19 +4,24 @@
 //! 两 pass 流程：速度重建 → 方向模糊。
 
 use bevy_ecs::prelude::*;
+use anvilkit_describe::Describe;
 use crate::renderer::RenderDevice;
 use crate::renderer::buffer::HDR_FORMAT;
 
 const MOTION_BLUR_SHADER: &str = include_str!("../shaders/motion_blur.wgsl");
 
 /// Motion Blur 配置
-#[derive(Debug, Clone, Resource)]
+#[derive(Debug, Clone, Resource, Describe)]
+/// Motion blur post-process settings.
 pub struct MotionBlurSettings {
     /// Whether motion blur is enabled.
+    #[describe(hint = "Enable motion blur", default = "false")]
     pub enabled: bool,
     /// Blur intensity multiplier.
+    #[describe(hint = "Blur strength", range = "0.0..2.0", default = "0.5")]
     pub intensity: f32,
     /// Number of samples along the velocity vector.
+    #[describe(hint = "Blur sample count", range = "2..32", default = "8")]
     pub samples: u32,
 }
 

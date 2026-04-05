@@ -5,6 +5,10 @@ description: 游戏应用运行器 — 事件循环、帧生命周期、GameCall
 
 `anvilkit-app` 消除了应用程序的样板代码。游戏只需实现 `GameCallbacks` trait 并调用 `AnvilKitApp::run()`，即可获得完整的事件循环，包含输入转发、帧更新和窗口管理。
 
+底层的 `App` 是 `bevy_app::App`（不是自定义实现）。`GameCallbacks` 是游戏的主要入口点。`game_ctx!()` 宏提供了在回调中快速访问常用上下文字段的方式。
+
+> **注意：** `anvilkit-ecs` 已不存在。调度、ECS 插件系统和状态机现在位于 `anvilkit-app` 中。
+
 ## GameConfig
 
 传递给 `AnvilKitApp::run()` 的配置结构体。提供了合理的默认值；只需覆盖你需要的部分。
@@ -141,31 +145,34 @@ Resized
 ## 最小示例
 
 ```rust
+use anvilkit::prelude::*;
 use anvilkit_app::{AnvilKitApp, GameConfig, GameCallbacks, GameContext};
-use anvilkit_ecs::App;
-use anvilkit_ecs::plugin::DefaultPlugins;
+use anvilkit_render::renderer::canvas2d::{Canvas2D, Canvas2DRenderer};
 
-struct MyGame;
+struct MyGame { renderer: Option<Canvas2DRenderer> }
 
 impl GameCallbacks for MyGame {
     fn init(&mut self, ctx: &mut GameContext) {
-        // Load assets, spawn entities
-        let world = ctx.world_mut();
-        // ...
-    }
-
-    fn post_update(&mut self, ctx: &mut GameContext) {
-        // Read ECS state after systems have run
+        let device = ctx.render_app.render_device().unwrap();
+        let format = ctx.render_app.surface_format().unwrap();
+        self.renderer = Some(Canvas2DRenderer::new(device, format));
     }
 
     fn render(&mut self, ctx: &mut GameContext) {
-        // Issue draw calls
+        let Some(ref mut r) = self.renderer else { return };
+        let Some(mut c) = Canvas2D::begin(ctx.render_app, r) else { return };
+        c.clear([0.2, 0.2, 0.3, 1.0]);
+        c.draw_rect(100.0, 100.0, 200.0, 50.0, [1.0, 0.5, 0.0, 1.0]);
+        c.draw_text(110.0, 115.0, "Hello AnvilKit!", 24.0, [1.0, 1.0, 1.0, 1.0]);
+        c.finish();
     }
 }
 
 fn main() {
-    let config = GameConfig::new("My Game").with_size(1280, 720);
-    let app = App::new().add_plugins(DefaultPlugins);
-    AnvilKitApp::run(config, app, MyGame);
+    let mut app = App::new();
+    app.add_plugins(DefaultPlugins::new().with_window(
+        WindowConfig::new().with_title("Hello").with_size(640, 480),
+    ));
+    AnvilKitApp::run(GameConfig::new("Hello").with_size(640, 480), app, MyGame { renderer: None });
 }
 ```

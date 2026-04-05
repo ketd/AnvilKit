@@ -5,8 +5,8 @@
 //! ## 使用示例
 //!
 //! ```rust,no_run
-//! use anvilkit_ecs::prelude::*;
-//! use anvilkit_ecs::audio::AudioSource;
+//! use bevy_app::App;
+//! use anvilkit_audio::components::AudioSource;
 //! use anvilkit_audio::AudioPlugin;
 //!
 //! let mut app = App::new();
@@ -17,11 +17,12 @@
 
 pub mod engine;
 pub mod systems;
+pub mod components;
 
-use anvilkit_ecs::prelude::*;
-use anvilkit_ecs::schedule::AnvilKitSchedule;
+use bevy_ecs::prelude::*;
+use bevy_app::{App, Plugin};
 use engine::AudioEngine;
-use systems::{audio_playback_system, spatial_audio_system};
+use systems::{audio_playback_system, audio_cleanup_system, spatial_audio_system};
 
 /// 音频插件
 ///
@@ -33,8 +34,9 @@ impl Plugin for AudioPlugin {
         if let Some(engine) = AudioEngine::new() {
             app.insert_non_send_resource(engine);
         }
-        app.add_systems(AnvilKitSchedule::PostUpdate, (
+        app.add_systems(bevy_app::PostUpdate, (
             audio_playback_system,
+            audio_cleanup_system.after(audio_playback_system),
             spatial_audio_system.after(audio_playback_system),
         ));
     }

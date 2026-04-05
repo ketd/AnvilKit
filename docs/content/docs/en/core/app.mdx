@@ -5,6 +5,10 @@ description: Game application runner — event loop, frame lifecycle, GameCallba
 
 `anvilkit-app` eliminates application boilerplate. Games implement the `GameCallbacks` trait and call `AnvilKitApp::run()` to get a complete event loop with input forwarding, frame ticking, and window management.
 
+The underlying `App` is `bevy_app::App` (not a custom implementation). `GameCallbacks` is the primary entry point for games. The `game_ctx!()` macro provides quick access to common context fields within callbacks.
+
+> **Note:** `anvilkit-ecs` no longer exists. Schedules, the ECS plugin system, and the state machine now live in `anvilkit-app`.
+
 ## GameConfig
 
 Configuration struct passed to `AnvilKitApp::run()`. Provides sensible defaults; override only what you need.
@@ -141,31 +145,34 @@ Key points:
 ## Minimal Example
 
 ```rust
+use anvilkit::prelude::*;
 use anvilkit_app::{AnvilKitApp, GameConfig, GameCallbacks, GameContext};
-use anvilkit_ecs::App;
-use anvilkit_ecs::plugin::DefaultPlugins;
+use anvilkit_render::renderer::canvas2d::{Canvas2D, Canvas2DRenderer};
 
-struct MyGame;
+struct MyGame { renderer: Option<Canvas2DRenderer> }
 
 impl GameCallbacks for MyGame {
     fn init(&mut self, ctx: &mut GameContext) {
-        // Load assets, spawn entities
-        let world = ctx.world_mut();
-        // ...
-    }
-
-    fn post_update(&mut self, ctx: &mut GameContext) {
-        // Read ECS state after systems have run
+        let device = ctx.render_app.render_device().unwrap();
+        let format = ctx.render_app.surface_format().unwrap();
+        self.renderer = Some(Canvas2DRenderer::new(device, format));
     }
 
     fn render(&mut self, ctx: &mut GameContext) {
-        // Issue draw calls
+        let Some(ref mut r) = self.renderer else { return };
+        let Some(mut c) = Canvas2D::begin(ctx.render_app, r) else { return };
+        c.clear([0.2, 0.2, 0.3, 1.0]);
+        c.draw_rect(100.0, 100.0, 200.0, 50.0, [1.0, 0.5, 0.0, 1.0]);
+        c.draw_text(110.0, 115.0, "Hello AnvilKit!", 24.0, [1.0, 1.0, 1.0, 1.0]);
+        c.finish();
     }
 }
 
 fn main() {
-    let config = GameConfig::new("My Game").with_size(1280, 720);
-    let app = App::new().add_plugins(DefaultPlugins);
-    AnvilKitApp::run(config, app, MyGame);
+    let mut app = App::new();
+    app.add_plugins(DefaultPlugins::new().with_window(
+        WindowConfig::new().with_title("Hello").with_size(640, 480),
+    ));
+    AnvilKitApp::run(GameConfig::new("Hello").with_size(640, 480), app, MyGame { renderer: None });
 }
 ```

@@ -15,7 +15,7 @@ use anvilkit_render::renderer::{
 };
 use anvilkit_render::plugin::CameraComponent;
 use anvilkit_input::prelude::{ActionMap, InputBinding, MouseButton as MB};
-use anvilkit_ecs::physics::Velocity;
+use anvilkit_core::math::Velocity;
 use anvilkit_camera::controller::{CameraController, CameraMode};
 
 use billiards::components::*;
@@ -85,6 +85,7 @@ fn main() {
             .with_title("AnvilKit Billiards")
             .with_size(1280, 720),
     ));
+    app.add_plugins(anvilkit_camera::plugin::CameraPlugin);
 
     // Resources
     app.insert_resource(GameState::default());
@@ -124,7 +125,7 @@ fn main() {
 
     // Spawn cue ball — head end of table (negative Z, near camera)
     let cue_z = -config.table_half_depth * 0.5;
-    let cue_entity = app.world.spawn((
+    let cue_entity = app.world_mut().spawn((
         CueBall,
         Transform::from_xyz(0.0, config.ball_radius, cue_z),
         Velocity::zero(),
@@ -136,7 +137,7 @@ fn main() {
     let ball_nums = rack_ball_numbers();
     let mut ball_entities = vec![cue_entity];
     for i in 0..15 {
-        let e = app.world.spawn((
+        let e = app.world_mut().spawn((
             NumberedBall { number: ball_nums[i], potted: false },
             Transform::from_xyz(rack_pos[i].x, rack_pos[i].y, rack_pos[i].z),
             Velocity::zero(),
@@ -151,12 +152,12 @@ fn main() {
     }
 
     // Store tracker
-    if let Some(mut tracker) = app.world.get_resource_mut::<BallTracker>() {
+    if let Some(mut tracker) = app.world_mut().get_resource_mut::<BallTracker>() {
         tracker.ball_entities = ball_entities.clone();
     }
 
     // Spawn table surface
-    let table_entity = app.world.spawn((
+    let table_entity = app.world_mut().spawn((
         TableSurface,
         Transform::from_xyz(0.0, 0.0, 0.0),
         MaterialParams { metallic: 0.0, roughness: 0.9, normal_scale: 1.0, emissive_factor: [0.0; 3] },
@@ -175,7 +176,7 @@ fn main() {
     ];
     let mut cushion_entities = Vec::new();
     for pos in &cushion_positions {
-        let e = app.world.spawn((
+        let e = app.world_mut().spawn((
             Transform::from_xyz(pos.x, pos.y, pos.z),
             MaterialParams { metallic: 0.1, roughness: 0.6, normal_scale: 1.0, emissive_factor: [0.0; 3] },
         )).id();
@@ -194,7 +195,7 @@ fn main() {
         cc.zoom_speed = 2.0;
         let orbit = OrbitState::new(glam::Vec3::ZERO, 16.0)
             .with_distance_limits(8.0, 30.0);
-        app.world.spawn((
+        app.world_mut().spawn((
             CameraComponent { fov: 55.0, near: 0.1, far: 100.0, is_active: true, aspect_ratio: 1280.0 / 720.0, ..Default::default() },
             cc,
             orbit,
@@ -237,8 +238,8 @@ impl BilliardGame {
         let Some(format) = ctx.render_app.surface_format() else { return };
         let (w, h) = ctx.render_app.window_state().size();
 
-        let config = { let c = ctx.app.world.resource::<BilliardConfig>(); c.clone() };
-        let mut assets = ctx.app.world.resource_mut::<RenderAssets>();
+        let config = { let c = ctx.app.world().resource::<BilliardConfig>(); c.clone() };
+        let mut assets = ctx.app.world_mut().resource_mut::<RenderAssets>();
         let gpu = setup::init_scene(device, format, w, h, &mut assets, &config);
 
         // Attach mesh/material handles to ball entities
@@ -246,22 +247,22 @@ impl BilliardGame {
         for (i, &e) in self.ball_entities.iter().enumerate() {
             let ball_num = if i == 0 { 0 } else {
                 // Look up the actual ball number from the entity's NumberedBall component
-                if let Some(nb) = ctx.app.world.get::<NumberedBall>(e) {
+                if let Some(nb) = ctx.app.world().get::<NumberedBall>(e) {
                     nb.number as usize
                 } else {
                     i
                 }
             };
-            ctx.app.world.entity_mut(e).insert((gpu.sphere_mesh, gpu.ball_materials[ball_num]));
+            ctx.app.world_mut().entity_mut(e).insert((gpu.sphere_mesh, gpu.ball_materials[ball_num]));
         }
 
         // Table
-        ctx.app.world.entity_mut(self.table_entity).insert((gpu.plane_mesh, gpu.table_material));
+        ctx.app.world_mut().entity_mut(self.table_entity).insert((gpu.plane_mesh, gpu.table_material));
 
         // Cushions
         for (i, &e) in self.cushion_entities.iter().enumerate() {
             let mesh_idx = i; // 0=+X, 1=-X use X mesh; 2=-Z, 3=+Z use Z mesh
-            ctx.app.world.entity_mut(e).insert((gpu.cushion_meshes[mesh_idx], gpu.cushion_material));
+            ctx.app.world_mut().entity_mut(e).insert((gpu.cushion_meshes[mesh_idx], gpu.cushion_material));
         }
 
         // Line and text renderers
@@ -279,18 +280,18 @@ impl BilliardGame {
 
         // Copy camera data to avoid borrow conflicts later
         let (cam_vp, cam_pos) = {
-            let Some(cam) = ctx.app.world.get_resource::<ActiveCamera>() else { return };
+            let Some(cam) = ctx.app.world().get_resource::<ActiveCamera>() else { return };
             (cam.view_proj, cam.camera_pos)
         };
-        let Some(dl) = ctx.app.world.get_resource::<DrawCommandList>() else { return };
-        let Some(ra) = ctx.app.world.get_resource::<RenderAssets>() else { return };
+        let Some(dl) = ctx.app.world().get_resource::<DrawCommandList>() else { return };
+        let Some(ra) = ctx.app.world().get_resource::<RenderAssets>() else { return };
         if dl.commands.is_empty() { return; }
 
         let Some(frame) = ctx.render_app.get_current_frame() else { return };
         let swapchain = frame.texture.create_view(&Default::default());
 
         let def_lights = SceneLights::default();
-        let lights = ctx.app.world.get_resource::<SceneLights>().unwrap_or(&def_lights);
+        let lights = ctx.app.world().get_resource::<SceneLights>().unwrap_or(&def_lights);
         let (gpu_lights, lc) = pack_lights(lights);
         let ld = lights.directional.direction.normalize();
 
@@ -374,8 +375,8 @@ impl BilliardGame {
         if let Some(ref mut lr) = self.line_renderer {
             // Copy data out of world to avoid borrow conflicts
             let aim_data: Option<(glam::Vec3, glam::Vec3)> = {
-                let gs = ctx.app.world.get_resource::<GameState>();
-                let shot = ctx.app.world.get_resource::<ShotState>();
+                let gs = ctx.app.world().get_resource::<GameState>();
+                let shot = ctx.app.world().get_resource::<ShotState>();
                 match (gs, shot) {
                     (Some(gs), Some(shot))
                         if (gs.phase == GamePhase::Aiming || gs.phase == GamePhase::PowerCharging)
@@ -387,8 +388,8 @@ impl BilliardGame {
                 }
             };
             if let Some((aim_dir, _aim_pt)) = aim_data {
-                let cue_positions: Vec<glam::Vec3> = ctx.app.world.query_filtered::<&Transform, With<CueBall>>()
-                    .iter(&ctx.app.world)
+                let cue_positions: Vec<glam::Vec3> = ctx.app.world_mut().query_filtered::<&Transform, With<CueBall>>()
+                    .iter(ctx.app.world())
                     .map(|t| t.translation)
                     .collect();
                 if let Some(&cue_pos) = cue_positions.first() {
@@ -410,8 +411,8 @@ impl BilliardGame {
         if let Some(ref mut tr) = self.text_renderer {
             let (sw, sh) = ctx.render_app.window_state().size();
             let status = {
-                let gs = ctx.app.world.get_resource::<GameState>().unwrap();
-                let shot = ctx.app.world.get_resource::<ShotState>().unwrap();
+                let gs = ctx.app.world().get_resource::<GameState>().unwrap();
+                let shot = ctx.app.world().get_resource::<ShotState>().unwrap();
                 ui_update::format_status_text(gs, shot)
             };
             let mut enc = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Text Enc") });
@@ -486,7 +487,7 @@ impl GameCallbacks for BilliardGame {
                 use winit::keyboard::{KeyCode as WK, PhysicalKey};
                 if let PhysicalKey::Code(code) = event.physical_key {
                     if event.state.is_pressed() && code == WK::Escape {
-                        ctx.app.exit();
+                        ctx.app.exit_game();
                         return true;
                     }
                     if event.state.is_pressed() && code == WK::KeyR {
@@ -506,14 +507,14 @@ impl GameCallbacks for BilliardGame {
 
 impl BilliardGame {
     fn reset_game(&mut self, ctx: &mut GameContext) {
-        let config = { let c = ctx.app.world.resource::<BilliardConfig>(); c.clone() };
+        let config = { let c = ctx.app.world().resource::<BilliardConfig>(); c.clone() };
         let rack_pos = rack_positions(&config);
         // Reset cue ball
         if let Some(cue_e) = self.ball_entities.first() {
-            if let Some(mut t) = ctx.app.world.get_mut::<Transform>(*cue_e) {
+            if let Some(mut t) = ctx.app.world_mut().get_mut::<Transform>(*cue_e) {
                 t.translation = glam::Vec3::new(0.0, config.ball_radius, -config.table_half_depth * 0.5);
             }
-            if let Some(mut v) = ctx.app.world.get_mut::<Velocity>(*cue_e) {
+            if let Some(mut v) = ctx.app.world_mut().get_mut::<Velocity>(*cue_e) {
                 v.linear = glam::Vec3::ZERO;
             }
         }
@@ -521,25 +522,25 @@ impl BilliardGame {
         // Reset numbered balls
         for i in 0..15 {
             let e = self.ball_entities[i + 1];
-            if let Some(mut t) = ctx.app.world.get_mut::<Transform>(e) {
+            if let Some(mut t) = ctx.app.world_mut().get_mut::<Transform>(e) {
                 t.translation = rack_pos[i];
             }
-            if let Some(mut v) = ctx.app.world.get_mut::<Velocity>(e) {
+            if let Some(mut v) = ctx.app.world_mut().get_mut::<Velocity>(e) {
                 v.linear = glam::Vec3::ZERO;
             }
-            if let Some(mut nb) = ctx.app.world.get_mut::<NumberedBall>(e) {
+            if let Some(mut nb) = ctx.app.world_mut().get_mut::<NumberedBall>(e) {
                 nb.potted = false;
             }
         }
 
         // Reset resources
-        if let Some(mut gs) = ctx.app.world.get_resource_mut::<GameState>() {
+        if let Some(mut gs) = ctx.app.world_mut().get_resource_mut::<GameState>() {
             *gs = GameState::default();
         }
-        if let Some(mut shot) = ctx.app.world.get_resource_mut::<ShotState>() {
+        if let Some(mut shot) = ctx.app.world_mut().get_resource_mut::<ShotState>() {
             *shot = ShotState::default();
         }
-        if let Some(mut tracker) = ctx.app.world.get_resource_mut::<BallTracker>() {
+        if let Some(mut tracker) = ctx.app.world_mut().get_resource_mut::<BallTracker>() {
             tracker.on_table = [true; 16];
         }
 

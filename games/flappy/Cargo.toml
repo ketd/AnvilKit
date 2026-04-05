@@ -1,0 +1,10 @@
+[package]
+name = "flappy"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anvilkit = { version = "0.1.0", path = "../../crates/anvilkit" }
+anvilkit-app = { version = "0.1.0", path = "../../crates/anvilkit-app" }
+anvilkit-render = { version = "0.1.0", path = "../../crates/anvilkit-render" }
+anvilkit-input = { version = "0.1.0", path = "../../crates/anvilkit-input" }

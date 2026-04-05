@@ -5,8 +5,6 @@
 //! 需要启用 `persistence` feature flag。
 
 #[cfg(feature = "persistence")]
-mod settings;
-#[cfg(feature = "persistence")]
 mod storage;
 #[cfg(feature = "persistence")]
 mod save_manager;
@@ -15,8 +13,6 @@ mod auto_save;
 #[cfg(feature = "persistence")]
 mod migration;
 
-#[cfg(feature = "persistence")]
-pub use settings::*;
 #[cfg(feature = "persistence")]
 pub use storage::*;
 #[cfg(feature = "persistence")]

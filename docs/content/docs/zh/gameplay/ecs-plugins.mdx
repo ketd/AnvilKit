@@ -3,7 +3,7 @@ title: ECS 与插件系统
 description: 应用生命周期、插件系统、调度、系统与 Bundle
 ---
 
-`anvilkit-ecs` 提供应用生命周期管理、插件系统、系统调度和组件 Bundle，全部基于 `bevy_ecs` 构建。
+`anvilkit-app` 提供应用生命周期管理、插件系统、系统调度和组件 Bundle，全部基于 `bevy_app` 和 `bevy_ecs` 构建。
 
 > **注意：** 推荐使用 `AnvilKitApp::run()` 配合 `GameCallbacks` 来启动游戏。下面展示的 `App::new()` 方式适用于高级用例或测试场景。
 
@@ -55,8 +55,7 @@ App::new()
 此外，`anvilkit-gameplay` crate 提供了更高层的 Gameplay 插件。详见 [Gameplay 系统](/docs/zh/gameplay/gameplay-systems) 页面。
 
 ```rust
-use anvilkit_ecs::prelude::*;
-use anvilkit_ecs::schedule::AnvilKitSchedule;
+use anvilkit::prelude::*;
 
 let mut app = App::new();
 
@@ -171,7 +170,7 @@ fn health_system(mut events: EventReader<DamageEvent>) {
 `GameState<S>` 提供游戏流程的状态管理（菜单、游戏、暂停）：
 
 ```rust
-use anvilkit_ecs::state::{GameState, NextGameState, in_state, StateValue};
+use anvilkit_app::state::{GameState, NextGameState, in_state, StateValue};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum AppState { Menu, Playing, Paused }

@@ -10,6 +10,7 @@ pub mod transition;
 
 use bevy_ecs::prelude::*;
 use glam::{Vec2, Vec3};
+use anvilkit_describe::Describe;
 
 use self::noise::gradient_noise_2d;
 
@@ -25,7 +26,8 @@ use self::noise::gradient_noise_2d;
 /// producing smooth, non-repetitive motion via Perlin noise.
 ///
 /// Call [`add_trauma`](Self::add_trauma) to trigger shake (e.g., on landing, explosion, hit).
-#[derive(Component)]
+#[derive(Component, Describe)]
+/// Camera visual effects: shake, head bob, and dynamic FOV.
 pub struct CameraEffects {
     // --- Trauma-based shake ---
     /// Current trauma level `[0.0, 1.0]`. Higher = stronger shake.

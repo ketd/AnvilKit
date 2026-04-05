@@ -1,6 +1,7 @@
 use noise::{NoiseFn, SuperSimplex};
 
 use crate::block::BlockType;
+use crate::biome::{Biome, BiomeMap};
 use crate::chunk::{ChunkData, CHUNK_SIZE, CHUNK_HEIGHT};
 use crate::config;
 
@@ -11,6 +12,8 @@ pub struct WorldGenerator {
     noise_plant: SuperSimplex,
     noise_cloud: SuperSimplex,
     noise_cave: SuperSimplex,
+    noise_ore: SuperSimplex,
+    biome_map: BiomeMap,
 }
 
 impl WorldGenerator {
@@ -22,6 +25,8 @@ impl WorldGenerator {
             noise_plant: SuperSimplex::new(seed.wrapping_add(3)),
             noise_cloud: SuperSimplex::new(seed.wrapping_add(4)),
             noise_cave: SuperSimplex::new(seed.wrapping_add(5)),
+            noise_ore: SuperSimplex::new(seed.wrapping_add(6)),
+            biome_map: BiomeMap::new(seed),
         }
     }
 
@@ -32,27 +37,35 @@ impl WorldGenerator {
         let base_x = cx * CHUNK_SIZE as i32;
         let base_z = cz * CHUNK_SIZE as i32;
 
-        // Pre-compute height map
+        // Pre-compute height map + biome map
         let mut height_map = [[0i32; CHUNK_SIZE]; CHUNK_SIZE];
+        let mut biome_map = [[Biome::Plains; CHUNK_SIZE]; CHUNK_SIZE];
         for lx in 0..CHUNK_SIZE {
             for lz in 0..CHUNK_SIZE {
                 let wx = (base_x + lx as i32) as f64;
                 let wz = (base_z + lz as i32) as f64;
 
-                // Two-octave simplex: base height + amplitude modulation
+                let biome = self.biome_map.get_biome(wx, wz);
+                biome_map[lx][lz] = biome;
+
+                // Two-octave simplex with biome modulation (smoothed at boundaries)
                 let h1 = self.noise_height.get([wx * config::NOISE_HEIGHT_SCALE, wz * config::NOISE_HEIGHT_SCALE]);
                 let amp = self.noise_detail.get([wx * config::NOISE_DETAIL_SCALE, wz * config::NOISE_DETAIL_SCALE]);
-                let h = config::BASE_HEIGHT + h1 * config::HEIGHT_AMP1 + amp * config::HEIGHT_AMP2;
+                let (height_offset, height_scale) = self.biome_map.smoothed_height_params(wx, wz);
+                let base_h = config::BASE_HEIGHT + height_offset;
+                let h = base_h + (h1 * config::HEIGHT_AMP1 + amp * config::HEIGHT_AMP2) * height_scale;
                 height_map[lx][lz] = h as i32;
             }
         }
 
         let water_level = config::WATER_LEVEL;
 
-        // Fill terrain
+        // Fill terrain (biome-aware surface/fill blocks)
         for lx in 0..CHUNK_SIZE {
             for lz in 0..CHUNK_SIZE {
                 let h = height_map[lx][lz];
+                let biome = biome_map[lx][lz];
+                let (surface, fill) = biome_surface_blocks(biome, h, water_level);
 
                 for y in 0..CHUNK_HEIGHT {
                     let yi = y as i32;
@@ -61,17 +74,9 @@ impl WorldGenerator {
                     } else if yi < h - 4 {
                         BlockType::Stone
                     } else if yi < h {
-                        if h <= water_level + 1 {
-                            BlockType::Sand
-                        } else {
-                            BlockType::Dirt
-                        }
+                        fill
                     } else if yi == h {
-                        if h <= water_level {
-                            BlockType::Sand
-                        } else {
-                            BlockType::Grass
-                        }
+                        surface
                     } else if yi <= water_level {
                         BlockType::Water
                     } else {
@@ -83,6 +88,9 @@ impl WorldGenerator {
                 }
             }
         }
+
+        // Ore generation
+        self.generate_ores(&mut chunk, &height_map, base_x, base_z);
 
         // Cave carving: 3D noise removes blocks to create underground caverns
         for lx in 0..CHUNK_SIZE {
@@ -112,9 +120,11 @@ impl WorldGenerator {
             }
         }
 
-        // Trees
+        // Trees (biome-filtered)
         for lx in 2..CHUNK_SIZE - 2 {
             for lz in 2..CHUNK_SIZE - 2 {
+                let biome = biome_map[lx][lz];
+                if !biome.has_trees() { continue; }
                 let wx = (base_x + lx as i32) as f64;
                 let wz = (base_z + lz as i32) as f64;
                 let h = height_map[lx][lz];
@@ -124,14 +134,17 @@ impl WorldGenerator {
 
                 let tree_val = self.noise_tree.get([wx * config::TREE_NOISE_SCALE, wz * config::TREE_NOISE_SCALE]);
                 if tree_val > config::TREE_THRESHOLD {
-                    self.place_tree(&mut chunk, lx, (h + 1) as usize, lz);
+                    let (trunk, leaves) = biome_tree_blocks(biome);
+                    self.place_tree_typed(&mut chunk, lx, (h + 1) as usize, lz, trunk, leaves);
                 }
             }
         }
 
-        // Plants
+        // Plants (biome-filtered)
         for lx in 0..CHUNK_SIZE {
             for lz in 0..CHUNK_SIZE {
+                let biome = biome_map[lx][lz];
+                if !biome.has_plants() { continue; }
                 let wx = (base_x + lx as i32) as f64;
                 let wz = (base_z + lz as i32) as f64;
                 let h = height_map[lx][lz];
@@ -175,16 +188,14 @@ impl WorldGenerator {
         chunk
     }
 
-    fn place_tree(&self, chunk: &mut ChunkData, x: usize, base_y: usize, z: usize) {
+    fn place_tree_typed(&self, chunk: &mut ChunkData, x: usize, base_y: usize, z: usize, trunk: BlockType, leaves: BlockType) {
         let trunk_height = config::TRUNK_HEIGHT;
-        // Trunk
         for dy in 0..trunk_height {
             let y = base_y + dy;
             if y < CHUNK_HEIGHT {
-                chunk.set(x, y, z, BlockType::Wood);
+                chunk.set(x, y, z, trunk);
             }
         }
-        // Leaves sphere (radius 3, centered at top of trunk)
         let center_y = base_y + trunk_height;
         let r = config::LEAF_RADIUS;
         for dx in -r..=r {
@@ -196,21 +207,80 @@ impl WorldGenerator {
                     let lx = x as i32 + dx;
                     let ly = center_y as i32 + dy;
                     let lz = z as i32 + dz;
-                    if lx < 0
-                        || lx >= CHUNK_SIZE as i32
-                        || ly < 0
-                        || ly >= CHUNK_HEIGHT as i32
-                        || lz < 0
-                        || lz >= CHUNK_SIZE as i32
-                    {
+                    if lx < 0 || lx >= CHUNK_SIZE as i32 || ly < 0 || ly >= CHUNK_HEIGHT as i32 || lz < 0 || lz >= CHUNK_SIZE as i32 {
                         continue;
                     }
                     if chunk.get(lx as usize, ly as usize, lz as usize) == BlockType::Air {
-                        chunk.set(lx as usize, ly as usize, lz as usize, BlockType::Leaves);
+                        chunk.set(lx as usize, ly as usize, lz as usize, leaves);
                     }
                 }
             }
         }
+    }
+
+    fn generate_ores(&self, chunk: &mut ChunkData, height_map: &[[i32; CHUNK_SIZE]; CHUNK_SIZE], base_x: i32, base_z: i32) {
+        // (block_type, y_min, y_max, noise_threshold, noise_scale)
+        let ore_configs: [(BlockType, i32, i32, f64, f64); 6] = [
+            (BlockType::CoalOre,     5, 80, 0.70, 0.08),
+            (BlockType::IronOre,     5, 64, 0.75, 0.07),
+            (BlockType::GoldOre,     5, 32, 0.82, 0.06),
+            (BlockType::DiamondOre,  1, 16, 0.88, 0.05),
+            (BlockType::RedstoneOre, 1, 16, 0.85, 0.06),
+            (BlockType::LapisOre,    1, 32, 0.84, 0.06),
+        ];
+
+        for lx in 0..CHUNK_SIZE {
+            for lz in 0..CHUNK_SIZE {
+                let wx = (base_x + lx as i32) as f64;
+                let wz = (base_z + lz as i32) as f64;
+                let surface = height_map[lx][lz];
+
+                for &(block_type, y_min, y_max, threshold, scale) in &ore_configs {
+                    let y_end = (y_max as usize).min(surface as usize);
+                    for y in (y_min as usize)..y_end {
+                        if chunk.get(lx, y, lz) != BlockType::Stone {
+                            continue;
+                        }
+                        let wy = y as f64;
+                        let val = self.noise_ore.get([wx * scale, wy * scale, wz * scale]);
+                        if val > threshold {
+                            chunk.set(lx, y, lz, block_type);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Select surface and fill blocks based on biome.
+fn biome_surface_blocks(biome: Biome, h: i32, water_level: i32) -> (BlockType, BlockType) {
+    match biome {
+        Biome::Desert => (BlockType::Sand, BlockType::Sandstone),
+        Biome::Tundra => {
+            if h <= water_level { (BlockType::Sand, BlockType::Gravel) }
+            else { (BlockType::SnowBlock, BlockType::Stone) }
+        }
+        Biome::Ocean => (BlockType::Sand, BlockType::Sand),
+        Biome::Mountains => (BlockType::Stone, BlockType::Stone),
+        Biome::Swamp => {
+            if h <= water_level + 1 { (BlockType::Sand, BlockType::Dirt) }
+            else { (BlockType::Grass, BlockType::Dirt) }
+        }
+        _ => {
+            // Plains, Forest — default behavior
+            if h <= water_level { (BlockType::Sand, BlockType::Sand) }
+            else { (BlockType::Grass, BlockType::Dirt) }
+        }
+    }
+}
+
+/// Select tree trunk/leaves blocks based on biome.
+fn biome_tree_blocks(biome: Biome) -> (BlockType, BlockType) {
+    match biome {
+        Biome::Tundra => (BlockType::SpruceWood, BlockType::SpruceLeaves),
+        Biome::Forest => (BlockType::BirchWood, BlockType::BirchLeaves), // mix birch in forests
+        _ => (BlockType::Wood, BlockType::Leaves),
     }
 }
 
@@ -224,15 +294,40 @@ mod tests {
         let chunk = gen.generate_chunk(0, 0);
         // Bottom should be stone
         assert_eq!(chunk.get(0, 0, 0), BlockType::Stone);
-        // Some height should have grass/sand/dirt
+        // Some height should have a surface block (varies by biome)
         let mut found_surface = false;
-        for y in 20..50 {
+        for y in 10..80 {
             let b = chunk.get(16, y, 16);
-            if b == BlockType::Grass || b == BlockType::Sand {
-                found_surface = true;
-                break;
+            if matches!(b, BlockType::Grass | BlockType::Sand | BlockType::Stone
+                | BlockType::SnowBlock | BlockType::Sandstone) {
+                // Check there's air or water above — confirms surface
+                let above = chunk.get(16, y + 1, 16);
+                if above == BlockType::Air || above == BlockType::Water {
+                    found_surface = true;
+                    break;
+                }
             }
         }
         assert!(found_surface, "Should find a surface block");
+    }
+
+    #[test]
+    fn generates_ores() {
+        let gen = WorldGenerator::new(42);
+        let chunk = gen.generate_chunk(0, 0);
+        // Check that at least some ore blocks were placed
+        let mut ore_count = 0;
+        for x in 0..CHUNK_SIZE {
+            for z in 0..CHUNK_SIZE {
+                for y in 1..60 {
+                    let b = chunk.get(x, y, z);
+                    if matches!(b, BlockType::CoalOre | BlockType::IronOre | BlockType::GoldOre
+                        | BlockType::DiamondOre | BlockType::RedstoneOre | BlockType::LapisOre) {
+                        ore_count += 1;
+                    }
+                }
+            }
+        }
+        assert!(ore_count > 0, "Should generate some ore blocks");
     }
 }

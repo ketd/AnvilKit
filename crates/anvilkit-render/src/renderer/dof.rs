@@ -4,21 +4,27 @@
 //! 三 pass 流程：CoC 计算 → 圆盘模糊 → 合成。
 
 use bevy_ecs::prelude::*;
+use anvilkit_describe::Describe;
 use crate::renderer::RenderDevice;
 use crate::renderer::buffer::HDR_FORMAT;
 
 const DOF_SHADER: &str = include_str!("../shaders/dof.wgsl");
 
 /// DOF 配置参数
-#[derive(Debug, Clone, Resource)]
+#[derive(Debug, Clone, Resource, Describe)]
+/// Depth-of-field post-process settings.
 pub struct DofSettings {
     /// Whether DOF is enabled.
+    #[describe(hint = "Enable depth of field", default = "false")]
     pub enabled: bool,
     /// Distance to the focus plane (world units).
+    #[describe(hint = "Focus plane distance", range = "0.1..1000.0", default = "10.0")]
     pub focus_distance: f32,
     /// Range around focus_distance that is in sharp focus.
+    #[describe(hint = "Sharp focus range around focus distance", range = "0.1..100.0", default = "5.0")]
     pub focus_range: f32,
     /// Maximum blur radius in pixels.
+    #[describe(hint = "Max bokeh blur radius in pixels", range = "0.0..16.0", default = "4.0")]
     pub bokeh_radius: f32,
 }
 
@@ -298,7 +304,7 @@ impl DofResources {
             rp.draw(0..3, 0..1);
         }
 
-        // Pass 2: Blur
+        // Pass 2: Blur (half-res)
         {
             let bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("DOF Blur BG"),
@@ -323,6 +329,36 @@ impl DofResources {
                 occlusion_query_set: None,
             });
             rp.set_pipeline(&self.blur_pipeline);
+            rp.set_bind_group(0, &bg, &[]);
+            rp.draw(0..3, 0..1);
+        }
+
+        // Pass 3: Composite (blend sharp + blurred based on CoC → write back to HDR)
+        {
+            let bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("DOF Composite BG"),
+                layout: &self.composite_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(hdr_view) },
+                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(depth_view) },
+                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                    wgpu::BindGroupEntry { binding: 3, resource: self.uniform_buffer.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&self.coc_view) },
+                    wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(&self.blurred_view) },
+                ],
+            });
+            let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("DOF Composite Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: hdr_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            rp.set_pipeline(&self.composite_pipeline);
             rp.set_bind_group(0, &bg, &[]);
             rp.draw(0..3, 0..1);
         }

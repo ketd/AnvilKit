@@ -13,6 +13,7 @@
 //! `Time` 通常作为全局资源在 ECS 系统中使用，每帧调用 `update()` 方法更新时间信息。
 
 use std::time::{Duration, Instant};
+use anvilkit_describe::Describe;
 
 /// 核心时间资源，跟踪应用的时间信息
 /// 
@@ -50,8 +51,9 @@ use std::time::{Duration, Instant};
 ///     }
 /// }
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Describe)]
 #[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::system::Resource))]
+/// Core time resource tracking frame timing, elapsed time, and FPS.
 pub struct Time {
     /// 应用启动时的时间点
     startup_time: Instant,

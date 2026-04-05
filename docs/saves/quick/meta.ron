@@ -1,0 +1,9 @@
+(
+    name: "quick",
+    timestamp: 1775406701,
+    play_time_secs: 0.0,
+    game_version: "0.1.0",
+    metadata: {
+        "seed": "42",
+    },
+)

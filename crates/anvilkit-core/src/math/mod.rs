@@ -1,48 +1,41 @@
 //! # 数学系统
-//! 
+//!
 //! AnvilKit 的数学系统提供了游戏开发中常用的数学类型和操作。
-//! 
+//!
 //! ## 模块组织
-//! 
+//!
 //! - [`transform`]: 3D 变换和层次结构
-//! - [`geometry`]: 几何图形和边界框
-//! - [`interpolation`]: 插值和动画支持
-//! - [`constants`]: 数学常量和工具函数
-//! 
-//! ## 设计原则
-//! 
-//! 1. **统一但非均一**: 提供统一的 API，但针对 2D/3D 进行优化
-//! 2. **性能优先**: 使用 SIMD 优化和缓存友好的数据布局
-//! 3. **类型安全**: 利用 Rust 的类型系统防止常见错误
-//! 4. **可扩展性**: 通过 trait 提供可扩展的接口
+//! - [`aabb`]: Axis-aligned bounding boxes
+//! - [`frustum`]: View frustum for culling
+//! - [`raycast`]: Ray casting
 
 pub mod transform;
-pub mod geometry;
-pub mod interpolation;
-pub mod constants;
 pub mod aabb;
 pub mod frustum;
 pub mod raycast;
 
 // 重新导出主要类型
 pub use transform::{Transform, GlobalTransform};
-pub use geometry::{Rect, Circle, Bounds2D, Bounds3D};
-pub use interpolation::{Lerp, Slerp, Interpolate};
-pub use constants::*;
 pub use aabb::Aabb;
 pub use frustum::Frustum;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use glam::Vec3;
+/// 速度组件 — linear + angular velocity
+#[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::prelude::Component))]
+#[derive(Debug, Clone, Copy)]
+pub struct Velocity {
+    /// Linear velocity vector (units per second).
+    pub linear: glam::Vec3,
+    /// Angular velocity vector (radians per second around each axis).
+    pub angular: glam::Vec3,
+}
 
-    #[test]
-    fn test_math_module_integration() {
-        // 测试不同模块之间的集成
-        let transform = Transform::from_xyz(1.0, 2.0, 3.0);
-        let bounds = Bounds3D::from_center_size(transform.translation, Vec3::ONE);
-        
-        assert!(bounds.contains(transform.translation));
-    }
+impl Velocity {
+    /// Creates a velocity with zero linear and angular components.
+    pub fn zero() -> Self { Self { linear: glam::Vec3::ZERO, angular: glam::Vec3::ZERO } }
+    /// Creates a velocity with the given linear component and zero angular velocity.
+    pub fn linear(linear: glam::Vec3) -> Self { Self { linear, angular: glam::Vec3::ZERO } }
+}
+
+impl Default for Velocity {
+    fn default() -> Self { Self::zero() }
 }

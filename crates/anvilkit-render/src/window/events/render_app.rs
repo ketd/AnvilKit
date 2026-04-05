@@ -4,7 +4,7 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::Window;
 use log::info;
 
-use anvilkit_ecs::app::App;
+use bevy_app::App;
 use crate::window::{WindowConfig, WindowState};
 use crate::renderer::{RenderDevice, RenderSurface};
 use anvilkit_core::error::{AnvilKitError, Result};
@@ -106,7 +106,7 @@ impl RenderApp {
         let event_loop = winit::event_loop::EventLoop::new().unwrap();
 
         // 从 App 中读取 RenderConfig 获取 WindowConfig
-        let window_config = app.world.get_resource::<crate::plugin::RenderConfig>()
+        let window_config = app.world().get_resource::<crate::plugin::RenderConfig>()
             .map(|c| c.window_config.clone())
             .unwrap_or_default();
 

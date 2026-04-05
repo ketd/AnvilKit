@@ -8,6 +8,16 @@ description: Multi-pass HDR rendering pipeline architecture
 
 `anvilkit-render` is AnvilKit's core rendering module, providing unified 2D/3D rendering capabilities based on `wgpu 0.19`.
 
+## Entry Points
+
+AnvilKit offers two agent-friendly rendering APIs that sit above the full PBR pipeline:
+
+- **Canvas2D** — Immediate-mode 2D drawing (rects, text, sprites). Best for prototypes, UI, and 2D games. AI agents can draw directly via MCP tools.
+- **Canvas3D** — Scene-graph 3D API with PBR materials, lights, and camera control. Agents can spawn objects, set materials, and capture frames without touching the low-level pipeline.
+- **Frame Capture** — Both Canvas2D and Canvas3D support `capture_frame()`, returning the rendered image as bytes. This is what enables the AI-first promise: the agent can see what the player sees.
+
+For full control, use the multi-pass PBR pipeline described below.
+
 ## Render Pipeline
 
 The engine runs a multi-pass HDR pipeline per frame:

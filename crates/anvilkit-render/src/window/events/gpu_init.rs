@@ -86,7 +86,7 @@ impl RenderApp {
         let (_, depth_texture_view) = create_depth_texture_msaa(device, w, h, "ECS Depth MSAA");
 
         // HDR render target (resolve target, sample_count=1) + MSAA color attachment
-        let (_, hdr_texture_view) = create_hdr_render_target(device, w, h, "ECS HDR RT");
+        let (hdr_texture, hdr_texture_view) = create_hdr_render_target(device, w, h, "ECS HDR RT");
         let (_, hdr_msaa_texture_view) = create_hdr_msaa_texture(device, w, h, "ECS HDR MSAA");
         let sampler = create_sampler(device, "ECS Tonemap Sampler");
 
@@ -247,6 +247,7 @@ impl RenderApp {
             scene_bind_group,
             scene_bind_group_layout,
             depth_texture_view,
+            hdr_texture,
             hdr_texture_view,
             tonemap_pipeline,
             tonemap_bind_group,
@@ -387,10 +388,10 @@ impl RenderApp {
 
             // 注册到 RenderAssets
             let mat_handle = {
-                let mut assets = app.world.get_resource_mut::<RenderAssets>().expect("RenderAssets 必须已注册");
+                let mut assets = app.world_mut().get_resource_mut::<RenderAssets>().expect("RenderAssets 必须已注册");
                 assets.create_material(pbr_pipeline, default_mat_bg)
             };
-            app.world.insert_resource(DefaultMaterialHandle(mat_handle));
+            app.world_mut().insert_resource(DefaultMaterialHandle(mat_handle));
             info!("默认 PBR 材质已创建: {:?}", mat_handle);
         }
 

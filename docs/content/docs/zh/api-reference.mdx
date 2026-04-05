@@ -10,17 +10,56 @@ description: 自动生成的 API 文档链接
 | Crate | 说明 | docs.rs |
 |-------|-------------|---------|
 | `anvilkit-core` | 核心类型 -- Transform、Time、Timer、Persistence | [docs.rs/anvilkit-core](https://docs.rs/anvilkit-core) |
-| `anvilkit-ecs` | 实体组件系统 -- App、Plugin、FixedUpdate、Events、GameState、SerializableRegistry、AutoPlugins | [docs.rs/anvilkit-ecs](https://docs.rs/anvilkit-ecs) |
-| `anvilkit-render` | 渲染 -- PBR 管线、StandardMaterial、PostProcessSettings、阴影系统、DemoApp | [docs.rs/anvilkit-render](https://docs.rs/anvilkit-render) |
+| `anvilkit-app` | 游戏应用运行器 -- GameCallbacks、调度、状态机、ECS 插件系统 | [docs.rs/anvilkit-app](https://docs.rs/anvilkit-app) |
+| `anvilkit-render` | 渲染 -- wgpu、Canvas2D、Canvas3D、PBR 管线、帧捕获、transform 层级 | [docs.rs/anvilkit-render](https://docs.rs/anvilkit-render) |
 | `anvilkit-assets` | 资产管线 -- glTF 加载、动画、MeshData 工厂、AudioAsset、热重载 | [docs.rs/anvilkit-assets](https://docs.rs/anvilkit-assets) |
 | `anvilkit-audio` | 音频 -- AudioSource、AudioBus、空间音频、循环/变调 | [docs.rs/anvilkit-audio](https://docs.rs/anvilkit-audio) |
 | `anvilkit-input` | 输入 -- 键盘、鼠标、手柄、ActionMap、ActionId、AxisBinding | [docs.rs/anvilkit-input](https://docs.rs/anvilkit-input) |
 | `anvilkit-camera` | 摄像机系统 -- 5 种模式、OrbitState、SpringArm、CameraRig、trauma 抖动、过渡、轨道、输入曲线 | [docs.rs/anvilkit-camera](https://docs.rs/anvilkit-camera) |
-| `anvilkit-app` | 游戏应用运行器 -- AnvilKitApp、GameCallbacks、GameConfig、WindowSize | [docs.rs/anvilkit-app](https://docs.rs/anvilkit-app) |
-| `anvilkit-ui` | UI 框架 -- flexbox 布局、控件、事件、焦点、主题 | [docs.rs/anvilkit-ui](https://docs.rs/anvilkit-ui) |
-| `anvilkit-gameplay` | 游戏性系统 -- Stats、Health、Inventory、Cooldown、StatusEffect、EntityPool | [docs.rs/anvilkit-gameplay](https://docs.rs/anvilkit-gameplay) |
+| `anvilkit-describe` | AI 优先内省 -- Describe trait 和 derive 宏 | [docs.rs/anvilkit-describe](https://docs.rs/anvilkit-describe) |
+| `anvilkit-mcp` | MCP 服务器 -- 17 个工具（视觉、控制、状态、场景），供 AI 代理交互 | [docs.rs/anvilkit-mcp](https://docs.rs/anvilkit-mcp) |
+| `anvilkit-gameplay` | 游戏性系统 -- Health、Inventory | [docs.rs/anvilkit-gameplay](https://docs.rs/anvilkit-gameplay) |
 | `anvilkit-data` | 数据表（RON/JSON）与 i18n 本地化 | [docs.rs/anvilkit-data](https://docs.rs/anvilkit-data) |
-| `anvilkit` | 总括 crate -- 重新导出所有子 crate | [docs.rs/anvilkit](https://docs.rs/anvilkit) |
+| `anvilkit` | 总括 crate -- facade、prelude、DefaultPlugins | [docs.rs/anvilkit](https://docs.rs/anvilkit) |
+
+## 关键 API
+
+### Canvas2D
+
+即时模式 2D 绘图 API，位于 `anvilkit_render::renderer::canvas2d`。
+
+| 类型 | 说明 |
+|------|------|
+| `Canvas2DRenderer` | 2D 渲染的 GPU 资源。在 `init()` 中创建一次。 |
+| `Canvas2D` | 通过 `Canvas2D::begin()` 获取的每帧绘制上下文。 |
+
+`Canvas2D` 方法：`clear()`、`draw_rect()`、`draw_text()`、`draw_sprite()`、`finish()`。
+
+### Canvas3D
+
+场景图 3D API，位于 `anvilkit_render::renderer::canvas3d`。
+
+| 类型 | 说明 |
+|------|------|
+| `Canvas3DRenderer` | 3D 渲染的 GPU 资源。在 `init()` 中创建一次。 |
+| `Canvas3D` | 通过 `Canvas3D::begin()` 获取的每帧 3D 场景上下文。 |
+
+`Canvas3D` 方法：`clear()`、`spawn_mesh()`、`set_camera()`、`add_light()`、`finish()`。
+
+### 帧捕获
+
+Canvas2D 和 Canvas3D 都支持 `capture_frame()`，返回渲染帧的原始图像字节。这是 AI 优先设计的基础：代理能看到玩家所见。
+
+### MCP 工具 (anvilkit-mcp)
+
+MCP 服务器提供 17 个工具，分为四个类别：
+
+| 类别 | 工具 |
+|------|------|
+| **视觉** | `capture_frame`、`describe_scene`、`get_screen_info` |
+| **控制** | `press_key`、`release_key`、`move_mouse`、`click`、`scroll` |
+| **状态** | `get_component`、`set_component`、`list_entities`、`get_resource` |
+| **场景** | `spawn_object`、`despawn_object`、`save_scene`、`load_scene`、`run_system` |
 
 ## 本地构建文档
 

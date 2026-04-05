@@ -8,30 +8,9 @@ description: Create your first AnvilKit project
 - Rust 1.70 or higher
 - GPU with Vulkan / Metal / DX12 support
 
-## Using the CLI
+## Setup
 
-AnvilKit provides a CLI tool for quick project scaffolding:
-
-```bash
-# Install the CLI
-cargo install --path tools/anvilkit-cli
-
-# Create a new project
-anvilkit new my_game --template 3d-basic
-```
-
-Available templates:
-
-| Template | Description |
-|----------|-------------|
-| `empty` | Empty project with basic structure only |
-| `3d-basic` | Basic 3D scene with camera and lighting |
-| `topdown` | Top-down 2D game template |
-| `first-person` | First-person 3D game template |
-
-## Manual Setup
-
-If you prefer manual setup, add dependencies in your workspace `Cargo.toml`:
+Add dependencies in your workspace `Cargo.toml`:
 
 ```toml
 [dependencies]
@@ -40,40 +19,47 @@ anvilkit = { path = "../../crates/anvilkit" }
 
 ## Minimal Example
 
-Since v0.3, AnvilKit uses the `AnvilKitApp::run()` + `GameCallbacks` pattern.
+AnvilKit uses the `AnvilKitApp::run()` + `GameCallbacks` pattern.
 The app runner handles the event loop, input forwarding, and frame lifecycle
 automatically — you only implement the callbacks your game needs.
 
+The simplest way to render is via `Canvas2D`:
+
 ```rust
 use anvilkit::prelude::*;
+use anvilkit_app::{AnvilKitApp, GameCallbacks, GameConfig, GameContext};
+use anvilkit_render::renderer::canvas2d::{Canvas2D, Canvas2DRenderer};
 
-struct MyGame;
+struct MyGame { renderer: Option<Canvas2DRenderer> }
 
 impl GameCallbacks for MyGame {
     fn init(&mut self, ctx: &mut GameContext) {
-        ctx.app.add_systems(AnvilKitSchedule::Update, hello_system);
+        let device = ctx.render_app.render_device().unwrap();
+        let format = ctx.render_app.surface_format().unwrap();
+        self.renderer = Some(Canvas2DRenderer::new(device, format));
+    }
+    fn render(&mut self, ctx: &mut GameContext) {
+        let Some(ref mut r) = self.renderer else { return };
+        let Some(mut c) = Canvas2D::begin(ctx.render_app, r) else { return };
+        c.clear([0.2, 0.2, 0.3, 1.0]);
+        c.draw_rect(100.0, 100.0, 200.0, 50.0, [1.0, 0.5, 0.0, 1.0]);
+        c.draw_text(110.0, 115.0, "Hello AnvilKit!", 24.0, [1.0, 1.0, 1.0, 1.0]);
+        c.finish();
     }
 }
 
 fn main() {
-    AnvilKitApp::run(
-        GameConfig::new("My Game").with_size(1280, 720),
-        MyGame,
-    );
-}
-
-fn hello_system() {
-    println!("Hello from AnvilKit!");
+    let mut app = App::new();
+    app.add_plugins(DefaultPlugins::new().with_window(
+        WindowConfig::new().with_title("Hello").with_size(640, 480),
+    ));
+    AnvilKitApp::run(GameConfig::new("Hello").with_size(640, 480), app, MyGame { renderer: None });
 }
 ```
 
 ## Running Your Project
 
 ```bash
-# Using the CLI
-anvilkit run my_game
-
-# Or directly with Cargo
 cargo run -p my_game
 ```
 

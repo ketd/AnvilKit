@@ -19,6 +19,7 @@ thiserror = { workspace = true }
 serde = { workspace = true, optional = true }
 ron = { workspace = true, optional = true }
 bevy_ecs = { workspace = true, optional = true }
+anvilkit-describe = { version = "0.1.0", path = "../anvilkit-describe" }
 
 [features]
 default = []

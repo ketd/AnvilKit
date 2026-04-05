@@ -25,10 +25,10 @@ impl RenderApp {
         // 通过 SceneRenderer 重建所有 size-dependent GPU 资源
         if self.gpu_initialized && new_size.width > 0 && new_size.height > 0 {
             if let (Some(app), Some(device)) = (&mut self.app, &self.render_device) {
-                let bloom_mip_count: u32 = app.world.get_resource::<BloomSettings>()
+                let bloom_mip_count: u32 = app.world().get_resource::<BloomSettings>()
                     .map(|s| s.mip_count)
                     .unwrap_or(5u32);
-                if let Some(mut rs) = app.world.get_resource_mut::<RenderState>() {
+                if let Some(mut rs) = app.world_mut().get_resource_mut::<RenderState>() {
                     crate::renderer::scene_renderer::SceneRenderer::handle_resize(
                         device, &mut rs, new_size.width, new_size.height, bloom_mip_count,
                     );
@@ -56,20 +56,20 @@ impl RenderApp {
 
         // 延迟初始化后处理 GPU 资源（通过 SceneRenderer）
         {
-            let pp_settings = app.world.get_resource::<crate::renderer::post_process::PostProcessSettings>()
+            let pp_settings = app.world().get_resource::<crate::renderer::post_process::PostProcessSettings>()
                 .cloned()
                 .unwrap_or_default();
-            if let Some(mut rs) = app.world.get_resource_mut::<RenderState>() {
+            if let Some(mut rs) = app.world_mut().get_resource_mut::<RenderState>() {
                 crate::renderer::scene_renderer::SceneRenderer::ensure_post_process_resources(
                     device, &mut rs, &pp_settings,
                 );
             }
         }
 
-        let Some(active_camera) = app.world.get_resource::<ActiveCamera>() else { return };
-        let Some(draw_list) = app.world.get_resource::<DrawCommandList>() else { return };
-        let Some(render_assets) = app.world.get_resource::<RenderAssets>() else { return };
-        let Some(render_state) = app.world.get_resource::<RenderState>() else { return };
+        let Some(active_camera) = app.world().get_resource::<ActiveCamera>() else { return };
+        let Some(draw_list) = app.world().get_resource::<DrawCommandList>() else { return };
+        let Some(render_assets) = app.world().get_resource::<RenderAssets>() else { return };
+        let Some(render_state) = app.world().get_resource::<RenderState>() else { return };
 
         if draw_list.commands.is_empty() {
             return;
@@ -89,7 +89,7 @@ impl RenderApp {
 
         // 获取场景灯光并打包为 GPU 数组
         let default_lights = SceneLights::default();
-        let scene_lights = app.world.get_resource::<SceneLights>()
+        let scene_lights = app.world().get_resource::<SceneLights>()
             .unwrap_or(&default_lights);
         let (gpu_lights, light_count) = pack_lights(scene_lights);
         let light = &scene_lights.directional;
@@ -261,24 +261,29 @@ impl RenderApp {
 
         // --- 后处理管线 (顺序: SSAO → DOF → MotionBlur → Bloom → ColorGrading) ---
         {
-            let pp_settings = app.world.get_resource::<crate::renderer::post_process::PostProcessSettings>()
+            let pp_settings = app.world().get_resource::<crate::renderer::post_process::PostProcessSettings>()
                 .cloned()
                 .unwrap_or_default();
 
             // 1. SSAO
+            #[cfg(feature = "advanced-render")]
             if let (Some(ref ssao_settings), Some(ref ssao_res)) = (&pp_settings.ssao, &render_state.post_process.ssao) {
                 let proj = active_camera.view_proj; // 近似投影矩阵
                 ssao_res.execute(device, &mut encoder, &render_state.depth_texture_view, &proj, ssao_settings);
             }
 
             // 2. DOF
+            #[cfg(feature = "advanced-render")]
             if let (Some(ref dof_settings), Some(ref dof_res)) = (&pp_settings.dof, &render_state.post_process.dof) {
                 dof_res.execute(device, &mut encoder, &render_state.hdr_texture_view, &render_state.depth_texture_view, dof_settings);
             }
 
             // 3. Motion Blur
+            #[cfg(feature = "advanced-render")]
             if let (Some(ref mb_settings), Some(ref mb_res)) = (&pp_settings.motion_blur, &render_state.post_process.motion_blur) {
-                let prev_vp = view_proj.to_cols_array_2d();
+                // 使用上一帧的 VP 矩阵；首帧回退到当前帧（运动模糊=0）
+                let prev_vp = render_state.post_process.prev_view_proj
+                    .unwrap_or_else(|| view_proj.to_cols_array_2d());
                 let curr_inv_vp = view_proj.inverse().to_cols_array_2d();
                 mb_res.execute(device, &mut encoder, &render_state.hdr_texture_view, &render_state.depth_texture_view, mb_settings, prev_vp, curr_inv_vp);
             }
@@ -286,17 +291,16 @@ impl RenderApp {
             // 4. Bloom
             if let Some(ref bloom) = render_state.bloom {
                 let bloom_settings = pp_settings.bloom.as_ref()
-                    .or_else(|| app.world.get_resource::<BloomSettings>());
+                    .or_else(|| app.world().get_resource::<BloomSettings>());
                 let default_settings = BloomSettings::default();
                 let settings = bloom_settings.unwrap_or(&default_settings);
                 bloom.execute(device, &mut encoder, &render_state.hdr_texture_view, settings);
             }
 
-            // 5. Color Grading
+            // 5. Color Grading（通过中间纹理避免 src == dst 读写冲突）
+            #[cfg(feature = "advanced-render")]
             if let (Some(ref cg_settings), Some(ref cg_res)) = (&pp_settings.color_grading, &render_state.post_process.color_grading) {
-                // Color grading 需要 src 和 dst view；此处直接在 hdr_texture_view 上操作
-                // 如果有独立的 intermediate texture 会更好，但当前架构下直接对 HDR 做 in-place 处理
-                cg_res.execute(device, &mut encoder, &render_state.hdr_texture_view, &render_state.hdr_texture_view, cg_settings);
+                cg_res.execute(device, &mut encoder, &render_state.hdr_texture_view, &render_state.hdr_texture, &render_state.hdr_texture_view, cg_settings);
             }
         }
 
@@ -327,7 +331,7 @@ impl RenderApp {
         let capture_active = {
             use crate::renderer::capture::{CaptureState, CaptureResources};
 
-            let should_capture = app.world.get_resource::<CaptureState>()
+            let should_capture = app.world().get_resource::<CaptureState>()
                 .map(|s| s.should_capture())
                 .unwrap_or(false);
 
@@ -382,7 +386,7 @@ impl RenderApp {
             use crate::renderer::capture::save_png;
 
             if let Some(ref cr) = self.capture_resources {
-                let output_path = app.world.get_resource::<crate::renderer::capture::CaptureState>()
+                let output_path = app.world().get_resource::<crate::renderer::capture::CaptureState>()
                     .and_then(|s| s.current_output_path());
 
                 match cr.read_pixels(device.device()) {
@@ -400,11 +404,16 @@ impl RenderApp {
 
         frame.present();
 
+        // 存储当前帧 VP 矩阵供下帧 Motion Blur 使用
+        if let Some(mut rs) = app.world_mut().get_resource_mut::<RenderState>() {
+            rs.post_process.prev_view_proj = Some(view_proj.to_cols_array_2d());
+        }
+
         // 更新 CaptureState（需要 &mut self.app）
         #[cfg(feature = "capture")]
         if capture_active {
             if let Some(ref mut app) = self.app {
-                if let Some(mut state) = app.world.get_resource_mut::<crate::renderer::capture::CaptureState>() {
+                if let Some(mut state) = app.world_mut().get_resource_mut::<crate::renderer::capture::CaptureState>() {
                     state.on_frame_captured();
                 }
             }

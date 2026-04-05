@@ -493,6 +493,29 @@ impl SpriteRenderer {
     }
 }
 
+// ---------------------------------------------------------------------------
+//  ECS System — automatic sprite collection from Sprite + Transform entities
+// ---------------------------------------------------------------------------
+
+/// ECS 资源：每帧收集的精灵批次。
+#[derive(Resource, Default)]
+pub struct SpriteCollected {
+    /// 当前帧收集的精灵批次。
+    pub batch: SpriteBatch,
+}
+
+/// 收集系统：查询所有 Sprite + Transform 实体，构建排序后的 SpriteBatch。
+pub fn sprite_collect_system(
+    query: Query<(&Sprite, &anvilkit_core::math::Transform)>,
+    mut collected: ResMut<SpriteCollected>,
+) {
+    collected.batch.clear();
+    for (sprite, transform) in &query {
+        collected.batch.add_sprite(transform.translation, sprite);
+    }
+    collected.batch.sort_by_z_order();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -529,6 +552,32 @@ mod tests {
 
         batch.add_sprite(Vec3::new(300.0, 200.0, 1.0), &sprite);
         assert_eq!(batch.sprite_count(), 2);
+    }
+
+    #[test]
+    fn test_sprite_collect_system() {
+        use bevy_ecs::world::World;
+        use bevy_ecs::schedule::Schedule;
+
+        let mut world = World::new();
+        world.init_resource::<SpriteCollected>();
+
+        let t1 = anvilkit_core::math::Transform::from_translation(Vec3::new(10.0, 20.0, 0.0));
+        let s1 = Sprite { z_order: 1.0, ..Default::default() };
+        world.spawn((s1, t1));
+
+        let t2 = anvilkit_core::math::Transform::from_translation(Vec3::new(30.0, 40.0, 0.0));
+        let s2 = Sprite { z_order: 0.0, ..Default::default() };
+        world.spawn((s2, t2));
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(sprite_collect_system);
+        schedule.run(&mut world);
+
+        let collected = world.resource::<SpriteCollected>();
+        assert_eq!(collected.batch.sprite_count(), 2);
+        // z_order=0 should be first after sort
+        assert_eq!(collected.batch.vertices[0].position[2], 0.0);
     }
 
     #[test]

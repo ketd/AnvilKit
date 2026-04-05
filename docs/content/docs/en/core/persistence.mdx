@@ -17,7 +17,7 @@ The persistence module provides three layers: player **Settings**, multi-slot **
 - Adds `auto_save_tick_system` to the schedule, which counts elapsed time and triggers a save when the configured interval expires.
 
 ```rust
-use anvilkit_ecs::plugins::PersistencePlugin;
+use anvilkit_app::plugins::PersistencePlugin;
 
 app.add_plugins(PersistencePlugin);
 

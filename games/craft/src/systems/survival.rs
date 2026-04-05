@@ -1,19 +1,23 @@
 use bevy_ecs::prelude::*;
-use anvilkit_ecs::physics::DeltaTime;
+use anvilkit_core::time::DeltaTime;
 use anvilkit_gameplay::health::{Health, DamageEvent, DeathEvent};
 use anvilkit_core::math::Transform;
 
 use crate::components::FpsCamera;
 use crate::resources::{PlayerState, VoxelWorld};
+use crate::world_manager::GameMode;
 use crate::config;
 use crate::chunk::CHUNK_SIZE;
 
 /// Fall damage: triggers when landing with velocity exceeding the jump threshold.
+/// Disabled in Creative mode.
 pub fn fall_damage_system(
+    mode: Res<GameMode>,
     player: Res<PlayerState>,
     query: Query<Entity, With<FpsCamera>>,
     mut damage_events: EventWriter<DamageEvent>,
 ) {
+    if *mode == GameMode::Creative { return; }
     // Just transitioned from airborne to on_ground
     if player.on_ground && !player.was_on_ground {
         let fall_speed = -player.last_vy;
@@ -32,13 +36,16 @@ pub fn fall_damage_system(
 }
 
 /// Drowning: 1 HP damage every 2 seconds when head is submerged in water.
+/// Disabled in Creative mode.
 pub fn drowning_system(
+    mode: Res<GameMode>,
     dt: Res<DeltaTime>,
     voxel_world: Res<VoxelWorld>,
     query: Query<(Entity, &Transform), With<FpsCamera>>,
     mut damage_events: EventWriter<DamageEvent>,
     mut timer: Local<f32>,
 ) {
+    if *mode == GameMode::Creative { return; }
     for (entity, transform) in query.iter() {
         let head_pos = transform.translation;
         let block = voxel_world.get_block(

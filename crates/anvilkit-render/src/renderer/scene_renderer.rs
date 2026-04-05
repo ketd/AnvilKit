@@ -65,7 +65,7 @@ impl SceneRenderer {
         rs.depth_texture_view = depth_view;
 
         // 重建 HDR render target (resolve) + MSAA color
-        let (_, hdr_view) = create_hdr_render_target(device, width, height, "ECS HDR RT");
+        let (hdr_tex, hdr_view) = create_hdr_render_target(device, width, height, "ECS HDR RT");
         let (_, hdr_msaa_view) = create_hdr_msaa_texture(device, width, height, "ECS HDR MSAA");
         let sampler = create_sampler(device, "ECS Sampler");
 
@@ -88,6 +88,7 @@ impl SceneRenderer {
             ],
         });
 
+        rs.hdr_texture = hdr_tex;
         rs.hdr_texture_view = hdr_view;
         rs.hdr_msaa_texture_view = hdr_msaa_view;
         rs.tonemap_bind_group = new_bg;

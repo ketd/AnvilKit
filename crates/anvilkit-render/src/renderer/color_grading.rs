@@ -3,27 +3,36 @@
 //! 调色管线：曝光、对比度、饱和度、白平衡、3D LUT。
 
 use bevy_ecs::prelude::*;
+use anvilkit_describe::Describe;
 use crate::renderer::RenderDevice;
 use crate::renderer::buffer::HDR_FORMAT;
 
 const COLOR_GRADING_SHADER: &str = include_str!("../shaders/color_grading.wgsl");
 
 /// Color Grading 配置
-#[derive(Debug, Clone, Resource)]
+#[derive(Debug, Clone, Resource, Describe)]
+/// Color grading post-process settings.
 pub struct ColorGradingSettings {
     /// Whether color grading is enabled.
+    #[describe(hint = "Enable color grading", default = "false")]
     pub enabled: bool,
     /// Exposure multiplier (1.0 = no change).
+    #[describe(hint = "Exposure multiplier", range = "0.0..10.0", default = "1.0")]
     pub exposure: f32,
     /// Contrast multiplier (1.0 = no change).
+    #[describe(hint = "Contrast multiplier", range = "0.0..3.0", default = "1.0")]
     pub contrast: f32,
     /// Saturation multiplier (1.0 = no change, 0.0 = grayscale).
+    #[describe(hint = "Saturation (0=grayscale, 1=normal)", range = "0.0..3.0", default = "1.0")]
     pub saturation: f32,
     /// Color temperature offset (-1.0 cool .. 1.0 warm).
+    #[describe(hint = "Color temperature (-1 cool, +1 warm)", range = "-1.0..1.0", default = "0.0")]
     pub temperature: f32,
     /// Green-magenta tint (-1.0 .. 1.0).
+    #[describe(hint = "Green-magenta tint shift", range = "-1.0..1.0", default = "0.0")]
     pub tint: f32,
     /// LUT contribution (0.0 = none, 1.0 = full LUT).
+    #[describe(hint = "3D LUT blending factor", range = "0.0..1.0", default = "0.0")]
     pub lut_contribution: f32,
 }
 
@@ -82,6 +91,10 @@ pub struct ColorGradingResources {
     pub lut_sampler: wgpu::Sampler,
     /// Bind group layout.
     pub bgl: wgpu::BindGroupLayout,
+    /// 中间纹理，避免 src == dst 同纹理读写导致的 GPU 未定义行为。
+    pub intermediate_texture: Option<wgpu::Texture>,
+    /// 中间纹理 view。
+    pub intermediate_view: Option<wgpu::TextureView>,
 }
 
 impl ColorGradingResources {
@@ -210,6 +223,8 @@ impl ColorGradingResources {
             sampler,
             lut_sampler,
             bgl,
+            intermediate_texture: None,
+            intermediate_view: None,
         }
     }
 
@@ -263,15 +278,38 @@ impl ColorGradingResources {
         (texture, view)
     }
 
-    /// No-op resize (color grading has no resolution-dependent textures).
-    pub fn resize(&mut self, _device: &RenderDevice, _width: u32, _height: u32) {}
+    /// 重建中间纹理以匹配新的分辨率。
+    pub fn resize(&mut self, device: &RenderDevice, width: u32, height: u32) {
+        self.ensure_intermediate(device, width, height);
+    }
+
+    /// 确保中间纹理存在且尺寸匹配。
+    fn ensure_intermediate(&mut self, device: &RenderDevice, width: u32, height: u32) {
+        let tex = device.device().create_texture(&wgpu::TextureDescriptor {
+            label: Some("ColorGrading Intermediate"),
+            size: wgpu::Extent3d { width: width.max(1), height: height.max(1), depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: HDR_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        self.intermediate_texture = Some(tex);
+        self.intermediate_view = Some(view);
+    }
 
     /// Execute color grading pass.
+    ///
+    /// 当 `src_view` 和 `dst_view` 指向同一纹理时，渲染到内部中间纹理后
+    /// 通过 `copy_texture_to_texture` 拷贝回目标，避免 GPU 未定义行为。
     pub fn execute(
         &self,
         device: &RenderDevice,
         encoder: &mut wgpu::CommandEncoder,
         src_view: &wgpu::TextureView,
+        dst_texture: &wgpu::Texture,
         dst_view: &wgpu::TextureView,
         settings: &ColorGradingSettings,
     ) {
@@ -291,6 +329,13 @@ impl ColorGradingResources {
         };
         device.queue().write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniform));
 
+        // 如果有中间纹理，渲染到中间纹理然后拷贝回目标（安全路径）
+        // 否则直接渲染到 dst（调用者保证 src != dst）
+        let (render_target, needs_copy) = match self.intermediate_view {
+            Some(ref iv) => (iv, true),
+            None => (dst_view, false),
+        };
+
         let bg = device.device().create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("ColorGrading BG"),
             layout: &self.bgl,
@@ -303,22 +348,46 @@ impl ColorGradingResources {
             ],
         });
 
-        let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("ColorGrading Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: dst_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-        rp.set_pipeline(&self.pipeline);
-        rp.set_bind_group(0, &bg, &[]);
-        rp.draw(0..3, 0..1);
+        {
+            let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("ColorGrading Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: render_target,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            rp.set_pipeline(&self.pipeline);
+            rp.set_bind_group(0, &bg, &[]);
+            rp.draw(0..3, 0..1);
+        }
+
+        // 拷贝中间纹理回目标
+        if needs_copy {
+            if let Some(ref intermediate) = self.intermediate_texture {
+                let size = dst_texture.size();
+                encoder.copy_texture_to_texture(
+                    wgpu::ImageCopyTexture {
+                        texture: intermediate,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::ImageCopyTexture {
+                        texture: dst_texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    size,
+                );
+            }
+        }
     }
 }

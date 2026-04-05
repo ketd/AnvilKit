@@ -6,6 +6,7 @@
 use std::collections::HashSet;
 use bevy_ecs::prelude::*;
 use glam::Vec2;
+use anvilkit_describe::Describe;
 
 /// 键盘键码
 ///
@@ -18,7 +19,8 @@ use glam::Vec2;
 /// let key = KeyCode::W;
 /// assert_ne!(key, KeyCode::S);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Describe)]
+/// Keyboard key codes.
 pub enum KeyCode {
     // Letters
     /// The A key.
@@ -254,7 +256,8 @@ impl KeyCode {
 /// let btn = MouseButton::Left;
 /// assert_ne!(btn, MouseButton::Right);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Describe)]
+/// Mouse button identifier.
 pub enum MouseButton {
     /// Left mouse button.
     Left,

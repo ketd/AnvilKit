@@ -32,14 +32,20 @@ pub mod raycast;
 pub mod text;
 pub mod buffer_pool;
 pub mod bloom;
+#[cfg(feature = "advanced-render")]
 pub mod ssao;
+#[cfg(feature = "advanced-render")]
 pub mod dof;
+#[cfg(feature = "advanced-render")]
 pub mod motion_blur;
+#[cfg(feature = "advanced-render")]
 pub mod color_grading;
 pub mod post_process;
 pub mod shadow;
 pub mod standard_material;
 pub mod scene_renderer;
+pub mod canvas2d;
+pub mod canvas3d;
 #[cfg(feature = "capture")]
 pub mod capture;
 

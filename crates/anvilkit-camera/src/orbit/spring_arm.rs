@@ -7,6 +7,7 @@
 
 use bevy_ecs::prelude::*;
 use glam::Vec3;
+use anvilkit_describe::Describe;
 
 use super::OrbitState;
 
@@ -18,15 +19,20 @@ use super::OrbitState;
 /// The system performs a ray cast from the orbit target along the camera's
 /// orbit direction. If the ray hits something within the orbit distance,
 /// the camera is pulled to `hit_distance - margin` to avoid clipping.
-#[derive(Component)]
+#[derive(Component, Describe)]
+/// Spring arm for camera collision avoidance.
 pub struct SpringArm {
     /// Sphere radius for the sweep test (camera's effective collision radius).
+    #[describe(hint = "Collision probe radius", range = "0.01..2.0", default = "0.3")]
     pub probe_radius: f32,
     /// Safety margin subtracted from hit distance.
+    #[describe(hint = "Safety margin from hit point", range = "0.0..1.0", default = "0.2")]
     pub margin: f32,
     /// How quickly the arm retracts toward collision point (units/sec).
+    #[describe(hint = "Retraction speed", range = "1.0..100.0", default = "30.0")]
     pub retract_speed: f32,
     /// How quickly the arm extends back to full length after collision clears (units/sec).
+    #[describe(hint = "Extension speed", range = "0.1..50.0", default = "5.0")]
     pub extend_speed: f32,
     /// Current actual distance (may be shorter than `OrbitState.distance` due to collision).
     pub(crate) current_distance: f32,
@@ -88,7 +94,7 @@ impl SpringArm {
 ///
 /// Uses `AabbCollider` entities for collision testing.
 pub fn camera_spring_arm_system(
-    dt: Res<anvilkit_ecs::physics::DeltaTime>,
+    dt: Res<anvilkit_core::time::DeltaTime>,
     mut cameras: Query<(
         &mut SpringArm,
         &OrbitState,
@@ -96,7 +102,7 @@ pub fn camera_spring_arm_system(
     )>,
     colliders: Query<(
         &anvilkit_core::math::Transform,
-        &anvilkit_ecs::physics::AabbCollider,
+        &anvilkit_render::transform::AabbCollider,
     ), Without<SpringArm>>,
 ) {
     for (mut arm, orbit, mut cam_transform) in cameras.iter_mut() {

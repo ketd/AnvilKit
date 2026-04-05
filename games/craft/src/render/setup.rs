@@ -68,6 +68,10 @@ pub struct VoxelGpu {
     pub scene_ub: wgpu::Buffer,
     pub scene_bg: wgpu::BindGroup,
     pub atlas_bg: wgpu::BindGroup,
+    /// Atlas texture view — kept alive for HUD sprite rendering.
+    pub atlas_view: wgpu::TextureView,
+    /// Atlas nearest sampler — kept alive for HUD sprite rendering.
+    pub atlas_sampler: wgpu::Sampler,
     pub voxel_pipeline: wgpu::RenderPipeline,
     pub water_pipeline: wgpu::RenderPipeline,
     pub depth_view: wgpu::TextureView,
@@ -511,6 +515,8 @@ pub fn init_voxel_gpu(
         scene_ub,
         scene_bg,
         atlas_bg,
+        atlas_view,
+        atlas_sampler: nearest_sampler,
         voxel_pipeline,
         water_pipeline,
         depth_view,

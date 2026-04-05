@@ -3,6 +3,33 @@ title: 架构概览
 description: AnvilKit 引擎的整体架构设计
 ---
 
+## 三大支柱
+
+引擎围绕三大支柱构建：
+
+- **渲染** — Canvas2D (2D)、Canvas3D (3D)、帧捕获，以及完整的 PBR 管线
+- **AI 接口** — MCP 服务器提供 17 个工具（视觉/控制/状态/场景），让代理能看到并操作游戏
+- **运行时** — `GameCallbacks` 生命周期 + `bevy_app` 调度系统
+
+## Crate 结构
+
+```
+引擎（总括）:      anvilkit
+运行时:           anvilkit-app (GameCallbacks, 调度, 状态, 插件)
+渲染:             anvilkit-render (Canvas2D, Canvas3D, PBR 管线, 帧捕获, transform)
+核心:             anvilkit-core (数学, 时间, 错误, 持久化)
+资产:             anvilkit-assets
+输入:             anvilkit-input
+音频:             anvilkit-audio
+AI Describe:     anvilkit-describe + anvilkit-describe-derive
+AI MCP:          anvilkit-mcp (17 个工具: spawn_object, press_key, capture, save_scene 等)
+
+游戏级（不在总括中）:
+  anvilkit-camera, anvilkit-gameplay, anvilkit-data
+```
+
+> **注意：** `anvilkit-ecs` 已不存在。其调度、插件系统和状态机已迁移至 `anvilkit-app`。
+
 ## 分层架构
 
 AnvilKit 采用分层模块化设计，每层只依赖下层：
@@ -14,30 +41,34 @@ flowchart TB
     craft["craft"]
     your_game["your_game"]
   end
-  subgraph system["📦 系统层"]
-    umbrella["anvilkit (伞 crate)"]
+  subgraph system["📦 引擎 Crate (伞)"]
+    umbrella["anvilkit (facade, prelude, DefaultPlugins)"]
     app["anvilkit-app"]
-    camera["anvilkit-camera"]
-    audio["anvilkit-audio"]
-    input["anvilkit-input"]
+    render["anvilkit-render"]
+    corelib["anvilkit-core"]
     assets["anvilkit-assets"]
-    ui["anvilkit-ui"]
+    input["anvilkit-input"]
+    audio["anvilkit-audio"]
+  end
+  subgraph ai["🤖 AI Crate"]
+    describe["anvilkit-describe"]
+    describe_derive["anvilkit-describe-derive"]
+    mcp["anvilkit-mcp"]
+  end
+  subgraph gamelevel["🎲 游戏级 Crate"]
+    camera["anvilkit-camera"]
     gameplay["anvilkit-gameplay"]
     data["anvilkit-data"]
   end
-  subgraph core["⚙️ 核心层"]
-    ecs["anvilkit-ecs"]
-    render["anvilkit-render"]
-    corelib["anvilkit-core"]
-  end
   subgraph deps["🔧 第三方依赖"]
-    bevy["bevy_ecs"]
+    bevy["bevy_app / bevy_ecs"]
     wgpu["wgpu"]
-    rapier["rapier3d"]
     glam["glam"]
-    taffy["taffy"]
+    rodio["rodio"]
   end
-  game --> system --> core --> deps
+  game --> system --> deps
+  game --> gamelevel --> system
+  game --> ai
 `} />
 
 ## Crate 依赖图
@@ -45,31 +76,29 @@ flowchart TB
 <Mermaid chart={`
 flowchart BT
   core["anvilkit-core\n(数学, 时间, 错误, 持久化)"]
-  ecs["anvilkit-ecs\n(App, Plugin, Schedule, Transform, Physics)"]
-  render["anvilkit-render"]
+  render["anvilkit-render\n(wgpu, Canvas2D, transform 层级)"]
   input["anvilkit-input\n(InputState, ActionMap)"]
   camera["anvilkit-camera\n(5模式, Trauma抖动, 弹簧臂, 轨道)"]
   assets["anvilkit-assets\n(glTF, 动画, AssetServer)"]
   audio["anvilkit-audio\n(AudioSource, 空间音频)"]
-  app["anvilkit-app\n(AnvilKitApp, GameCallbacks, GameConfig)"]
-  ui["anvilkit-ui\n(Widget, flexbox 布局, UiPlugin)"]
-  gameplay["anvilkit-gameplay\n(Health, Inventory, Cooldown, StatusEffect)"]
+  app["anvilkit-app\n(GameCallbacks, 调度, 状态机)"]
+  gameplay["anvilkit-gameplay\n(Health, Inventory)"]
   data["anvilkit-data\n(DataTable, Locale)"]
+  describe["anvilkit-describe\n(Describe trait + derive)"]
+  mcp["anvilkit-mcp\n(MCP 服务器)"]
 
-  core --> ecs
-  ecs --> render
-  ecs --> input
+  core --> render
+  core --> input
   render --> camera
   input --> camera
   core --> assets
-  ecs --> audio
-  ecs --> app
+  core --> audio
+  core --> app
   render --> app
   input --> app
-  core --> app
-  ecs --> gameplay
-  ecs --> data
-  ecs --> ui
+  core --> gameplay
+  core --> data
+  describe --> mcp
 `} />
 
 ## 每帧生命周期
@@ -143,8 +172,7 @@ flowchart TD
 | `anvilkit-core` | `serde` | Transform, GlobalTransform 的序列化 |
 | `anvilkit-core` | `persistence` | SaveManager, Settings, WorldStorage |
 | `anvilkit-core` | `bevy_ecs` | 数学类型的 Component derive |
-| `anvilkit-ecs` | `serde` | Parent, Children 序列化，场景序列化 |
-| `anvilkit-ecs` | `rapier` | rapier3d 物理引擎运行时集成 |
+| `anvilkit-app` | `serde` | ECS 组件序列化 |
 | `anvilkit-assets` | `hot-reload` | notify 文件监视热重载 |
 | `anvilkit-assets` | `bevy_ecs` | Skeleton, AnimationPlayer 的 Component derive |
 | `anvilkit-gameplay` | `stats` | Stats、Health、DamageEvent、health_system |
@@ -158,11 +186,11 @@ flowchart TD
 ### anvilkit-core
 基础类型库：数学工具 (Vec3, Mat4, Transform, GlobalTransform, 插值)、时间系统 (Time, Timer)、错误类型 (AnvilKitError，`with_context` 保留原始错误类别)、持久化系统 (SaveManager, Settings, WorldStorage — 均返回 `Result<_, AnvilKitError>`)。Aabb 轴对齐包围盒、Frustum 和射线投射工具 (screen_to_ray, ray_plane_intersection, ray_sphere_intersection) — 在 v0.3 中从 render crate 迁移而来。持久化错误类别 (AnvilKitError::Persistence)，支持 category-preserving 的 with_context。
 
-### anvilkit-ecs
-基于 `bevy_ecs 0.14` 的应用框架：App 生命周期 (new -> add_plugins -> add_systems -> run)、Plugin 系统（含唯一性检查）、Schedule 调度 (Main/Startup/PreUpdate/Update/PostUpdate/Cleanup)、AppExit 优雅退出、Transform 层级传播（Parent/Children/GlobalTransform 自动同步）、物理（缩放感知 AABB + rapier3d 集成）、场景序列化 (RON)、FixedUpdate 调度（基于累加器的确定性时间步长）、事件系统（bevy_ecs `Events<T>`/EventWriter/EventReader）、`GameState<S>` 状态机、SerializableRegistry 类型擦除场景序列化、AutoInputPlugin 和 AutoDeltaTimePlugin 自动帧管理。PersistencePlugin 用于自动存档集成，SettingsApplyPlugin 将 Settings 同步到引擎子系统。物理模块拆分为目录结构：components.rs、aabb.rs、rapier.rs、events.rs。
-
 ### anvilkit-render
-统一 2D/3D 渲染管线：
+统一 2D/3D 渲染，提供代理友好的入口：
+- **Canvas2D**：即时模式 2D 绘图（矩形、文本、精灵）
+- **Canvas3D**：场景图 3D API，支持 PBR 材质和相机控制
+- **帧捕获**：`capture_frame()` 返回渲染像素 — 让 AI 代理能看到游戏
 - PBR 材质系统 (Cook-Torrance BRDF, 5 种纹理贴图)
 - HDR 渲染 (Rgba16Float) + ACES Filmic 色调映射
 - Bloom (13-tap 降采样 + 9-tap tent 上采样, 5 级 mip)
@@ -196,10 +224,13 @@ flowchart TD
 生产级相机系统，5 种模式 (FirstPerson/ThirdPerson/Orbit/Free/Rail)。OrbitState 组件、CameraRig 实体跟随、SpringArm 碰撞避免、Trauma+Perlin 噪声抖动、CameraTransition 过渡混合 (5 种缓动)、LookAtTarget 软约束、CameraRail 推轨 (Catmull-Rom)、InputCurve 死区+响应曲线。8 系统管线，帧率无关平滑。
 
 ### anvilkit-app
-游戏应用运行器，消除样板代码。`AnvilKitApp::run()` 管理 winit 事件循环、输入转发、DeltaTime 和帧生命周期。游戏实现 `GameCallbacks`（init、post_update、render、on_resize、on_window_event）并传入 `GameConfig`（标题、窗口尺寸、垂直同步）。通过 `GameContext` 提供对 ECS `App` 和 `RenderApp` 的访问。
+游戏应用运行器，消除样板代码。`AnvilKitApp::run()` 管理 winit 事件循环、输入转发、DeltaTime 和帧生命周期。游戏实现 `GameCallbacks`（init、post_update、render、on_resize、on_window_event）并传入 `GameConfig`（标题、窗口尺寸、垂直同步）。通过 `GameContext` 提供对 ECS `App` 和 `RenderApp` 的访问。重构后，anvilkit-app 还包含调度、ECS 插件系统和状态机（之前在已删除的 anvilkit-ecs 中）。
 
-### anvilkit-ui
-保留模式 UI 框架，基于 taffy 的 flexbox 布局。GPU 无关 — 渲染委托给 `anvilkit-render` 的 `UiRenderer`。包含 `Widget`（按钮、标签、面板）、`UiLayoutEngine`、事件系统（命中测试、交互处理）、`UiTheme`、焦点管理、`UiPlugin` ECS 集成，以及交互控件（TextInput、Slider、Checkbox、Dropdown、ScrollView）。
+### anvilkit-describe
+AI 优先的内省机制：`Describe` trait 及其 derive 宏，允许引擎类型输出可被 AI 代理消费的结构化描述。配套的 `anvilkit-describe-derive` crate 提供 proc macro。
+
+### anvilkit-mcp
+MCP（Model Context Protocol）服务器，提供 17 个工具，向 AI 代理暴露引擎状态和控制接口。工具类别：**视觉**（capture_frame、describe_scene）、**控制**（press_key、move_mouse、spawn_object）、**状态**（get_component、set_component）、**场景**（save_scene、load_scene）。让代理能看到并交互运行中的游戏。
 
 ### anvilkit-gameplay
 可选的、按 feature 门控的游戏性构建模块：`stats`（通用属性系统，支持加法/乘法/覆盖修饰器）、`health`（Health 组件，含自动回血、DamageEvent、HealEvent、DeathEvent、health_system）、`inventory`（基于槽位的可堆叠物品栏）、`cooldown`（技能/动作冷却计时器）、`status-effect`（基于持续时间的状态效果，支持堆叠策略）、`entity-pool`（实体回收对象池）。

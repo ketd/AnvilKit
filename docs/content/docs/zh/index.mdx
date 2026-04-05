@@ -1,38 +1,39 @@
 ---
 title: 简介
-description: AnvilKit 模块化游戏基础设施框架
+description: AI 优先游戏引擎 — Agent 能看到玩家所见
 ---
 
-AnvilKit 是一个使用 Rust 编写的模块化游戏基础设施框架，为 2D 和 3D 游戏开发提供可组合的核心工具。
+AnvilKit 是一个使用 Rust 编写的 **AI 优先游戏引擎**。核心理念：**Agent 能看到玩家所见。** Canvas2D、Canvas3D 和帧捕获为 AI 代理提供了对运行中游戏的直接视觉访问，同时 MCP 服务器提供 17 个工具用于控制和内省。
 
 ## 核心特性
 
+- **Canvas2D** — 即时模式 2D 绘图 API，从想法到像素的最快路径
+- **Canvas3D** — 3D 场景 API，支持 PBR 材质、光照和相机控制
+- **帧捕获** — 将渲染帧抓取为图像，让 AI 代理能看到游戏画面
+- **MCP 服务器** — 17 个工具（视觉/控制/状态/场景），支持代理驱动的游戏开发
+- **AI Describe** — `Describe` trait 和 derive 宏，供 AI 代理进行结构化内省
 - **ECS 架构** — 基于 `bevy_ecs` 的实体组件系统，提供高性能的游戏对象管理
 - **统一渲染** — 基于 `wgpu` 的 2D/3D 统一渲染管线，支持 PBR、HDR、IBL 和阴影
-- **物理系统** — 集成 `rapier2d`/`rapier3d` 物理引擎
-- **音频系统** — 基于 `kira`/`rodio` 的空间音频和音效管理
+- **音频系统** — 基于 `rodio` 的空间音频和音效管理
 - **资产管线** — glTF 加载、骨骼动画、程序化网格生成
 - **输入系统** — 跨平台输入抽象，支持自定义 Action Map
-- **UI 系统** — 基于 `taffy` flexbox 布局的保留模式 UI，包含交互式控件
 - **应用运行器** — `AnvilKitApp` 消除样板代码：管理事件循环、输入转发，并通过 `GameCallbacks` 实现帧生命周期
-- **游戏性系统** — 按 feature 门控的构建模块：Health、Inventory、Cooldown、StatusEffect、EntityPool
+- **游戏性系统** — 按 feature 门控的构建模块：Health、Inventory
 - **数据与国际化** — `DataTable`（RON/JSON）数据驱动配置，`Locale` 支持带回退链的本地化
 - **相机系统** — 5 种相机模式（FirstPerson、ThirdPerson、Orbit、Free、Rail），trauma 抖动、弹簧臂、过渡
-- **开发工具** — CLI 脚手架、代码生成、性能分析
 
 ## 技术栈
 
 | 领域 | 依赖 |
 |------|------|
-| ECS | `bevy_ecs` |
+| ECS | `bevy_ecs`, `bevy_app` |
 | 渲染 | `wgpu`, `winit` |
 | 数学 | `glam` |
-| 物理 | `rapier2d`, `rapier3d` |
-| 音频 | `kira`, `rodio` |
-| UI | `taffy` |
+| 音频 | `rodio` |
 | 资产 | `gltf`, `image` |
 | 相机 | `noise` (Perlin 抖动) |
 | 数据 | `ron`, `serde_json` |
+| AI | `anvilkit-describe`, `anvilkit-mcp` |
 | 游戏性 | (无外部依赖 — 纯 Rust) |
 
 ## 快速链接

@@ -1,6 +1,7 @@
 use super::{CraftScreen, SettingsReturnTo};
 
-/// Persistent settings state.
+/// Persistent settings state — serialized to disk.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SettingsState {
     pub volume: f32,
     pub sensitivity: f32,
@@ -15,6 +16,28 @@ impl Default for SettingsState {
             sensitivity: 3.0,
             fov: 70.0,
             view_distance: 8.0,
+        }
+    }
+}
+
+impl SettingsState {
+    const PATH: &'static str = "saves/settings.ron";
+
+    /// Load from disk, or return defaults.
+    pub fn load_or_default() -> Self {
+        std::fs::read_to_string(Self::PATH)
+            .ok()
+            .and_then(|s| ron::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    /// Save to disk.
+    pub fn save(&self) {
+        if let Some(parent) = std::path::Path::new(Self::PATH).parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(s) = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default()) {
+            let _ = std::fs::write(Self::PATH, s);
         }
     }
 }

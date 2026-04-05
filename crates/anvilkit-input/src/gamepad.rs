@@ -4,6 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 use bevy_ecs::prelude::*;
+use anvilkit_describe::Describe;
 
 /// Gamepad 按钮
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -69,8 +70,10 @@ pub struct SingleGamepadState {
 }
 
 /// Gamepad 输入状态资源
-#[derive(Resource, Debug, Clone, Default)]
+#[derive(Resource, Debug, Clone, Default, Describe)]
+/// Aggregated state for all connected gamepads.
 pub struct GamepadState {
+    #[describe(hint = "Per-gamepad state keyed by device ID")]
     gamepads: HashMap<u32, SingleGamepadState>,
 }
 

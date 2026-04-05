@@ -1,4 +1,4 @@
 {
   "title": "开发工具",
-  "pages": ["debug-renderer", "profiler", "console", "cli"]
+  "pages": ["debug-renderer"]
 }

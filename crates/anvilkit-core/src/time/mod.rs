@@ -50,6 +50,17 @@ pub mod timer;
 pub use time::Time;
 pub use timer::Timer;
 
+/// Frame-time resource — seconds elapsed since the previous frame.
+///
+/// Updated automatically by the engine's frame loop. Common values: ~0.016 at 60 FPS.
+#[cfg_attr(feature = "bevy_ecs", derive(bevy_ecs::system::Resource))]
+#[derive(Debug, Clone, Copy)]
+pub struct DeltaTime(pub f32);
+
+impl Default for DeltaTime {
+    fn default() -> Self { Self(1.0 / 60.0) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -6,6 +6,7 @@
 
 use bevy_ecs::prelude::*;
 use glam::Vec3;
+use anvilkit_describe::Describe;
 
 /// Interpolation mode for the rail path.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -29,13 +30,16 @@ impl Default for RailInterpolation {
 ///
 /// Attach to a camera entity with [`CameraMode::Rail`](crate::controller::CameraMode::Rail).
 /// The system moves the camera along the path defined by `points`.
-#[derive(Component)]
+#[derive(Component, Describe)]
+/// Camera rail for dolly/path-following cameras.
 pub struct CameraRail {
     /// Control points defining the rail path (world space).
     pub points: Vec<Vec3>,
     /// Current progress along the rail `[0.0, 1.0]`.
+    #[describe(hint = "Rail progress (0=start, 1=end)", range = "0.0..1.0", default = "0.0")]
     pub t: f32,
     /// Speed of progress (units of `t` per second). `0.0` = manual control only.
+    #[describe(hint = "Auto-advance speed (0=manual)", range = "0.0..10.0", default = "0.0")]
     pub speed: f32,
     /// Interpolation mode.
     pub interpolation: RailInterpolation,
@@ -153,7 +157,7 @@ fn catmull_rom(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, t: f32, tension: f32) -> 
 
 /// Rail system — advances `CameraRail.t` and sets the camera transform.
 pub fn camera_rail_system(
-    dt: Res<anvilkit_ecs::physics::DeltaTime>,
+    dt: Res<anvilkit_core::time::DeltaTime>,
     mut query: Query<(
         &mut CameraRail,
         &crate::controller::CameraController,

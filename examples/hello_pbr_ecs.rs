@@ -335,12 +335,12 @@ impl PbrEcsApp {
             .expect("创建 Tonemap 管线失败");
 
         // Upload mesh & create material via ECS RenderAssets
-        let mut assets = self.app.world.resource_mut::<RenderAssets>();
+        let mut assets = self.app.world_mut().resource_mut::<RenderAssets>();
         let mesh_handle = assets.upload_mesh_u32(device, &self.mesh_vertices, &self.mesh_indices, "Sphere");
         let mat_handle = assets.create_material(pipeline.into_pipeline(), mat_bg);
 
         // Spawn entity with PBR material params
-        self.app.world.spawn((
+        self.app.world_mut().spawn((
             mesh_handle,
             mat_handle,
             MaterialParams {
@@ -358,7 +358,7 @@ impl PbrEcsApp {
         let look_dir = (glam::Vec3::ZERO - eye).normalize();
         let cam_rotation = glam::Quat::from_rotation_arc(glam::Vec3::Z, look_dir);
 
-        self.app.world.spawn((
+        self.app.world_mut().spawn((
             CameraComponent { fov: 45.0, near: 0.1, far: 100.0, is_active: true, aspect_ratio: w as f32 / h.max(1) as f32, ..Default::default() },
             Transform::from_xyz(eye.x, eye.y, eye.z).with_rotation(cam_rotation),
             GlobalTransform::default(),
@@ -386,9 +386,9 @@ impl PbrEcsApp {
         let Some(tonemap_pipeline) = &self.tonemap_pipeline else { return };
         let Some(tonemap_bg) = &self.tonemap_bind_group else { return };
         let Some(ibl_bg) = &self.ibl_bind_group else { return };
-        let Some(active_camera) = self.app.world.get_resource::<ActiveCamera>() else { return };
-        let Some(draw_list) = self.app.world.get_resource::<DrawCommandList>() else { return };
-        let Some(render_assets) = self.app.world.get_resource::<RenderAssets>() else { return };
+        let Some(active_camera) = self.app.world().get_resource::<ActiveCamera>() else { return };
+        let Some(draw_list) = self.app.world().get_resource::<DrawCommandList>() else { return };
+        let Some(render_assets) = self.app.world().get_resource::<RenderAssets>() else { return };
 
         if draw_list.commands.is_empty() { return; }
 
@@ -399,7 +399,7 @@ impl PbrEcsApp {
         let camera_pos = active_camera.camera_pos;
 
         let default_lights = SceneLights::default();
-        let scene_lights = self.app.world.get_resource::<SceneLights>()
+        let scene_lights = self.app.world().get_resource::<SceneLights>()
             .unwrap_or(&default_lights);
         let light = &scene_lights.directional;
 
@@ -585,11 +585,11 @@ impl ApplicationHandler for PbrEcsApp {
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         // Rotate the model
-        if let Some(frame_time) = self.app.world.get_resource::<FrameTime>() {
+        if let Some(frame_time) = self.app.world().get_resource::<FrameTime>() {
             let t = frame_time.0.elapsed().as_secs_f32();
             // Update all transforms with rotation
-            for mut transform in self.app.world.query::<&mut Transform>()
-                .iter_mut(&mut self.app.world)
+            for mut transform in self.app.world_mut().query::<&mut Transform>()
+                .iter_mut(self.app.world_mut())
             {
                 // Only rotate entities that have MaterialParams (not camera)
                 // Simple check: camera is at non-origin position

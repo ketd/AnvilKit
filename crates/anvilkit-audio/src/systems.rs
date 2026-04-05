@@ -3,7 +3,7 @@
 //! ECS 系统：监听 AudioSource 组件状态变化，驱动 rodio 播放。
 
 use bevy_ecs::prelude::*;
-use anvilkit_ecs::audio::{AudioSource, PlaybackState, AudioListener, AudioBus};
+use crate::components::{AudioSource, PlaybackState, AudioListener, AudioBus};
 use anvilkit_core::math::Transform;
 use log::{debug, error};
 use std::io::BufReader;
@@ -95,6 +95,20 @@ pub fn audio_playback_system(
     engine.cleanup_finished();
 }
 
+/// 音频清理系统 — 移除已 despawn 实体的 Sink，防止泄漏。
+///
+/// 通过 `RemovedComponents<AudioSource>` 检测实体移除事件。
+pub fn audio_cleanup_system(
+    mut removed: RemovedComponents<AudioSource>,
+    engine: Option<NonSendMut<AudioEngine>>,
+) {
+    let Some(mut engine) = engine else { return };
+    for entity in removed.read() {
+        engine.stop(entity);
+        debug!("清理已移除实体的音频 sink: {:?}", entity);
+    }
+}
+
 /// 空间音频系统 — 基于距离的音量衰减 + 立体声平移
 pub fn spatial_audio_system(
     query: Query<(Entity, &AudioSource, &Transform)>,
@@ -152,5 +166,53 @@ pub fn spatial_audio_system(
         // single `set_volume` call below with per-channel volumes.
         // For now, apply the distance-attenuated mono volume.
         engine.set_volume(entity, effective_vol);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// 距离衰减计算单元测试（与 spatial_audio_system 中的逻辑一致）
+    #[test]
+    fn test_distance_attenuation() {
+        let spatial_range = 20.0_f32;
+
+        // At distance 0: full volume
+        let atten_0 = (1.0 - 0.0 / spatial_range).max(0.0);
+        assert!((atten_0 - 1.0).abs() < f32::EPSILON);
+
+        // At half range: half volume
+        let atten_half = (1.0 - 10.0 / spatial_range).max(0.0);
+        assert!((atten_half - 0.5).abs() < f32::EPSILON);
+
+        // At full range: zero volume
+        let atten_full = (1.0 - 20.0 / spatial_range).max(0.0);
+        assert!((atten_full - 0.0).abs() < f32::EPSILON);
+
+        // Beyond range: clamped to zero
+        let atten_beyond = (1.0 - 30.0 / spatial_range).max(0.0);
+        assert!((atten_beyond - 0.0).abs() < f32::EPSILON);
+    }
+
+    /// 立体声 panning 计算单元测试
+    #[test]
+    fn test_stereo_panning_calculation() {
+        use glam::Vec3;
+
+        let listener_right = Vec3::X; // facing +Z, right is +X
+
+        // Source to the right
+        let dir_right = Vec3::X;
+        let pan_right = dir_right.dot(listener_right).clamp(-1.0, 1.0);
+        assert!((pan_right - 1.0).abs() < f32::EPSILON);
+
+        // Source to the left
+        let dir_left = Vec3::NEG_X;
+        let pan_left = dir_left.dot(listener_right).clamp(-1.0, 1.0);
+        assert!((pan_left - (-1.0)).abs() < f32::EPSILON);
+
+        // Source directly ahead
+        let dir_ahead = Vec3::Z;
+        let pan_ahead = dir_ahead.dot(listener_right).clamp(-1.0, 1.0);
+        assert!((pan_ahead - 0.0).abs() < f32::EPSILON);
     }
 }

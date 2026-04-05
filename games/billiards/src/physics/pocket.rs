@@ -1,7 +1,7 @@
 use bevy_ecs::prelude::*;
 use glam::Vec3;
 use anvilkit_core::math::Transform;
-use anvilkit_ecs::physics::Velocity;
+use anvilkit_core::math::Velocity;
 
 use crate::components::{CueBall, NumberedBall};
 use crate::resources::{BilliardConfig, GameState, BallTracker};
@@ -55,12 +55,12 @@ pub fn pocket_detection_system(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anvilkit_ecs::prelude::*;
-    use anvilkit_ecs::schedule::AnvilKitSchedule;
+    use anvilkit::prelude::*;
 
     #[test]
     fn test_ball_potted() {
         let mut app = App::new();
+        app.add_plugins(AnvilKitEcsPlugin);
         let config = BilliardConfig::default();
         let r = config.ball_radius;
         // Use the first pocket position from config
@@ -71,13 +71,13 @@ mod tests {
         app.add_systems(AnvilKitSchedule::Update, pocket_detection_system);
 
         // Place cue ball safely away
-        app.world.spawn((
+        app.world_mut().spawn((
             CueBall,
             Transform::from_xyz(0.0, r, 0.0),
             Velocity::zero(),
         ));
         // Place ball 1 right on the pocket
-        app.world.spawn((
+        app.world_mut().spawn((
             NumberedBall { number: 1, potted: false },
             Transform::from_xyz(pocket.x, r, pocket.z),
             Velocity::zero(),
@@ -85,13 +85,14 @@ mod tests {
 
         app.update();
 
-        let tracker = app.world.get_resource::<BallTracker>().unwrap();
+        let tracker = app.world().get_resource::<BallTracker>().unwrap();
         assert!(!tracker.on_table[1], "Ball 1 should be potted");
     }
 
     #[test]
     fn test_scratch_detection() {
         let mut app = App::new();
+        app.add_plugins(AnvilKitEcsPlugin);
         let config = BilliardConfig::default();
         let r = config.ball_radius;
         let pocket = config.pocket_positions[0];
@@ -101,7 +102,7 @@ mod tests {
         app.add_systems(AnvilKitSchedule::Update, pocket_detection_system);
 
         // Place cue ball on a pocket
-        app.world.spawn((
+        app.world_mut().spawn((
             CueBall,
             Transform::from_xyz(pocket.x, r, pocket.z),
             Velocity::zero(),
@@ -109,7 +110,7 @@ mod tests {
 
         app.update();
 
-        let gs = app.world.get_resource::<GameState>().unwrap();
+        let gs = app.world().get_resource::<GameState>().unwrap();
         assert!(gs.is_scratch, "Should detect scratch");
     }
 }
